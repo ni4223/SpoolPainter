@@ -103,8 +103,13 @@ class MainViewModel : ViewModel() {
     fun handleFilamentSelection(filament: FilamentSpool?) {
         selectedSpool = filament
         if (filament != null) {
+            val existingSubtype = readData?.subtype
             val openSpoolData = OpenSpoolData.toOpenSpoolData(filament)
-            readData = openSpoolData
+            readData = if (existingSubtype != null && existingSubtype != "Basic" && openSpoolData.subtype == "Basic") {
+                openSpoolData.copy(subtype = existingSubtype)
+            } else {
+                openSpoolData
+            }
         } else {
             readData = null
         }

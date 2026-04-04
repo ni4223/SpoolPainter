@@ -66,11 +66,12 @@ data class OpenSpoolData(
         fun toOpenSpoolData(spool: FilamentSpool): OpenSpoolData {
 
             return OpenSpoolData(
-                type = spool.displayName,
+                type = spool.material,
                 colorHex = spool.colorHex,
                 brand = spool.brand,
                 minTemp = spool.minTemp.toString(),
                 maxTemp = spool.maxTemp.toString(),
+                subtype = spool.variant.ifEmpty { "Basic" },
                 spoolId = spool.id?.toString()
             )
         }

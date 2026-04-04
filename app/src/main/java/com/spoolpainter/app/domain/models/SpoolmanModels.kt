@@ -12,12 +12,12 @@ data class SpoolmanSpool(
 
 data class SpoolmanFilament(
     val id: Int,
-    val name: String,
-    val material: String,
-    val vendor: SpoolmanVendor?,
-    val color_hex: String?,
-    val settings_extruder_temp: Int?,
-    val settings_bed_temp: Int?
+    val name: String? = null,
+    val material: String? = null,
+    val vendor: SpoolmanVendor? = null,
+    val color_hex: String? = null,
+    val settings_extruder_temp: Int? = null,
+    val settings_bed_temp: Int? = null
 )
 
 data class SpoolmanVendor(

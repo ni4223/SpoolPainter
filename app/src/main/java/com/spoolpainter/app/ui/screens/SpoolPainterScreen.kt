@@ -265,7 +265,7 @@ fun SpoolPainterScreen(
                     }
                     val finalBrandName =
                         if (brand == "Other" && customBrand.isNotEmpty()) customBrand else brand
-                    val finalSubtype = variant
+                    val finalSubtype = variant.ifEmpty { "Basic" }
 
                     val data = OpenSpoolData(
                         type = materialName,

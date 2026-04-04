@@ -5,9 +5,9 @@ import com.spoolpainter.app.domain.models.OpenSpoolData
 
 data class FilamentSpool(
     val id: Int? = null,
-    val material: String,
+    val material: String = "Unknown",
     val variant: String = "",
-    val brand: String,
+    val brand: String = "Unknown",
     val colorHex: String?,
     val minTemp: Int?,
     val maxTemp: Int?,
@@ -25,7 +25,8 @@ data class FilamentSpool(
     
     companion object {
         fun fromSpoolman(spool: SpoolmanSpool): FilamentSpool {
-            val materialData = MaterialDatabase.getMaterial(spool.filament.material)
+            val material = spool.filament.material ?: "Unknown"
+            val materialData = MaterialDatabase.getMaterial(material)
             val extruderTemp = spool.filament.settings_extruder_temp
             val bedTemp = spool.filament.settings_bed_temp
             
@@ -53,9 +54,13 @@ data class FilamentSpool(
             
             return FilamentSpool(
                 id = spool.id,
-                material = spool.filament.material,
+                material = material,
                 brand = spool.filament.vendor?.name ?: "Unknown",
-                colorHex = spool.filament.color_hex?.takeIf { it.isNotEmpty() },
+                colorHex = spool.filament.color_hex
+                    ?.removePrefix("#")
+                    ?.let { if (it.length > 6) it.takeLast(6) else it }
+                    ?.uppercase()
+                    ?.takeIf { it.isNotEmpty() },
                 minTemp = minTemp,
                 maxTemp = maxTemp,
                 bedMinTemp = bedMinTemp,
@@ -65,7 +70,7 @@ data class FilamentSpool(
                 location = spool.location,
                 lotNr = spool.lot_nr,
                 archived = spool.archived,
-                spoolmanName = spool.filament.name
+                spoolmanName = spool.filament.name ?: ""
             )
         }
 
