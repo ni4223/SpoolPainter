@@ -54,8 +54,7 @@ data class OpenSpoolData(
                         bedMinTemp = jsonObj.optString("bed_min_temp").takeIf { it.isNotEmpty() },
                         bedMaxTemp = jsonObj.optString("bed_max_temp").takeIf { it.isNotEmpty() },
                         subtype = jsonObj.optString("subtype", "Basic"),
-                        spoolId = jsonObj.optString("spool_id").takeIf { it.isNotEmpty() },
-                        lotNr = jsonObj.optString("lot_nr").takeIf { it.isNotEmpty() }
+                        spoolId = jsonObj.optString("spool_id").takeIf { it.isNotEmpty() }
                     )
                 } else null
             } catch (e: Exception) {
