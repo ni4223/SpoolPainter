@@ -1,0 +1,88 @@
+flowchart TB
+    subgraph UI["🟦 UI / Compose"]
+        MA[MainActivity]
+        MS[MainScreen]
+        SS[SettingsScreen]
+        SHEETS[Bottom-sheet Composables<br/>RepairConfirm / VendorOptIn /<br/>PairAnotherTag / AddCustomMaterial /<br/>AddCustomBrand]
+        COMPS[Reusable Composables<br/>SpoolmanDropdown / FilamentForm /<br/>MaterialPicker / BrandPicker /<br/>ColorPicker / TempPanel /<br/>OfflineBanner]
+    end
+
+    subgraph VM["🟪 ViewModel"]
+        MVM[MainViewModel]
+        SVM[SettingsViewModel]
+        SHVM[Sheet VMs<br/>RepairConfirm / VendorOptIn /<br/>AddCustomMaterial / AddCustomBrand]
+    end
+
+    subgraph UC["🟧 Use-cases"]
+        ReadAndPair[ReadAndPairUseCase]
+        CreateAndPair[CreateAndPairUseCase]
+        MoveOnBind[MoveOnBindUseCase]
+        TwoTag[TwoTagUseCase]
+        VendorUidOnly[VendorUidOnlyPairUseCase]
+        RawWrite[RawWriteUseCase]
+    end
+
+    subgraph REPO["🟩 Repository"]
+        NfcR[NfcRepository]
+        SpR[SpoolmanRepository]
+        SetR[SettingsRepository]
+        MBR[MaterialBrandRepository]
+    end
+
+    subgraph DS["🟫 Data sources"]
+        NfcAdapter[NfcAdapterWrapper]
+        SpApi[SpoolmanApi Retrofit]
+        CardUidEnc[CardUidEncoding]
+        DSset[DataStore Settings]
+        DSmat[DataStore CustomMaterials]
+        DSbrand[DataStore CustomBrands]
+        Presets[MaterialPresetSource<br/>BrandPresetSource]
+    end
+
+    MA --> MS
+    MA -.->|attach/detach| NfcR
+    MS --> COMPS
+    SS --> COMPS
+    MS --> SHEETS
+    MS --> MVM
+    SS --> SVM
+    SHEETS --> SHVM
+
+    MVM --> ReadAndPair
+    MVM --> CreateAndPair
+    MVM --> MoveOnBind
+    MVM --> TwoTag
+    MVM --> VendorUidOnly
+    MVM --> RawWrite
+    MVM --> NfcR
+    MVM --> SpR
+    MVM --> MBR
+    SVM --> SetR
+    SVM --> SpR
+    SHVM --> MBR
+
+    ReadAndPair --> NfcR
+    ReadAndPair --> SpR
+    CreateAndPair --> NfcR
+    CreateAndPair --> SpR
+    MoveOnBind --> SpR
+    TwoTag --> NfcR
+    TwoTag --> SpR
+    VendorUidOnly --> SpR
+    RawWrite --> NfcR
+
+    NfcR --> NfcAdapter
+    SpR --> SpApi
+    SpR --> CardUidEnc
+    SpR --> SetR
+    SetR --> DSset
+    MBR --> Presets
+    MBR --> DSmat
+    MBR --> DSbrand
+    MBR --> SpR
+
+    style UI fill:#BBDEFB,stroke:#1565C0,color:#000
+    style VM fill:#E1BEE7,stroke:#6A1B9A,color:#000
+    style UC fill:#FFE0B2,stroke:#E65100,color:#000
+    style REPO fill:#C8E6C9,stroke:#2E7D32,color:#000
+    style DS fill:#D7CCC8,stroke:#4E342E,color:#000

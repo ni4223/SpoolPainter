@@ -228,3 +228,187 @@ Updated stories.md Coverage map: FR-2.3 row clarifies temp-storage rationale; ne
 **Context**: User Stories Part 2 — Step 21/22/23 complete. Ready to enter Workflow Planning when user resumes.
 
 ---
+
+## Session Resume — Workflow Planning
+**Timestamp**: 2026-05-23T00:00:00Z
+**User Input**: "using aidlc coontinue"
+**AI Response**: Loaded prior context (state file, requirements.md, stories.md, personas.md, reverse-engineering artifacts, `inception/workflow-planning.md` rule). Confirmed current stage = Workflow Planning. Proceeded to execute Steps 2–8 of `inception/workflow-planning.md` without re-asking already-answered questions.
+**Context**: AIDLC continuation — Workflow Planning entered.
+
+---
+
+## Workflow Planning — Plan Drafted
+**Timestamp**: 2026-05-23T00:00:00Z
+**User Input**: (n/a — workflow-driven)
+**AI Response**: Wrote `aidlc-docs/inception/plans/execution-plan.md` with: (1) Detailed Analysis Summary covering transformation scope (architectural overhaul + behavioural pivot), change-impact assessment (UI / structural / data-model / API / NFR all Yes; Infrastructure No), component relationships (single `:app` module, no infra/shared/dependent), and risk assessment (Medium — major arch overhaul on a Play-Store app, mitigated by tags+Spoolman storage and `debug` variant side-by-side install; rollback Easy; testing Moderate). (2) Mermaid workflow visualisation with COMPLETED / EXECUTE / SKIP statuses styled per `inception/workflow-planning.md` Step 6. (3) Phases-to-Execute checklist: INCEPTION = Application Design EXECUTE + Units Generation EXECUTE; CONSTRUCTION = Functional Design / NFR Requirements / NFR Design EXECUTE per-unit, Infrastructure Design SKIP (pure Android client — no CDK/Terraform/CloudFormation; distribution unchanged from v1), Code Generation + Build & Test always EXECUTE. (4) Recommended unit decomposition preview — U1..U10 for v2.0 (architecture & DI scaffold; domain primitives; Spoolman client overhaul; NFC repository + state; read-and-pair; create-and-pair + two-tag; side modes (raw-write + vendor UID-only opt-in); pickers + custom entries; settings + theming; v2.0 release polish) + U11..U12 for v2.1 (vendor decode engine + GPL-3.0 transition; vendor key Settings + encrypted storage). Module update sequence: single Gradle module — no cross-module sequencing. Updated `aidlc-state.md` to mark Workflow Planning [x], surface execution-plan summary, and advance Current Stage to "Workflow Planning — review gate pending; Next Stage: Application Design". Awaiting user approval before flipping into Application Design.
+**Context**: Workflow Planning Steps 2–8 complete; review gate pending.
+
+---
+
+## Workflow Planning — Approval Prompt
+**Timestamp**: 2026-05-23T00:00:00Z
+**AI Prompt**: "Ready to proceed with this plan?" (per `inception/workflow-planning.md` Step 9 / Step 11 audit format)
+**User Response**: (pending)
+**Status**: Awaiting approval
+**Context**: Workflow Planning Step 9 — explicit gate before Application Design.
+
+---
+
+## Session Resume — Workflow Planning Approval Gate
+**Timestamp**: 2026-05-23T00:00:00Z
+**User Input**: "using aidlc coontinue spoolpainter"
+**AI Response**: Loaded aidlc-state.md, execution-plan.md, audit tail, and inception/workflow-planning.md (Steps 9–11). Confirmed prior session ended at Workflow Planning Step 9 — review gate awaiting explicit user approval before entering Application Design. No new artifacts written; re-presenting the approval gate per Step 9.
+**Context**: AIDLC continuation — Workflow Planning approval gate re-surfaced.
+
+---
+
+## Workflow Planning — Release Strategy Clarified
+**Timestamp**: 2026-05-23T00:00:00Z
+**User Input**: "we will be using play store testing branch for sometime" → "V1 is already public, we will start 2 with test track"
+**AI Response**: User clarified release-track strategy: v1.x stays on production track unchanged; ALL v2 builds ship to a Play Store testing track (closed/internal/open — TBD) for an extended period before any promotion to production; promotion to production is an explicit post-AIDLC gate, not part of the workflow. Updated execution-plan.md: (1) added "Play Store track strategy" section under release strategy header — v1 production stays untouched, v2 testing-only, side-by-side dev via debug variant, versionCode policy bumps above current production with v2.0 starting at 100 to leave headroom for v1.x patches, rollback via halting promotion + reinstalling v1.7 from production. (2) U10 v2.0 release polish unit expanded with testing-track release prep tasks (versionCode 100 / versionName 2.0, signed release APK/AAB upload to chosen testing track, tester-facing release notes, explicit "no promotion to production in workflow"). (3) Success Criteria primary goal reframed as testing-track ship (not in-place production update). (4) Quality gates added "Testing-track upload" with production track explicitly untouched. No new questions; gate still pending on the original Step 9 approval.
+**Context**: Workflow Planning — release-strategy revision; gate still awaiting approval.
+
+---
+
+## Workflow Planning — Approved
+**Timestamp**: 2026-05-23T00:00:00Z
+**User Input**: "lets go next step"
+**AI Response**: Interpreted as approval of the Workflow Planning execution plan (post release-strategy revision adding Play Store testing-track strategy + versionCode 100 baseline). Flipped aidlc-state.md Workflow Planning gate to closed; Current Stage → Application Design.
+**Status**: Approved
+**Context**: Workflow Planning Step 10 — gate closed; advancing to Application Design.
+
+---
+
+## Application Design — Started
+**Timestamp**: 2026-05-23T00:00:00Z
+**User Input**: (n/a — workflow-driven)
+**AI Response**: Loaded `inception/application-design.md` rule (Steps 1-15). Beginning Step 1 (analyze context from requirements.md + stories.md + reverse-engineering artifacts) and Step 2-3 (draft application-design-plan.md scaffold with mandatory artifact checkboxes).
+**Context**: Application Design Step 1 — context analysis underway.
+
+---
+
+## Application Design — Plan Drafted (Steps 1–5)
+**Timestamp**: 2026-05-23T00:00:00Z
+**User Input**: (n/a — workflow-driven)
+**AI Response**: Wrote `aidlc-docs/inception/plans/application-design-plan.md`. Plan contains: (Step 1) context-analysis checklist over requirements / stories / reverse engineering / execution plan; (Step 3) mandatory artifact checkboxes (components.md, component-methods.md, services.md, component-dependency.md, application-design.md); (Step 4) 16 clarifying questions with [Answer]: tags spanning all five categories — Component Identification (4: UI tree, data/local split, primitives package, v2.1 plugin point), Component Methods (4: NfcRepository surface, SpoolmanRepository error shape, lot_nr helpers, MainViewModel split), Service Layer (4: use-cases, create-chain home, move-on-bind transaction, caching), Component Dependencies (4: connectivity origin, DataStore vs Room for OD-2, Hilt granularity, NFC↔Activity contract), Design Patterns (4: state model, event handling, error/banner pattern, threading). Embedded a Candidate Component Map preview. No artifacts under `application-design/` yet — generation gated on user answers.
+**Context**: Application Design Steps 1–5 complete; awaiting user answers.
+
+---
+
+## Application Design — Awaiting Answers
+**Timestamp**: 2026-05-23T00:00:00Z
+**AI Prompt**: "Please fill in the [Answer]: tags in `aidlc-docs/inception/plans/application-design-plan.md` and reply 'answered' / 'done' when complete. I will validate, ask any follow-ups, and only then generate the Application Design artifacts."
+**User Response**: (pending)
+**Status**: Awaiting answers
+**Context**: Application Design Step 6 — explicit gate before artifact generation.
+
+---
+
+## Application Design — Round 1 Validation
+**Timestamp**: 2026-05-24T00:00:00Z
+**User Input**: "done"
+**AI Response**: Read application-design-plan.md back. 13 of 16 answers crisp (Q-CI1=C, Q-CI2=B, Q-CI3=C, Q-CI4=B, Q-CM1=D, Q-CM2=B, Q-CM4=C, Q-S1=B, Q-S3=C, Q-S4=A, Q-CD2=A, Q-CD3=B, Q-CD4=A, Q-DP1=A, Q-DP2=C, Q-DP3=C, Q-DP4=A). Three need follow-up:
+- Q-CM3 marked SUPERSEDED in-place: question pre-dates the `CardUidEncoding` extraction in Q-CI3's note; user's response ("This will be in that encoder in primitives? wont it be?") confirms intent matches (modulo location: the encoder lives in `data/remote/spoolman/`, not `domain/primitives/`).
+- Q-S2 was blank. Added validation note + recommendation = A (chain inside `SpoolmanRepository.createSpoolForNewFilament(...)`, called from `CreateAndPairUseCase` per Q-S1=B). Awaits user pick.
+- Q-CD1 answered A but with extra constraints ("we do not want this to be too much for people who do not want to use spoolman, refresh can be in settings"). Added Q-CD1.1 follow-up with three interpretations: A (banner suppressed-or-passive, Settings owns Test-connection); B (banner+retry plus Settings Test-connection); C (no banner, snackbars only, Settings owns retry).
+**Context**: Application Design Step 8/9 — Round 1 ambiguity check; appended follow-ups to plan; awaiting Q-S2 + Q-CD1.1 answers before generating artifacts.
+
+---
+
+## Application Design — Round 1 Resolved + Artifacts Generated
+**Timestamp**: 2026-05-24T00:00:00Z
+**User Input**: "done" (Round 2 — answered Q-S2=A and Q-CD1.1=A)
+**AI Response**: All 16 questions now crisp with no contradictions. Generated 5 artifacts under `aidlc-docs/inception/application-design/`:
+- `components.md` — full component catalogue with public interface signatures (NfcRepository, SpoolmanRepository, SettingsRepository, MaterialBrandRepository, all 6 use-cases, all VMs, domain primitives, data sources, Hilt modules, v2.1 plugin point at interface level only).
+- `component-methods.md` — method signatures + I/O shapes + threading rules (Q-DP4=A: viewModelScope + IO inside repos only).
+- `services.md` — multi-step flow orchestration with Mermaid sequence diagrams for Read-and-Pair, Create-and-Pair (Spoolman-first sequencing), Move-on-bind, Two-tag, Vendor UID-only opt-in, Raw-write, Connectivity/Settings refresh.
+- `component-dependency.md` — full dependency matrix, communication patterns (Q-DP1/2/3 wiring), connectivity propagation diagram, per-layer Hilt modules (Q-CD3=B), lifecycle scopes, forbidden patterns.
+- `application-design.md` — consolidated overview with Decisions Index (all 16 answers traced), component diagram (Mermaid + rendered PNG/SVG), v2.0 functional surface mapped to components, Open Items propagated to Functional/NFR Design, validation summary.
+- `application-design-component-diagram.{mmd,png,svg}` — rendered diagram, validated via mermaid-cli (Step D.6).
+**Context**: Application Design Step 10 complete; ready for approval gate.
+
+---
+
+## Application Design — Approval Prompt
+**Timestamp**: 2026-05-24T00:00:00Z
+**AI Prompt**: "Application Design Complete. Review the artifacts at aidlc-docs/inception/application-design/. Ready to proceed to Units Generation?"
+**User Response**: (pending)
+**Status**: Awaiting approval
+**Context**: Application Design Step 11–12 — explicit gate before Units Generation.
+
+---
+
+## Application Design — Approved
+**Timestamp**: 2026-05-24T00:00:00Z
+**User Input**: "approved"
+**AI Response**: Closed Application Design approval gate. Marked stage [x] in aidlc-state.md; advanced Current Stage to "Units Generation - Part 1 (Planning)". Loaded `inception/units-generation.md` rule (Steps 1-19; two-part planning + generation flow).
+**Status**: Approved
+**Context**: Application Design Step 14 — gate closed; entering Units Generation Part 1.
+
+---
+
+## Units Generation Part 1 — Started
+**Timestamp**: 2026-05-24T00:00:00Z
+**User Input**: (n/a — workflow-driven)
+**AI Response**: Beginning Units Generation Part 1 (Planning). Will draft `aidlc-docs/inception/plans/unit-of-work-plan.md` with mandatory artifact checkboxes (unit-of-work.md, unit-of-work-dependency.md, unit-of-work-story-map.md) and embed clarifying questions across the categories that apply to a brownfield single-Gradle-module Android app: Story Grouping, Dependencies, Team Alignment, Technical Considerations, Business Domain. Skipping the greenfield code-organization question because the workspace is brownfield with an established `:app` package structure.
+**Context**: Units Generation Part 1 Steps 1-3 — plan scaffold + question generation underway.
+
+---
+
+## Units Generation Part 1 — Plan Drafted (Steps 1–5)
+**Timestamp**: 2026-05-24T00:00:00Z
+**User Input**: (n/a — workflow-driven)
+**AI Response**: Wrote `aidlc-docs/inception/plans/unit-of-work-plan.md`. Plan contains: (Step 2) mandatory artifact checkboxes (unit-of-work.md, unit-of-work-dependency.md, unit-of-work-story-map.md, dependency diagram Mermaid+PNG+SVG); (Step 3) candidate unit decomposition preview (10 v2.0 units U1..U10 + 2 v2.1 units U11..U12) imported from execution-plan.md and refined against application-design.md; (Step 4) 11 clarifying questions across applicable categories: Story Grouping (4: decomposition strategy, U6 size/split, U10 own-unit-vs-fold, v2.1 decomposition depth), Dependencies (3: inter-unit communication, construction order, shared helpers home), Technical Considerations (3: DoD strictness, per-unit debug-build cadence, test surface), Business Domain (1: domain alignment), Release Wave (1: v2.0/v2.1 gate). Skipped Team Alignment category (solo developer, n/a) and greenfield code-org category (brownfield with established package structure). Did not embed dependencies-on-greenfield-tooling questions either since reverse-engineering already locked the tech stack.
+**Context**: Units Generation Part 1 Steps 1-5 complete; awaiting user answers.
+
+---
+
+## Units Generation Part 1 — Awaiting Answers
+**Timestamp**: 2026-05-24T00:00:00Z
+**AI Prompt**: "Please fill in the [Answer]: tags in `aidlc-docs/inception/plans/unit-of-work-plan.md` and reply 'answered' / 'done' when complete. I will validate, ask any follow-ups, and only then run Part 2 (generate the unit artifacts)."
+**User Response**: (pending)
+**Status**: Awaiting answers
+**Context**: Units Generation Part 1 Step 5 — explicit gate before Part 2 generation.
+
+---
+
+## Units Generation Part 1 — Session Resume + Answers Received
+**Timestamp**: 2026-05-24T00:00:00Z
+**User Input**: "AIDL project spoolpainter v2 continue"
+**AI Response**: Resumed AIDLC session for SpoolPainter v2. Loaded `aidlc-state.md`, `unit-of-work-plan.md`, and `inception/units-generation.md` rule details. Found all 12 [Answer]: tags filled in by user (Q-SG1=A, Q-SG2=B, Q-SG3=A, Q-SG4=B, Q-D1=C, Q-D2=A, Q-D3=A, Q-T1=B, Q-T2="B, i will be building app using android studio to test at the spot", Q-T3=B, Q-BD1=A, Q-RW1=C).
+**Context**: Units Generation Part 1 — Step 6 (Collect Answers) reached; advancing to Step 7 (Analyze Answers).
+
+---
+
+## Units Generation Part 1 — Answer Validation (Step 7) + Follow-ups (Step 8)
+**Timestamp**: 2026-05-24T00:00:00Z
+**User Input**: (n/a — workflow-driven)
+**AI Response**: Analyzed all 12 answers per Step 7. Found one **contradiction**: Q-SG4=B defers full v2.1 decomposition until **after v2.0 ships**, but Q-RW1=C (no gate) allows v2.1 work to begin **before v2.0 ships** — these cannot both hold. Found one item needing **confirmation**: Q-T2="B, i will be building app using android studio to test at the spot" combines a milestone-based answer (B) with a free-text comment that could read as either "ad-hoc dev runs are not gates" or "actually I install on every unit (closer to A)". Appended Q-FU1 (resolve Q-SG4↔Q-RW1 contradiction) and Q-FU2 (confirm Q-T2 reading) to the plan with [Answer]: tags. Other 10 answers accepted as-is and tabulated in the validation pass section. Awaiting user input on Q-FU1 and Q-FU2 before surfacing the Part-1 approval prompt.
+**Context**: Units Generation Part 1 Step 8 — follow-up gate awaiting user answers.
+
+---
+
+## Units Generation Part 1 — Follow-up Answers Received
+**Timestamp**: 2026-05-24T00:00:00Z
+**User Input**: "I will answer here,i dont really care about v2.1 yet, so let it park in documentation for now. Yeah app on phone will be dev work and i am good with that, no need to build etxc"
+**AI Response**: Mapped user response to follow-up answers: Q-FU1=C (hard gate — v2.1 parked in docs only, U11/U12 stay lightweight stubs, no v2.1 construction starts until v2.0 ships to testing track) — this resolves the Q-SG4=B vs Q-RW1=C contradiction by hardening Q-RW1 to A. Q-FU2=A (B as written — milestone install gates at U1/U5/U6/U10; ad-hoc AS Run-on-device during dev is not a workflow gate). Marked plan steps A.1-A.3, B.1-B.3, C.1-C.4 as [x]. Updated final answer table in plan. Surfacing Part-1 approval prompt next.
+**Context**: Units Generation Part 1 Step 8 complete — all ambiguities resolved.
+
+---
+
+## Units Generation Part 1 — Approval Prompt (Step 9)
+**Timestamp**: 2026-05-24T00:00:00Z
+**AI Prompt**: "Unit of work plan complete. Review the plan in `aidlc-docs/inception/plans/unit-of-work-plan.md`. Ready to proceed to generation?"
+**User Response**: (pending)
+**Status**: Awaiting Part-1 approval
+**Context**: Units Generation Part 1 Step 9 — explicit gate before Part 2 generation (unit-of-work.md, unit-of-work-dependency.md, unit-of-work-story-map.md, dependency diagram).
+
+---
+
+## Units Generation Part 1 — Approval Received + Pause Requested
+**Timestamp**: 2026-05-24T00:00:00Z
+**User Input**: "approved, no generation for now, just commit and push, thn pause aidlc"
+**AI Response**: Logged Part-1 approval (rule-Step 10). Marked Units Generation Part 1 (Planning) complete in `aidlc-state.md`; Part 2 (Generation) **deferred at user request** — not started in this session. Committing AIDLC artifacts (state, audit, plans, application-design directory) and pushing to origin/v2. AIDLC session paused; resume by running Part 2 (rule-Steps 12–15) to generate `unit-of-work.md`, `unit-of-work-dependency.md`, `unit-of-work-story-map.md`, and the dependency diagram.
+**Context**: Units Generation Part 1 Step 10–11 — approval logged; Part 2 paused.
+
+---
