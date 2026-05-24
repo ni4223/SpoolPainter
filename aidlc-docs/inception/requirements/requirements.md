@@ -92,6 +92,33 @@ adoption to v2.1.)
 
 ### FR-2 `lot_nr` ↔ UID mapping format
 
+> **Important — `lot_nr` is a temporary home for the UID mapping.**
+> Spoolman's data model already supports per-spool **`extra`** key/value
+> fields (EAV-backed; `spoolman/database/models.py` defines a `SpoolField`
+> table with composite PK `(spool_id, key)` and a `value: Text` column),
+> and the public API accepts `extra` on create/update payloads. The
+> reason v2 stores `card_uid:<hex>` inside `lot_nr` rather than
+> `extra.card_uid` is **not** that `extra` is unsuitable — it is that
+> Spoolman's `GET /api/v1/spool` does **not currently support
+> server-side filtering by `extra` keys**. The find handler
+> (`spoolman/database/spool.py`) only joins on filament/vendor/location
+> /lot_nr today.
+>
+> Upstream activity tracks both halves of this gap:
+> - Issue [#716](https://github.com/Donkie/Spoolman/issues/716)
+>   "Search spools in API and more by extra fields and/or add field
+>   for UID" — directly cites NFC tag UID as the motivating use case.
+> - Issue [#427](https://github.com/Donkie/Spoolman/issues/427)
+>   "selective search for extra fields".
+> - PR [#773](https://github.com/Donkie/Spoolman/pull/773) "Add
+>   filtering and sorting for custom fields" — open implementation.
+>
+> Once a server-side filter for `extra` (or a dedicated UID field)
+> ships upstream, v2's plan is to migrate to `extra.card_uid` (or the
+> new field) — see FR-2.4 below. Until then, `lot_nr` is the only
+> field on which Spoolman can server-side substring-search, which is
+> why FR-3.2's lookup uses it.
+
 - **FR-2.1** (v2.0)  The app SHALL store the UID inside Spoolman's spool
   `lot_nr` field using the convention:
   - one entry per UID, prefixed `card_uid:` followed by the lowercase-hex
@@ -101,8 +128,25 @@ adoption to v2.1.)
 - **FR-2.2** (v2.0)  The app SHALL preserve any non-`card_uid:` content
   already in `lot_nr` (treat unrecognised entries as opaque user data, do
   not delete).
-- **FR-2.3** (v2.0)  The chosen field is **`lot_nr`** for v2. Migration
-  to a dedicated Spoolman field (if added later) is out of scope.
+- **FR-2.3** (v2.0)  The chosen field is **`lot_nr`** for v2 because it
+  is the only spool field Spoolman can server-side filter today. This
+  is a **temporary** placement — see FR-2.4 for the migration plan.
+- **FR-2.4** (deferred — post-v2.1)  When Spoolman supports server-side
+  filtering of `extra` keys (PR #773) **or** ships a dedicated UID
+  field (issue #716), SpoolPainter SHALL migrate the storage of
+  `card_uid` away from `lot_nr` into the appropriate field. The
+  migration SHALL:
+  - Use a separate Spoolman version-detection step (e.g., probe the
+    new query parameter against a benign value) so old Spoolman
+    instances continue to work with `lot_nr`-based behaviour.
+  - For each spool the app sees with `card_uid:` entries in `lot_nr`,
+    move those entries into the new field and remove them from
+    `lot_nr` (preserving any non-`card_uid:` content per FR-2.2).
+  - Be staged carefully — a v2.x point release adds dual-write +
+    dual-read; a later release drops the `lot_nr` writes.
+  - Detailed design is **out of scope for v2.0 / v2.1** and is
+    deferred to a subsequent release once the upstream change has
+    landed.
 
 ### FR-3 Read-and-Pair flow
 
@@ -133,41 +177,132 @@ When the user taps **Read Spool** and presents a tag:
   vendor parser (Bambu / Creality / Anycubic / Elegoo / Qidi / Snapmaker
   / TigerTag), the app SHALL pre-fill the form from the decoded fields
   in addition to the UID.
+- **FR-3.6** (v2.0 — dropdown-driven prefill)  Whenever the user
+  selects a Spoolman spool from the dropdown — independent of how
+  they got there (blank tag scanned, OpenSpool tag scanned, vendor
+  tag scanned, or no tag scanned at all) — the app SHALL pre-fill
+  the form (material, brand, color_hex, variant, min/max extruder
+  and bed temps) from that spool's filament metadata. Subsequent
+  edits remain possible. Re-selecting a different spool overwrites
+  the form again. Clearing the selection empties the form back to
+  the blank state. This is the single canonical "selection ⇒
+  prefill" rule; FR-3.3 (UID-match auto-select) is a special case
+  that triggers the same behaviour.
 
 ### FR-4 Write/Create-and-Pair flow
 
 When the user taps **Create Spool** (or, in v1-compatible terms, "Write
-to NFC") with a blank or OpenSpool-format tag:
+to NFC"), the flow branches on the tag's NDEF state:
+
+- **blank or OpenSpool-format tag** → write OpenSpool JSON, then pair
+  in Spoolman (the v1-equivalent path);
+- **vendor/foreign tag** (non-blank, non-OpenSpool — e.g., Bambu /
+  Creality / Anycubic pre-encoded tags) → **skip the NDEF write
+  entirely** but still pair the tag's UID into Spoolman (FR-4.9). This
+  is what allows v2.0 to give branded-spool users the same Spoolman
+  spool-usage tracking as OpenSpool users, without ever touching the
+  vendor tag's payload.
 
 - **FR-4.1** (v2.0)  Pre-conditions:
   - the form has a selected Spoolman spool (from the dropdown), **or**
   - the form has user-entered material / brand / color / variant /
     temps.
 - **FR-4.2** (v2.0)  The app SHALL extract the tag's UID.
-- **FR-4.3** (v2.0)  The app SHALL write the **OpenSpool JSON payload**
-  to the tag (NDEF `application/json` MIME record) with **all v1 fields**
-  including `spool_id`. When no Spoolman spool is selected (user-entered
-  details path), `spool_id` is omitted, the rest is written.
-- **FR-4.4** (v2.0)  After writing, the app SHALL **read the tag back
-  and verify** byte-equality of the NDEF payload. On mismatch, surface
-  a clear error and abort the Spoolman commit (no partial state).
-- **FR-4.5** (v2.0)  The app SHALL pair the UID with a Spoolman spool:
-  - **If a Spoolman spool was selected** (existing-spool path): app
-    SHALL PATCH that spool's `lot_nr`, appending `card_uid:<uid>` if not
-    already present, and SHALL ensure no other spool keeps the same
-    UID (see FR-5 — "move on bind").
-  - **If user entered details** (new-spool path): app SHALL create the
-    necessary Spoolman entities (vendor / filament / spool — see FR-7),
-    setting the new spool's `lot_nr` to `card_uid:<uid>`.
-- **FR-4.6** (v2.0)  v2 SHALL NEVER overwrite the NDEF payload of a tag
-  whose payload is **not** OpenSpool. (Defensive: protect branded
-  pre-printed tags. Q5 = A — strict.)
-- **FR-4.7** (v2.0 — "raw write" mode, Q7 = C)  The app SHALL provide a
-  side mode that lets the user write an OpenSpool payload to a tag
-  without any Spoolman interaction (preserves a v1-style untethered
-  flow for users without Spoolman). This mode SHALL skip the lot_nr
-  PATCH/POST and SHALL still respect FR-4.6 (no overwrite of vendor
-  tags).
+- **FR-4.3** (v2.0 — Spoolman-first sequencing)  Before any NDEF
+  write, the app SHALL resolve the **Spoolman spool id** to put on
+  the tag:
+  - **Existing-spool path** (a spool was selected from the
+    dropdown): the spool id is the selected spool's id; no Spoolman
+    write is performed yet.
+  - **New-spool path** (user-entered details, no spool selected):
+    the app SHALL run the FR-7 create chain (resolve-or-create
+    vendor / filament; POST a new spool with
+    `lot_nr=card_uid:<uid>`) **first**, and use the resulting new
+    spool's id. This means the Spoolman record exists *before* the
+    NDEF write — and because FR-7.3 commits `lot_nr` to it, the
+    UID-↔spool mapping is durable even if the NDEF write
+    subsequently fails.
+  - **Move-on-bind ordering**: FR-5 move-on-bind SHALL run *before*
+    the new-spool POST in FR-4.3, so that a tag whose UID is
+    already paired to an existing spool routes to the
+    existing-spool path (PATCH the matched spool's `lot_nr`)
+    instead of creating a duplicate.
+- **FR-4.4** (v2.0)  When the tag is **blank or OpenSpool**, the app
+  SHALL write the **OpenSpool JSON payload** to the tag (NDEF
+  `application/json` MIME record) with **all v1 fields including
+  `spool_id`** (the id resolved in FR-4.3). The on-payload `lot_nr`
+  field remains reserved/unused by v2 (see FR-14.1). When the tag
+  is vendor/foreign (FR-4.9), the NDEF write step does NOT execute.
+- **FR-4.5** (v2.0)  When FR-4.4 executed, the app SHALL **read the
+  tag back and verify** byte-equality of the NDEF payload. On
+  mismatch, surface a clear error. The Spoolman side may already
+  have a spool created from FR-4.3 (new-spool path); that spool
+  remains and is recoverable on a retry — the user simply taps
+  again, and the existing-spool path will then take over (UID
+  lookup finds the just-created spool by its `lot_nr`, and the
+  PATCH path runs idempotently). For vendor/foreign tags (FR-4.9),
+  this step does NOT apply — there is no NDEF write to verify.
+- **FR-4.6** (v2.0)  After FR-4.4 + FR-4.5 succeed (or for
+  vendor/foreign tags, immediately), the app SHALL pair the UID
+  with the Spoolman spool:
+  - **Existing-spool path**: app SHALL PATCH that spool's `lot_nr`,
+    appending `card_uid:<uid>` if not already present, and SHALL
+    ensure no other spool keeps the same UID (see FR-5 — "move on
+    bind").
+  - **New-spool path**: pairing was already committed by FR-4.3
+    (the POST set `lot_nr=card_uid:<uid>`), so this step is a
+    no-op for the new-spool path.
+  - This step runs whether or not FR-4.4 executed (i.e., it runs
+    for blank, OpenSpool, **and** vendor/foreign tags).
+- **FR-4.7** (v2.0 — vendor-tag NDEF protection)  v2 SHALL NEVER
+  overwrite the NDEF payload of a tag whose payload is **not**
+  OpenSpool. (Defensive: protect branded pre-printed tags. Q5 = A —
+  strict.) This rule restricts the **NDEF write** only; the
+  Spoolman pairing chain (FR-4.3 / FR-4.6 / FR-7) MAY still proceed
+  against the same tag's UID — see FR-4.9.
+- **FR-4.8** (v2.0 — "raw write" mode, Q7 = C)  The app SHALL
+  provide a side mode that lets the user write an OpenSpool payload
+  to a tag without any Spoolman interaction (preserves a v1-style
+  untethered flow for users without Spoolman). This mode SHALL skip
+  the FR-4.3 Spoolman-first step and the FR-4.6 PATCH/POST, and
+  SHALL still respect FR-4.7 (no overwrite of vendor tags). In raw
+  mode the OpenSpool payload SHALL omit `spool_id`.
+- **FR-4.9** (v2.0 — UID-only pair for vendor/foreign tags)  When the
+  tag is classified as **non-blank, non-OpenSpool** (FR-4.7
+  classification), the app SHALL still allow the user to pair its UID
+  into Spoolman, **subject to explicit user opt-in**:
+  - **Read time**: the user SHALL see the **same blank-form path as
+    for unparseable tags** (FR-3.4 / FR-11.2): UID is captured, form
+    is empty, user can either pick an existing Spoolman spool from
+    the dropdown or type details for a new spool. No prompt is shown
+    at this point — Read is non-destructive.
+  - **Save / Write opt-in prompt**: when the user presses
+    **Save / Write** with a vendor/foreign-classified tag staged, the
+    app SHALL present a **modal bottom sheet** (FR-13.2 pattern) with
+    copy on the order of:
+    > "This tag is encoded and we can't read its contents — but we
+    > can still map its UID to a Spoolman spool. Would you like to
+    > pair the UID only?"
+    > Actions: **Pair UID only** / **Cancel**
+  - On **Cancel**: no NDEF write, no Spoolman call; user returns to
+    the main screen with their form state intact.
+  - On **Pair UID only**: the app SHALL execute the **Spoolman
+    pairing chain** (FR-4.6: PATCH for existing spool, FR-7 create
+    chain for user-entered details — note FR-4.3's Spoolman-first
+    sequencing applies here too) using the tag's UID — and SHALL
+    **skip the NDEF write step (FR-4.4) and verify (FR-4.5)**
+    entirely.
+  - **Move-on-bind (FR-5)** still applies — a vendor tag's UID
+    already paired to another spool prompts the same re-pair
+    confirmation as any other tag (after the opt-in is confirmed).
+  - The UI SHALL surface throughout this flow that the tag is
+    unreadable / pre-encoded and that no NDEF data will be written
+    (so the user knows the operation is a UID-only pair, not a
+    content write).
+  - This path is the v2.0 mechanism for **Branded-Tag Reader (P3)**
+    spool-usage tracking; v2.1 adds vendor decoding (FR-1.4 /
+    FR-3.5) but the write rule (no NDEF overwrite) and the opt-in
+    prompt do not change.
 
 ### FR-5 Move-on-bind (re-pair / tag reuse)
 
@@ -197,8 +332,8 @@ to NFC") with a blank or OpenSpool-format tag:
 - **FR-6.2** (v2.0)  When pairing the second tag, the app SHALL:
   - **Write the same OpenSpool NDEF payload** to the second tag as was
     written to the first (identical bytes), subject to the same
-    write-then-verify rule (FR-4.4) and the same vendor-tag protection
-    (FR-4.6 — never overwrite a non-OpenSpool tag).
+    write-then-verify rule (FR-4.5) and the same vendor-tag protection
+    (FR-4.7 — never overwrite a non-OpenSpool tag).
   - **Append** `card_uid:<uid2>` to the **same** Spoolman spool's
     `lot_nr` (PATCH).
   - End state: both physical tags carry identical OpenSpool JSON, and
@@ -289,7 +424,7 @@ spool:
   - If Spoolman is **not configured** or **unreachable**, the app
     SHALL still:
     - read tags (UID + decoded payload),
-    - allow the user to enter "raw write" mode (FR-4.7) to write an
+    - allow the user to enter "raw write" mode (FR-4.8) to write an
       OpenSpool payload to a blank/OpenSpool tag without any Spoolman
       side effects;
   - and SHALL disable:
@@ -339,13 +474,19 @@ spool:
 - **FR-14.1** (v2.0)  When writing the NDEF payload, the app SHALL emit
   the same OpenSpool JSON shape as v1 (Clarification 4 = A): `protocol`,
   `version`, `type`, `color_hex`, `brand`, `min_temp`, `max_temp`,
-  `bed_min_temp`, `bed_max_temp`, `subtype`, and `spool_id` when a
-  Spoolman spool is selected. The on-payload `lot_nr` field is
-  reserved/unused by v2 (UID lives on the Spoolman side; the tag's
-  hardware UID is what matters).
+  `bed_min_temp`, `bed_max_temp`, `subtype`, and `spool_id`.
+  `spool_id` SHALL be populated for **every** non-raw write — for
+  the existing-spool path it is the selected spool's id; for the
+  new-spool path it is the id assigned by Spoolman after the FR-7
+  POST runs first per FR-4.3. The **only** path where `spool_id` is
+  omitted is FR-4.8 raw-write mode (no Spoolman interaction at
+  all). The on-payload `lot_nr` field is reserved/unused by v2
+  (UID lives on the Spoolman side; the tag's hardware UID is what
+  matters).
 - **FR-14.2** (v2.0)  The app SHALL **never write** the NDEF payload of
-  a non-blank, non-OpenSpool tag (FR-4.6 — protects branded vendor
-  tags).
+  a non-blank, non-OpenSpool tag (FR-4.7 — protects branded vendor
+  tags). The Spoolman side of the pairing chain (FR-4.6 / FR-7) is
+  unaffected by this rule — see FR-4.9 (UID-only pair).
 
 ### FR-15 Naming
 
@@ -481,7 +622,7 @@ the extension being off, because keys are user-supplied secrets.
 - Multi-server / multi-instance Spoolman support.
 - HTTPS / Spoolman authentication (basic / bearer / API key).
 - Writing **anything** to a non-blank, non-OpenSpool tag — branded
-  vendor tags are read-only (FR-4.6).
+  vendor tags are read-only (FR-4.7).
 - Writing only-UID / minimal markers to OpenSpool tags (we keep writing
   full OpenSpool payload).
 - Migrating v1 `SharedPreferences`.
@@ -490,6 +631,9 @@ the extension being off, because keys are user-supplied secrets.
 - Auto-update channel.
 - Persisting interrupted-second-tag state across launches.
 - Remote config / over-the-air vendor-format updates.
+- **Migrating UID storage off `lot_nr`** into Spoolman's `extra`
+  fields or a dedicated UID field (FR-2.4) — deferred until the
+  upstream Spoolman change lands (PR #773 / issue #716).
 
 ---
 
@@ -501,6 +645,9 @@ the extension being off, because keys are user-supplied secrets.
 - **OD-2**  Whether `Room` is actually needed (NFR-3.2). If no
   list-shape local store is required, drop the dependency at
   code-generation time.
+- **OD-3** (post-v2.1)  Watch upstream Spoolman PR #773 + issue #716;
+  when either lands, design and ship FR-2.4 (UID storage migration
+  off `lot_nr`).
 
 ---
 
@@ -543,9 +690,13 @@ the extension being off, because keys are user-supplied secrets.
 | **Q3A round-2 (C → B)** | **Defer multi-vendor to v2.1; v2.1 adopts GPL-3.0** | **§3, NFR-11** |
 | **Q3B round-2 (A)** | **Bake vendor data into app** | **NFR-12** |
 | **Q4 round-2 (B)** | **Per-vendor key list in Settings, encrypted at rest** | **FR-9.4, NFR-3.4** |
-| **Q5 round-2 (A)** | **Never overwrite branded vendor tags** | **FR-4.6, FR-14.2** |
+| **Q5 round-2 (A)** | **Never overwrite branded vendor tags** | **FR-4.7, FR-14.2** |
+| **User-Stories-stage P3 gap** | **Vendor tags get UID-only pair (no NDEF write) — branded spools tracked in Spoolman** | **FR-4.9** |
+| **User-Stories-stage spool_id-on-tag req** | **Always write spool_id (incl. blank-tag → new-spool path); Spoolman create runs first to provide the id** | **FR-4.3, FR-4.4, FR-7.3** |
+| **User-Stories-stage dropdown-prefill req** | **Selecting a Spoolman spool from the dropdown prefills the form, regardless of how the user got there** | **FR-3.6** |
+| **User-Stories-stage temp-`lot_nr` framing + Spoolman extras research** (PR #773, issues #716 / #427 — `extra` fields exist on the model + API today; server-side filtering is in flight, not landed) | **`lot_nr` storage is temporary; migration plan deferred until upstream filtering ships** | **FR-2 preamble, FR-2.3, FR-2.4 (NEW), §7 out-of-scope, §8 OD-3** |
 | **Q6 round-2 (A)** | **Re-pair moves only the matched UID, not the second tag** | **FR-5.2** |
-| **Q7 round-2 (C)** | **Spoolman optional + raw-write side mode** | **FR-4.7, FR-10.1** |
+| **Q7 round-2 (C)** | **Spoolman optional + raw-write side mode** | **FR-4.8, FR-10.1** |
 | **Q8 round-2 (B)** | **Bottom-sheet steps for multi-step flows** | **FR-13.2** |
 | **Q9 round-2 (A)** | **Keep "SpoolPainter" name** | **FR-15** |
 | **Q10 round-2 (B)** | **Split into v2.0 + v2.1** | **§3, NFR-9.1** |
