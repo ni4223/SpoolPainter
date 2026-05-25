@@ -5,6 +5,7 @@ import androidx.datastore.core.DataStoreFactory
 import com.google.gson.Gson
 import com.spoolpainter.app.data.local.Settings
 import com.spoolpainter.app.data.local.SettingsRepository
+import com.spoolpainter.app.data.local.SettingsRepositoryImpl
 import com.spoolpainter.app.data.local.SettingsSerializer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -30,7 +31,7 @@ class SpoolmanRepositoryHarness(
         serializer = SettingsSerializer,
         scope = scope,
     ) { dataStoreFile }
-    val settingsRepository: SettingsRepository = SettingsRepository(store, scope)
+    val settingsRepository: SettingsRepository = SettingsRepositoryImpl(store, scope)
 
     val repository: SpoolmanRepository
 

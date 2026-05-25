@@ -1,5 +1,8 @@
 package com.spoolpainter.app.di
 
+import com.spoolpainter.app.data.local.SettingsRepository
+import com.spoolpainter.app.data.local.SettingsRepositoryImpl
+import dagger.Binds
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -24,4 +27,13 @@ object RepositoryModule {
     @Singleton
     @IoDispatcher
     fun provideIoDispatcher(): CoroutineDispatcher = Dispatchers.IO
+}
+
+@Module
+@InstallIn(SingletonComponent::class)
+abstract class RepositoryBindingsModule {
+
+    @Binds
+    @Singleton
+    abstract fun bindSettingsRepository(impl: SettingsRepositoryImpl): SettingsRepository
 }

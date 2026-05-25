@@ -51,8 +51,8 @@
 
 | ID | Rule | Source |
 |---|---|---|
-| BR-U4-CL-1 | `consumeLastSeen(Read)` — if `state == Idle` AND `lastSeenTag != null` AND `(clock.now - capturedAtEpochMs) ≤ TTL` → emit `Success(uid, classification)` based on the buffered tap; clear `lastSeenTag` (one-shot); return the result. | services.md §2 (tag-first flow) |
-| BR-U4-CL-2 | `consumeLastSeen(Read)` — if `state != Idle` → return `null` (let the armed flow handle the next tap). | Q-U4-3=A |
+| BR-U4-CL-1 | `consumeLastSeen(Read)` — if `state ∈ {Idle, Success, Error}` AND `lastSeenTag != null` AND `(clock.now - capturedAtEpochMs) ≤ TTL` → emit `Success(uid, classification)` based on the buffered tap; clear `lastSeenTag` (one-shot); return the result. (Revised 2026-05-25 — terminal states accept consumption; original rule rejected anything non-`Idle` and broke the tag-first flow after a prior successful read.) | services.md §2 (tag-first flow) |
+| BR-U4-CL-2 | `consumeLastSeen(Read)` — if `state ∈ {Reading, Writing, Verifying}` → return `null` (an armed handler is in flight; consuming the buffer would race). | Q-U4-3=A; revised 2026-05-25 |
 | BR-U4-CL-3 | `consumeLastSeen(Read)` — if buffer expired (TTL exceeded) → return `null`; do NOT clear the buffer (let the next tap overwrite). | §2.5.2 |
 | BR-U4-CL-4 | `consumeLastSeen(Write(...))` → return `null` always. | Q-U4-3=A |
 | BR-U4-CL-5 | `consumeLastSeen(Verify(...))` → return `null` always. | Q-U4-3=A |

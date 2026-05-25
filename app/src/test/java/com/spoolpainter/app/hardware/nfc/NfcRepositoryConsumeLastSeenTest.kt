@@ -59,7 +59,7 @@ class NfcRepositoryConsumeLastSeenTest {
     }
 
     @Test
-    fun `consume Read returns null when state is not Idle`() = runTest {
+    fun `consume Read returns null when state is Reading (already armed)`() = runTest {
         val wrapper = FakeNfcAdapterWrapper()
         wrapper.simulateRead(sampleUid(), null)
         val repo = newRepository(wrapper = wrapper)
@@ -69,6 +69,57 @@ class NfcRepositoryConsumeLastSeenTest {
 
         val result = repo.consumeLastSeen(NfcIntent.Read)
         assertNull(result)
+    }
+
+    @Test
+    fun `consume Read succeeds from terminal Success state (post-prior-read)`() = runTest {
+        // BR-U4-CL-* loosened 2026-05-25 — after a successful read, the next consumeLastSeen
+        // should accept a fresh buffered tap (terminal Success means "nothing in flight").
+        val wrapper = FakeNfcAdapterWrapper()
+        val clock = MutableClock(1_000L)
+        wrapper.simulateRead(sampleUid(), null)
+        val repo = newRepository(wrapper = wrapper, clock = clock)
+
+        // First read: prime the buffer, consume it, leaving state = Success.
+        repo.handleTag(makeTag())
+        clock.nowMs = 1_500L
+        val first = repo.consumeLastSeen(NfcIntent.Read) as NfcResult.Success
+        assertNotNull(first)
+        assertTrue(repo.state.value is NfcResult.Success)
+
+        // Second tap arrives, buffer repopulates.
+        clock.nowMs = 2_000L
+        val second = CardUid("9988")
+        wrapper.simulateRead(second, null)
+        repo.handleTag(makeTag())
+
+        // Even though state is still Success from the previous read, consume should succeed.
+        clock.nowMs = 2_500L
+        val result = repo.consumeLastSeen(NfcIntent.Read) as NfcResult.Success
+        assertEquals(second, result.uid)
+    }
+
+    @Test
+    fun `consume Read succeeds from terminal Error state`() = runTest {
+        // Second half of the loosened gate — Error is also "terminal, ready for next intent".
+        val wrapper = FakeNfcAdapterWrapper()
+        val clock = MutableClock(1_000L)
+        val repo = newRepository(wrapper = wrapper, clock = clock)
+        // Force state to Error via a write attempt with the wrapper unavailable.
+        wrapper.available = false
+        repo.arm(NfcIntent.Read)
+        assertTrue(repo.state.value is NfcResult.Error)
+
+        // Now a tag tap arrives.
+        wrapper.available = true
+        wrapper.simulateRead(sampleUid(), null)
+        clock.nowMs = 1_500L
+        repo.handleTag(makeTag())
+
+        clock.nowMs = 2_000L
+        val result = repo.consumeLastSeen(NfcIntent.Read)
+        assertNotNull(result)
+        assertTrue(result is NfcResult.Success)
     }
 
     @Test

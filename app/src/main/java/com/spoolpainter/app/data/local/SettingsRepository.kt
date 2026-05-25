@@ -9,26 +9,34 @@ import kotlinx.coroutines.flow.stateIn
 import javax.inject.Inject
 import javax.inject.Singleton
 
+interface SettingsRepository {
+    val settings: StateFlow<Settings>
+    suspend fun setUrl(url: String)
+    suspend fun setSortOrder(order: SortOrder)
+    suspend fun setThemeOverride(theme: ThemeOverride)
+}
+
 @Singleton
-class SettingsRepository @Inject constructor(
+class SettingsRepositoryImpl @Inject constructor(
     private val store: DataStore<Settings>,
     @AppScope externalScope: CoroutineScope,
-) {
-    val settings: StateFlow<Settings> = store.data.stateIn(
+) : SettingsRepository {
+
+    override val settings: StateFlow<Settings> = store.data.stateIn(
         scope = externalScope,
         started = SharingStarted.Eagerly,
         initialValue = Settings(),
     )
 
-    suspend fun setUrl(url: String) {
+    override suspend fun setUrl(url: String) {
         store.updateData { it.copy(url = url) }
     }
 
-    suspend fun setSortOrder(order: SortOrder) {
+    override suspend fun setSortOrder(order: SortOrder) {
         store.updateData { it.copy(sortOrder = order) }
     }
 
-    suspend fun setThemeOverride(theme: ThemeOverride) {
+    override suspend fun setThemeOverride(theme: ThemeOverride) {
         store.updateData { it.copy(themeOverride = theme) }
     }
 }

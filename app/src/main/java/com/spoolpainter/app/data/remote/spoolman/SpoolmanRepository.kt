@@ -27,7 +27,7 @@ import javax.inject.Singleton
 import kotlin.concurrent.Volatile
 
 @Singleton
-class SpoolmanRepository @Inject constructor(
+open class SpoolmanRepository @Inject constructor(
     private val settings: SettingsRepository,
     private val apiFactory: SpoolmanApiFactory,
     @AppScope private val scope: CoroutineScope,
@@ -35,16 +35,16 @@ class SpoolmanRepository @Inject constructor(
 ) {
 
     private val _connectivity = MutableStateFlow<ConnectivityState>(ConnectivityState.Unknown)
-    val connectivity: StateFlow<ConnectivityState> = _connectivity.asStateFlow()
+    open val connectivity: StateFlow<ConnectivityState> = _connectivity.asStateFlow()
 
     private val _vendors = MutableStateFlow<List<SpoolmanVendor>>(emptyList())
-    val vendors: StateFlow<List<SpoolmanVendor>> = _vendors.asStateFlow()
+    open val vendors: StateFlow<List<SpoolmanVendor>> = _vendors.asStateFlow()
 
     private val _filaments = MutableStateFlow<List<SpoolmanFilament>>(emptyList())
-    val filaments: StateFlow<List<SpoolmanFilament>> = _filaments.asStateFlow()
+    open val filaments: StateFlow<List<SpoolmanFilament>> = _filaments.asStateFlow()
 
     private val _spools = MutableStateFlow<List<SpoolmanSpool>>(emptyList())
-    val spools: StateFlow<List<SpoolmanSpool>> = _spools.asStateFlow()
+    open val spools: StateFlow<List<SpoolmanSpool>> = _spools.asStateFlow()
 
     @Volatile
     private var cachedApi: SpoolmanApi? = null
@@ -54,7 +54,11 @@ class SpoolmanRepository @Inject constructor(
             .map { it.url }
             .distinctUntilChanged()
             .onEach { url ->
-                cachedApi = if (url.isBlank()) null else apiFactory.create(url)
+                cachedApi = if (url.isBlank()) {
+                    null
+                } else {
+                    runCatching { apiFactory.create(url) }.getOrNull()
+                }
                 _vendors.value = emptyList()
                 _filaments.value = emptyList()
                 _spools.value = emptyList()
@@ -68,12 +72,17 @@ class SpoolmanRepository @Inject constructor(
         return performHttp("probe") { api.getInfo() }.map { }
     }
 
-    suspend fun findSpoolsByCardUid(uid: CardUid): SpoolmanOutcome<List<SpoolmanSpool>> {
+    open suspend fun findSpoolsByCardUid(uid: CardUid): SpoolmanOutcome<List<SpoolmanSpool>> {
         if (uid.hex.isEmpty()) return SpoolmanOutcome.Success(emptyList())
         val api = cachedApi ?: return urlNotConfigured()
         return performHttp("findSpoolsByCardUid") {
             api.findSpoolsByLotNr("${CardUidEncoding.PREFIX}${uid.hex}")
         }
+    }
+
+    open suspend fun getSpool(spoolId: Int): SpoolmanOutcome<SpoolmanSpool> {
+        val api = cachedApi ?: return urlNotConfigured()
+        return performHttp("getSpool") { api.getSpool(spoolId) }
     }
 
     suspend fun appendCardUidToSpool(spoolId: Int, uid: CardUid): SpoolmanOutcome<SpoolmanSpool> {

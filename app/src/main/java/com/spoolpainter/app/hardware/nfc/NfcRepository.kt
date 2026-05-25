@@ -43,10 +43,10 @@ open class NfcRepository internal constructor(
     ) : this(wrapper, scope, ioDispatcher, clock, TTL_MS_DEFAULT)
 
     private val _state = MutableStateFlow<NfcResult>(NfcResult.Idle)
-    val state: StateFlow<NfcResult> = _state.asStateFlow()
+    open val state: StateFlow<NfcResult> = _state.asStateFlow()
 
     private val _lastSeenTag = MutableStateFlow<TagBuffer?>(null)
-    val lastSeenTag: StateFlow<TagBuffer?> = _lastSeenTag.asStateFlow()
+    open val lastSeenTag: StateFlow<TagBuffer?> = _lastSeenTag.asStateFlow()
 
     private val mutex = Mutex()
     private var armedIntent: NfcIntent? = null
@@ -70,7 +70,7 @@ open class NfcRepository internal constructor(
         }
     }
 
-    suspend fun arm(intent: NfcIntent) {
+    open suspend fun arm(intent: NfcIntent) {
         if (!wrapper.isAvailable()) {
             mutex.withLock {
                 armedIntent = null
@@ -88,12 +88,20 @@ open class NfcRepository internal constructor(
         }
     }
 
-    suspend fun consumeLastSeen(intent: NfcIntent): NfcResult? {
+    open suspend fun consumeLastSeen(intent: NfcIntent): NfcResult? {
         if (intent !is NfcIntent.Read) return null
         val buffer = _lastSeenTag.value ?: return null
         if (clock.now().toEpochMilliseconds() - buffer.capturedAtEpochMs > ttlMs) return null
         return mutex.withLock {
-            if (_state.value !is NfcResult.Idle) return@withLock null
+            // Accept Idle and terminal states (Success / Error). Reject only in-flight intents
+            // (Reading / Writing / Verifying) where consuming the buffer would race with the
+            // armed handler. Terminal states exist precisely to mean "nothing in flight".
+            when (_state.value) {
+                is NfcResult.Reading,
+                is NfcResult.Writing,
+                is NfcResult.Verifying -> return@withLock null
+                else -> Unit
+            }
             val result = NfcResult.Success(buffer.uid, buffer.classification)
             _lastSeenTag.value = null
             _state.value = result
@@ -101,7 +109,7 @@ open class NfcRepository internal constructor(
         }
     }
 
-    suspend fun disarm() {
+    open suspend fun disarm() {
         mutex.withLock {
             armedIntent = null
             _state.value = NfcResult.Idle

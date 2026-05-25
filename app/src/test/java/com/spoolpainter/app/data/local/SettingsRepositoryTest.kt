@@ -35,7 +35,7 @@ class SettingsRepositoryTest {
             serializer = SettingsSerializer,
             scope = scope,
         ) { dataStoreFile }
-        repository = SettingsRepository(store, scope)
+        repository = SettingsRepositoryImpl(store, scope)
     }
 
     @After
