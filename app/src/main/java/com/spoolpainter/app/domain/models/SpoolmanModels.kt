@@ -21,9 +21,14 @@ data class SpoolmanFilament(
 )
 
 data class SpoolmanVendor(
-    val name: String
+    val id: Int? = null,
+    val name: String,
 )
 
 data class SpoolmanResponse<T>(
     val items: List<T>
+)
+
+data class SpoolmanInfo(
+    val version: String? = null,
 )

@@ -1,6 +1,7 @@
 package com.spoolpainter.app.data.local
 
 import androidx.datastore.core.DataStore
+import com.spoolpainter.app.di.AppScope
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -11,7 +12,7 @@ import javax.inject.Singleton
 @Singleton
 class SettingsRepository @Inject constructor(
     private val store: DataStore<Settings>,
-    externalScope: CoroutineScope,
+    @AppScope externalScope: CoroutineScope,
 ) {
     val settings: StateFlow<Settings> = store.data.stateIn(
         scope = externalScope,

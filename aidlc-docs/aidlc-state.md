@@ -3,7 +3,7 @@
 ## Project Information
 - **Project Type**: Brownfield
 - **Start Date**: 2026-05-23T00:00:00Z
-- **Current Stage**: CONSTRUCTION - Per-Unit Loop, U2 (Domain Primitives) — **DONE 2026-05-26** (user approved). Per-Unit Loop ready to open U3 (Spoolman Client Overhaul).
+- **Current Stage**: CONSTRUCTION - Per-Unit Loop, U3 (Spoolman Client Overhaul) — **DONE 2026-05-24** (user approved). Per-Unit Loop ready to open U4 (NFC Repository).
 
 ## Workspace State
 - **Existing Code**: Yes
@@ -46,7 +46,7 @@
 ### 🟢 CONSTRUCTION PHASE
 - [x] U1 (Architecture & DI Scaffold) — DONE 2026-05-25 (Functional Design / NFR Requirements / NFR Design / Infrastructure Design SKIP per stage gate; Code Generation Part 1 + Part 2 approved; install gate passed)
 - [x] U2 (Domain Primitives) — DONE 2026-05-26 (Functional Design EXECUTED + approved; NFR Requirements / NFR Design / Infrastructure Design SKIP per stage gate; Code Generation Part 1 + Part 2 approved; 64 new unit tests passing; no milestone install gate per `unit-of-work.md` §2). Artefacts: `aidlc-docs/construction/u2-domain-primitives/{functional-design/*.md, code/u2-summary.md}` + `aidlc-docs/construction/plans/u2-domain-primitives-{functional-design,code-generation}-plan.md`)
-- [ ] U3 (Spoolman Repository) — pending
+- [x] U3 (Spoolman Client Overhaul) — DONE 2026-05-24 (Functional Design EXECUTED + approved (all 11 Q-U3 questions answered with recommended options); NFR Requirements / NFR Design / Infrastructure Design SKIP per stage gate; Code Generation Part 1 + Part 2 approved; 64 new unit tests passing; no milestone install gate per `unit-of-work.md` §2). Artefacts: `aidlc-docs/construction/u3-spoolman-repository/{functional-design/*.md, code/u3-summary.md}` + `aidlc-docs/construction/plans/u3-spoolman-repository-{functional-design,code-generation}-plan.md`.
 - [ ] U4 (NFC Repository) — pending
 - [ ] U5 (Read-and-Pair Flow) — pending
 - [ ] U6a (Create-and-Pair) — pending
@@ -63,8 +63,8 @@
 
 ## Current Status
 - **Lifecycle Phase**: CONSTRUCTION
-- **Current Stage**: **U2 DONE (2026-05-26)**. Last completed unit: U2 (Domain Primitives). Verification on record: `compileDebugKotlin` ✅, `testDebugUnitTest` ✅ (**68 / 68 — 4 U1 + 64 new U2**), `assembleDebug` ✅ (33 MB APK, no growth from U1 baseline). Brownfield invariant: zero `OpenSpoolData` references. JDK note unchanged: builds require `JAVA_HOME = JDK 17`; durable fix deferred to U10.
-- **Next Stage**: On user signal → **U3 (Spoolman Client Overhaul)** Per-Unit Loop start. Resume by saying "Using AI-DLC, continue with U3" (or similar). U3 scope per `unit-of-work.md` §3-U3: `SpoolmanApi` extensions (lot_nr-filtered GET, vendor/filament/spool POST chain, PATCH lot_nr); `SpoolmanRepository` (`@Singleton`); `SpoolmanOutcome<T>` sealed; `ConnectivityState`; in-memory caches. After U3: U4 → U5 → U6a → U6b → U7 → U8 → U9 → U10.
+- **Current Stage**: **U3 DONE (2026-05-24)**. Last completed unit: U3 (Spoolman Client Overhaul). Verification on record: `compileDebugKotlin` ✅, `testDebugUnitTest` ✅ (**132 / 132 — 4 U1 + 64 U2 + 64 U3**), `assembleDebug` ✅ (33 MB APK, no growth from U2 baseline — zero new runtime deps). Brownfield invariants: zero `OpenSpoolData` references; zero `class SpoolmanService` references in `app/src/main`. JDK note unchanged: builds require `JAVA_HOME = JDK 17`; durable fix deferred to U10.
+- **Next Stage**: On user signal → **U4 (NFC Repository)** Per-Unit Loop start. Resume by saying "Using AI-DLC, continue with U4" (or similar). U4 scope per `unit-of-work.md` §3-U4: `NfcAdapterWrapper` thin adapter; `NfcRepository` (`@Singleton`) with sealed `NfcResult` state machine; `NfcResult.Success`/`Error` complete sealed-type fill-in; `NfcIntent.Write`/`Verify` complete sealed-type fill-in; tag classifier (`classify(NdefMessage?) → TagClassification`); foreground-dispatch lifecycle (`attach(activity)` / `detach()`); write-then-verify (NFR-6). After U4: U5 → U6a → U6b → U7 → U8 → U9 → U10.
 - **Status**: 11 v2.0 units locked (U1..U10 with U6 split into U6a/U6b); 2 v2.1 lightweight stubs (U11/U12) parked behind a hard gate. Strict construction order: U1 → U2 → U3 → U4 → U5 → U6a → U6b → U7 → U8 → U9 → U10. Milestone install gates at U1, U5, U6, U10. U10 doubles as Play Store testing-track release validation.
 
 ## Extension Configuration

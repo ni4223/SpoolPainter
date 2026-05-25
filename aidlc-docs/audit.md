@@ -623,7 +623,59 @@ No frontend-components.md (U2 ships no UI). Surfacing standardised 2-option comp
 ## WORKFLOW UPDATE — Per-Unit Close-Out Commit Added to DoD
 **Timestamp**: 2026-05-26T00:00:00Z
 **User Input**: "do that, also update the plan to do commit as part of every u close out"
-**AI Response**: Added DoD #6 (close-out commit) to `aidlc-docs/inception/application-design/unit-of-work.md` §2, plus a new §2.1 with the close-out commit template (scope, exclusions, push policy, message template). Updated `.gitignore` to durably exclude `.idea/deploymentTargetSelector.xml`, `.idea/appInsightsSettings.xml`, `.idea/markdown.xml`, and `aidlc-docs/inception/.idea/`. The new DoD applies starting **U3** — U1 + U2 close-out commits already landed but pre-date the rule. Rule-change itself will be committed in a follow-up commit.
+**AI Response**: Added DoD #6 (close-out commit) to `aidlc-docs/inception/application-design/unit-of-work.md` §2, plus a new §2.1 with the close-out commit template (scope, exclusions, push policy, message template). Updated `.gitignore` to durably exclude `.idea/deploymentTargetSelector.xml`, `.idea/appInsightsSettings.xml`, `.idea/markdown.xml`, and `aidlc-docs/inception/.idea/`. The new DoD applies starting **U3** — U1 + U2 close-out commits already landed but pre-date the rule. Rule-change itself will be committed in a follow-up commit (`cda2769`).
 **Context**: Per-unit-loop DoD evolved. Future units (U3..U10) will end with a close-out commit as the workflow's last gate before unit handoff.
+
+---
+
+## SESSION END — AIDLC Paused
+**Timestamp**: 2026-05-26T00:00:00Z
+**User Input**: "end aidlc"
+**AI Response**: AIDLC session ended at user request. State of record: U1 DONE 2026-05-25, U2 DONE 2026-05-26 (both close-out approvals captured above). DoD now includes per-unit close-out commit (rule landed in commit `cda2769`). Branch `v2` is 2 commits ahead of `origin/v2` — push remains user-owned. Next AIDLC session opens U3 (Spoolman Client Overhaul) — resume by saying "Using AI-DLC, continue with U3".
+**Status**: AIDLC paused
+**Context**: No work in flight. `aidlc-state.md` updated to reflect pause. Working tree clean.
+
+---
+
+## SESSION RESUME — U3 Per-Unit Loop Opened
+**Timestamp**: 2026-05-24T00:00:00Z
+**User Input**: "Using AI-DLC, continue with U3"
+**AI Response**: Resumed AIDLC at U3 (Spoolman Client Overhaul). Presented stage-gate assessment for U3: Functional Design **EXECUTE** (FR-7 chain partial-commit semantics, UID-substring lookup contract, PATCH read-modify-write idempotency, cache invalidation, ConnectivityState transitions, SpoolmanOutcome mapping rules); NFR Requirements / NFR Design **SKIP** (no new NFR scope beyond what's captured in application-design.md + unit-of-work.md §3-U3); Infrastructure Design **SKIP** (always SKIP per execution-plan.md). Code Generation always EXECUTE.
+**Status**: Stage-gate decision presented; awaiting user confirmation.
+**Context**: U3 entry criteria met (U2 DONE 2026-05-26 with `CardUid`, `CardUidEncoding` shipped). Carry-over: working tree contains uncommitted edits to `aidlc-state.md` + this `audit.md` from the AIDLC pause; per `unit-of-work.md` §2.1 these will be folded into the U3 close-out commit.
+
+---
+
+## STAGE GATE — U3 Stage-Gate Plan Approved
+**Timestamp**: 2026-05-24T00:00:00Z
+**User Input**: "Approve as proposed (Recommended)" — selected via AskUserQuestion (Approve U3 stage-gate plan: FD EXECUTE; NFR Req / NFR Design / Infra SKIP; Code Gen EXECUTE)
+**AI Response**: U3 stage-gate plan approved as proposed. Functional Design Part 1 plan authored at `aidlc-docs/construction/plans/u3-spoolman-repository-functional-design-plan.md` with 11 open questions (Q-U3-1 .. Q-U3-11) covering: `findSpoolsByCardUid` empty-UID handling, cache invalidation, base-URL change handling, OkHttp timeouts, logging interceptor level, v1 `SpoolmanService` migration strategy, wire/domain model split, `connectivity` initial value, test scope, FR-7 chain helper visibility, `SettingsRepository` consumption shape. Awaiting user answers (or "accept all recommendations").
+**Status**: Functional Design Part 1 plan complete; awaiting answers.
+**Context**: Stage-gate decision recorded. Functional Design Part 2 (artefact generation) blocked until questions answered.
+
+---
+
+## U3 — Functional Design Part 1 Approved (All Recommendations Accepted)
+**Timestamp**: 2026-05-24T00:00:00Z
+**User Input**: "full speed ahead."
+**AI Response**: Recorded the recommended option for every Q-U3-1 .. Q-U3-11 in the plan's Decision Records table. Decisions: Q-U3-1=A (empty CardUid → Success(emptyList())); Q-U3-2=A (patch-in-place cache); Q-U3-3=C (collect URL flow + rebuild Retrofit on change); Q-U3-4=A (3 s connect / 5 s read OkHttp timeouts); Q-U3-5=B (BASIC logging on debug only); Q-U3-6=A (big-bang delete v1 SpoolmanService); Q-U3-7=C (keep v1 GET wire types, new POST/PATCH DTOs); Q-U3-8=A (connectivity initial Unknown, no startup probe); Q-U3-9=A (every method tested against fake API); Q-U3-10=C (internal outcome-returning helpers + flatMap extension); Q-U3-11=A (URL flow collected once in repo init via @Singleton CoroutineScope). Generated FD Part 2 artefacts: `aidlc-docs/construction/u3-spoolman-repository/functional-design/{domain-entities,business-rules,business-logic-model}.md`.
+**Status**: Functional Design complete; proceeded to Code Generation Part 1.
+
+---
+
+## U3 — Code Generation Part 1 (plan) authored
+**Timestamp**: 2026-05-24T00:00:00Z
+**User Input**: (continuation of "full speed ahead." — same approval window)
+**AI Response**: Authored `aidlc-docs/construction/plans/u3-spoolman-repository-code-generation-plan.md` covering §1 build/dep setup (no new runtime deps), §2 domain types (`SpoolmanOutcome`, `ConnectivityState`, `NewSpoolRequest`/`TempRanges`), §3 wire models + Retrofit interface + `SpoolmanApiFactory`, §4 `SpoolmanRepository` impl + Hilt qualifiers + `RepositoryModule` / `NetworkModule` updates, §5 brownfield migration (delete v1 `SpoolmanService.kt`), §6 test plan (10 test files, ~57 cases), §7 verification commands, §8 summary artefact, §9 explicit out-of-scope guards.
+**Status**: Code Generation Part 1 plan published.
+
+---
+
+## U3 — Code Generation Part 2 (generation) executed
+**Timestamp**: 2026-05-24T00:00:00Z
+**User Input**: (continuation of "full speed ahead." — same approval window)
+**AI Response**: Executed every checkbox in the Code Generation plan. Files created (20): `SpoolmanOutcome.kt`, `ConnectivityState.kt`, `NewSpoolRequest.kt`, `SpoolmanRequests.kt`, `SpoolmanApi.kt`, `SpoolmanApiFactory.kt`, `SpoolmanRepository.kt`, `Qualifiers.kt`, plus 12 test files (`FakeSpoolmanApi.kt`, `SpoolmanRepositoryTestSupport.kt`, 10 repository test classes). Files modified (5): `SpoolmanModels.kt` (added `SpoolmanVendor.id` + `SpoolmanInfo`), `NetworkModule.kt` (OkHttp + Gson providers), `RepositoryModule.kt` (qualified `@AppScope` + `@IoDispatcher`), `SettingsRepository.kt` (qualified externalScope), `app/build.gradle.kts` (enabled `buildFeatures.buildConfig` for `BuildConfig.DEBUG` reference). Files deleted (1): `SpoolmanService.kt` (Q-U3-6=A big-bang delete). Verification: `compileDebugKotlin` ✅, `testDebugUnitTest` ✅ (**132 / 132 — 4 U1 + 64 U2 + 64 U3**), `assembleDebug` ✅ (33 MB, identical to U2 baseline). Brownfield invariants: zero `OpenSpoolData` references; zero `class SpoolmanService` references in `app/src/main`. Generated `aidlc-docs/construction/u3-spoolman-repository/code/u3-summary.md`.
+**Status**: U3 DONE pending close-out commit.
+**Context**: Per `unit-of-work.md` §2 DoD #6 + §2.1, the close-out commit will bundle U3 code + tests + AIDLC artefacts + the carry-over `aidlc-state.md` / `audit.md` updates from the AIDLC pause. Push remains user-owned.
 
 ---
