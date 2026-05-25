@@ -47,8 +47,47 @@ A unit is **Done** when all of the following hold:
 3. ViewModel tests pass where applicable (Q-T3=B — especially U5, U6a, U6b, U7).
 4. Public interfaces declared by the unit are stable (later units consume them without modification — see `unit-of-work-dependency.md`).
 5. Stories in scope (`Stories` column below) are AC-complete; `[unit]` AC bullets are covered by automated tests; `[manual]` AC bullets are noted in the unit's release notes for milestone manual verification at U1 / U5 / U6 / U10.
+6. **Close-out commit landed on `v2`** — a single git commit captures (a) the unit's code + tests, (b) the unit's AIDLC artefacts under `aidlc-docs/construction/<unit-name>/`, and (c) the `aidlc-state.md` + `audit.md` updates marking the unit DONE. Commit message follows the template in §2.1 below. The commit is **not** pushed to `origin/v2` automatically — push remains a user-owned action.
 
 **Milestone install gates (Q-T2=B)**: at the end of U1, U5, U6 (covers U6a and U6b together), and U10, the developer installs the debug build on a physical device and exercises the unit's happy path. Ad-hoc Android Studio Run-on-device during dev is **not** a workflow gate (per Q-FU2=A).
+
+### 2.1 Close-out commit template (DoD #6)
+
+The close-out commit is the last action of the per-unit loop, *after* the user has approved Code Generation Part 2 and *after* `aidlc-state.md` has been updated to mark the unit DONE.
+
+**Scope** — single commit, includes:
+- All source / test / config files generated or modified for the unit.
+- All AIDLC artefacts produced for the unit (Functional Design / NFR Requirements / NFR Design artefacts where they ran, plus `code/<unit-name>-summary.md` and the per-unit plans under `aidlc-docs/construction/plans/`).
+- `aidlc-docs/aidlc-state.md` and `aidlc-docs/audit.md` updates that mark the unit DONE.
+
+**Out of scope** (do not stage):
+- IDE / editor noise (`.idea/`, `.vscode/`, `*.iml`, `aidlc-docs/inception/.idea/`).
+- Build outputs (`app/build/`, `*.apk`, `*.aar`).
+- Untracked branches of work that are not part of this unit (e.g., scratch files, screenshots).
+- The release keystore + its password file.
+
+**Push policy**: do **not** push to `origin/v2` automatically. The commit lands locally; pushing is a separate user-owned action.
+
+**Message template**:
+```
+feat(v2): close out U<N> [— U<Na>] — <one-line scope>
+
+U<N> (<unit-name>) — DONE <yyyy-mm-dd>:
+- <bullet per major piece of scope from unit-of-work.md §3-U<N>>
+- <bullet>
+- ...
+
+Tests: <X> / <Y> pass on testDebugUnitTest (<breakdown by test class>).
+[Build: assembleDebug ✅ — APK at app/build/outputs/apk/debug/app-debug.apk.]
+[Milestone install gate (U1 / U5 / U6 / U10 only): <pass / N/A>.]
+
+AIDLC artefacts: <unit-name>/{functional-design,nfr-*,code}/*.md plus the
+per-unit plans. State + audit logs reflect close-out.
+```
+
+The commit is created via `git commit -m "$(cat <<'EOF' ... EOF)"` (HEREDOC) so multi-line messages format cleanly. **Never `--amend`** an existing commit; always create a new one. **Never `--no-verify`**.
+
+If the workspace contains uncommitted changes from prior units that were never committed (e.g., U1 was paused without a commit), it is acceptable to land them in the same commit as the current unit's close-out — but the commit message MUST list each unit's scope separately and explain the carry-over in the body.
 
 **U10's gate is special**: it doubles as the **Play Store testing-track release validation** (per Q-FU1=C — hard gate before any v2.1 work).
 

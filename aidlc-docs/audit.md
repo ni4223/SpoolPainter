@@ -610,3 +610,20 @@ No frontend-components.md (U2 ships no UI). Surfacing standardised 2-option comp
 **Context**: U2 (Domain Primitives) closed (Code Generation Part 2 Step 16 — final approval recorded). Marked U2 [x] in `aidlc-state.md`. Per-Unit Loop ready to open U3 (Spoolman Client Overhaul) on user signal.
 
 ---
+
+## CONSTRUCTION — U1 + U2 Close-Out Commit
+**Timestamp**: 2026-05-26T00:00:00Z
+**User Input**: "can you commit too, aldo add as part of close out commit"
+**AI Response**: Created git commit `b6e4656 feat(v2): close out U1 + U2 — DI scaffold + domain primitives` on branch `v2`. Bundled U1 carry-over because U1 close-out had not been committed at the time it was approved (paused before commit). Excluded IDE noise (`.idea/deploymentTargetSelector.xml`, `.idea/appInsightsSettings.xml`, `.idea/markdown.xml`, `aidlc-docs/inception/.idea/`). Did **not** push to `origin/v2` — push remains user-owned.
+**Status**: Local commit landed
+**Context**: Branch `v2` is 1 commit ahead of `origin/v2`.
+
+---
+
+## WORKFLOW UPDATE — Per-Unit Close-Out Commit Added to DoD
+**Timestamp**: 2026-05-26T00:00:00Z
+**User Input**: "do that, also update the plan to do commit as part of every u close out"
+**AI Response**: Added DoD #6 (close-out commit) to `aidlc-docs/inception/application-design/unit-of-work.md` §2, plus a new §2.1 with the close-out commit template (scope, exclusions, push policy, message template). Updated `.gitignore` to durably exclude `.idea/deploymentTargetSelector.xml`, `.idea/appInsightsSettings.xml`, `.idea/markdown.xml`, and `aidlc-docs/inception/.idea/`. The new DoD applies starting **U3** — U1 + U2 close-out commits already landed but pre-date the rule. Rule-change itself will be committed in a follow-up commit.
+**Context**: Per-unit-loop DoD evolved. Future units (U3..U10) will end with a close-out commit as the workflow's last gate before unit handoff.
+
+---
