@@ -1,7 +1,6 @@
 package com.spoolpainter.app.domain.models
 
 import com.spoolpainter.app.data.local.MaterialDatabase
-import com.spoolpainter.app.domain.models.OpenSpoolData
 
 data class FilamentSpool(
     val id: Int? = null,
@@ -71,22 +70,6 @@ data class FilamentSpool(
                 lotNr = spool.lot_nr,
                 archived = spool.archived,
                 spoolmanName = spool.filament.name ?: ""
-            )
-        }
-
-        fun fromOpenSpool(spool: OpenSpoolData) : FilamentSpool{
-            val material = MaterialDatabase.getMaterial(spool.type)
-            return FilamentSpool(
-                id = spool.spoolId?.toIntOrNull(),
-                material = spool.type,
-                variant = if (spool.subtype != "Basic") spool.subtype else "",
-                brand = spool.brand,
-                colorHex = spool.colorHex,
-                minTemp = spool.minTemp.toIntOrNull() ?: material?.defaultMinTemp,
-                maxTemp = spool.maxTemp.toIntOrNull() ?: material?.defaultMaxTemp,
-                bedMinTemp = spool.bedMinTemp?.toIntOrNull() ?: material?.defaultBedMinTemp,
-                bedMaxTemp = spool.bedMaxTemp?.toIntOrNull() ?: material?.defaultBedMaxTemp,
-                spoolmanName = ""
             )
         }
     }

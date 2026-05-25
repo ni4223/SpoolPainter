@@ -2,6 +2,9 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.ksp)
+    alias(libs.plugins.hilt.android)
+    alias(libs.plugins.kotlin.serialization)
 }
 
 android {
@@ -25,7 +28,7 @@ android {
             val keystorePath = System.getenv("KEYSTORE_FILE") ?: System.getProperty("user.home") + "/spoolpainter-release-key.jks"
             val pwdFile = File(System.getProperty("user.home") + "/spoolpainter-keystore.pwd")
             val keystorePass = System.getenv("KEYSTORE_PASSWORD") ?: pwdFile.takeIf { it.exists() }?.readText()?.trim() ?: ""
-            
+
             storeFile = file(keystorePath)
             storePassword = keystorePass
             keyAlias = "spoolpainter"
@@ -75,11 +78,40 @@ dependencies {
     implementation("com.squareup.retrofit2:retrofit:2.9.0")
     implementation("com.squareup.retrofit2:converter-gson:2.9.0")
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
+
+    // v2 — Hilt + KSP
+    implementation(libs.hilt.android)
+    ksp(libs.hilt.compiler)
+    implementation(libs.hilt.navigation.compose)
+
+    // v2 — Coroutines
+    implementation(libs.kotlinx.coroutines.core)
+    implementation(libs.kotlinx.coroutines.android)
+
+    // v2 — Lifecycle Compose
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.lifecycle.runtime.compose)
+
+    // v2 — DataStore + Serialization
+    implementation(libs.androidx.datastore)
+    implementation(libs.androidx.datastore.core)
+    implementation(libs.kotlinx.serialization.json)
+
     testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.turbine)
+    testImplementation(libs.mockk)
+    // org.json is provided by Android at runtime but not on the JVM unit-test classpath.
+    // Required by OpenSpoolPayloadCodec tests (U2).
+    testImplementation("org.json:json:20231013")
+
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
+    androidTestImplementation(libs.hilt.android.testing)
+    kspAndroidTest(libs.hilt.compiler)
+
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
 }

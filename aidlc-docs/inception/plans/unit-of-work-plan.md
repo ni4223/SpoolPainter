@@ -47,36 +47,40 @@ the unit artifacts).
 - [x] C.4 — All answers crisp; no remaining ambiguities.
 
 ### D. Approval Gate (rule-Steps 9–11)
-- [ ] D.1 — Surface approval prompt: "Unit of work plan complete.
-  Ready to proceed to generation?"
-- [ ] D.2 — Log prompt + user response in audit.md.
-- [ ] D.3 — Mark Units Planning complete in aidlc-state.md.
+- [x] D.1 — Surface approval prompt: "Unit of work plan complete.
+  Ready to proceed to generation?" (2026-05-24)
+- [x] D.2 — Log prompt + user response in audit.md. (approval
+  recorded 2026-05-24)
+- [x] D.3 — Mark Units Planning complete in aidlc-state.md.
 
 ### E. Generate Unit Artifacts (rule-Steps 12–15, Part 2)
-- [ ] E.1 — Generate
+- [x] E.1 — Generated
   `aidlc-docs/inception/application-design/unit-of-work.md` —
   unit definitions: name, scope, components, source FRs/stories,
   release wave (v2.0 / v2.1), entry/exit criteria.
-- [ ] E.2 — Generate
+- [x] E.2 — Generated
   `aidlc-docs/inception/application-design/unit-of-work-dependency.md`
-  — dependency matrix between units; recommended construction
-  order; parallelisation opportunities (n/a — solo, but logical
-  ordering matters for prerequisites).
-- [ ] E.3 — Generate
+  — dependency matrix between units; strict construction order
+  U1→U2→U3→U4→U5→U6a→U6b→U7→U8→U9→U10 with hard gate before
+  U11/U12; parallelisation opportunities documented as n/a (solo).
+- [x] E.3 — Generated
   `aidlc-docs/inception/application-design/unit-of-work-story-map.md`
-  — every story (32 v2.0 + 5 v2.1) assigned to exactly one unit.
-- [ ] E.4 — Render the dependency graph as Mermaid + PNG/SVG via
-  `mermaid-cli` (consistent with the workflow + component
-  diagrams).
-- [ ] E.5 — Validate: every story assigned, every component
-  assigned, no orphan dependencies.
+  — every v2.0 story (32) assigned to exactly one unit; every
+  v2.1 story (5) parked under U11/U12 stubs.
+- [x] E.4 — Rendered the dependency graph as Mermaid + PNG + SVG
+  via `mermaid-cli`
+  (`unit-of-work-dependency-diagram.{mmd,png,svg}`).
+- [x] E.5 — Validated: 32/32 v2.0 stories assigned, 5/5 v2.1
+  stories parked, every unit owns ≥1 story, no orphan
+  dependencies, U6a↔U6b interface seam documented.
 
 ### F. Final Approval (rule-Steps 16–19)
-- [ ] F.1 — Present completion message with summary.
-- [ ] F.2 — Wait for explicit user approval.
-- [ ] F.3 — Log approval in audit.md.
-- [ ] F.4 — Mark Units Generation [x] in aidlc-state.md; advance
-  Current Stage to **CONSTRUCTION PHASE**.
+- [x] F.1 — Present completion message with summary. (2026-05-24)
+- [x] F.2 — Wait for explicit user approval. (received 2026-05-24:
+  "approved go")
+- [x] F.3 — Log approval in audit.md. (2026-05-24)
+- [x] F.4 — Mark Units Generation [x] in aidlc-state.md; advance
+  Current Stage to **CONSTRUCTION PHASE**. (2026-05-24)
 
 ---
 

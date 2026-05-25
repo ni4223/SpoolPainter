@@ -412,3 +412,201 @@ Updated stories.md Coverage map: FR-2.3 row clarifies temp-storage rationale; ne
 **Context**: Units Generation Part 1 Step 10–11 — approval logged; Part 2 paused.
 
 ---
+
+## Units Generation Part 2 — Resumed + Artifacts Generated
+**Timestamp**: 2026-05-24T00:00:00Z
+**User Input**: "using aidlc begin on next tep"
+**AI Response**: Resumed AIDLC session at Units Generation Part 2 (Generation) per the approved `unit-of-work-plan.md`. Loaded `aidlc-state.md`, the approved plan, and `inception/units-generation.md` rule-Steps 12–19. Executed plan steps E.1–E.5:
+- **E.1** — Wrote `aidlc-docs/inception/application-design/unit-of-work.md` with full definitions for U1, U2, U3, U4, U5, U6a, U6b (per Q-SG2=B split), U7, U8, U9, U10 plus lightweight stubs for U11, U12. Each unit declares: Domain, Scope, Components produced, Stories in scope, Public interfaces produced (Q-D1=C hybrid: interfaces at primary cross-unit boundaries — Repository ↔ ViewModel ↔ UseCase), Entry/Exit criteria, Tests (Q-T3=B — adds ViewModel tests beyond NFR-4.1 minimum), and DoD (Q-T1=B — code merged + unit tests passing). Milestone install gates (Q-T2=B per Q-FU2=A) called out at U1, U5, U6 (covers U6a + U6b together), and U10. U10's gate doubles as Play Store testing-track release validation per Q-FU1=C.
+- **E.2** — Wrote `unit-of-work-dependency.md` with strict construction order U1→U2→U3→U4→U5→U6a→U6b→U7→U8→U9→U10, dependency matrix showing the U6a↔U6b interface seam (`MoveOnBindUseCase` interface declared in U6a, impl in U6b, no-op default until U6b lands), cross-unit public interface table, communication-pattern reminders (StateFlow + Channel<UiEffect>; sheet VMs flow results back via MainViewModel methods), forbidden-patterns re-assertion, and the hard-gate diagram for v2.0→v2.1 transition (Q-FU1=C — gate sits outside AIDLC; v2.0 must ship to Play Store testing track first).
+- **E.3** — Wrote `unit-of-work-story-map.md` assigning every v2.0 story (32) to exactly one owning unit with "Also exercised by" notes for consumer units; v2.1 stories (5) parked under U11/U12 stubs. Persona ↔ unit coverage sanity check included; coverage validation confirms 37/37 stories accounted for, no orphan units, no double-assignments.
+- **E.4** — Rendered the dependency graph: wrote `unit-of-work-dependency-diagram.mmd` and rendered to PNG (98 KB) and SVG (33 KB) via `npx @mermaid-js/mermaid-cli@11.15.0 mmdc` (consistent with `application-design-component-diagram` and `execution-plan-flowchart` toolchains). Mermaid syntax validated (no parse errors at render time per content-validation rules).
+- **E.5** — Validation: 32/32 v2.0 stories assigned, 5/5 v2.1 parked, every unit owns ≥1 story, U6a↔U6b interface seam documented, no orphan dependencies, every component from `components.md` traced to an owning unit.
+Updated `unit-of-work-plan.md`: marked D.1–D.3, E.1–E.5, F.1 as `[x]`; F.2–F.4 await user approval. Updated `aidlc-state.md` Current Stage and Status to reflect Part 2 artifacts produced.
+**Context**: Units Generation Part 2 rule-Steps 12–15 complete; advancing to rule-Step 16 (Present Completion Message) → 17 (Wait for Explicit Approval).
+
+---
+
+## Units Generation — Approval Prompt (Step 16/17)
+**Timestamp**: 2026-05-24T00:00:00Z
+**AI Prompt**: "🔧 Units Generation Complete. 11 v2.0 units defined (U1..U10 with U6 split into U6a + U6b), 2 v2.1 lightweight stubs (U11, U12) parked behind a hard gate, 32/32 v2.0 stories assigned, 5/5 v2.1 stories parked, dependency graph rendered as PNG + SVG. Review artifacts at aidlc-docs/inception/application-design/. **You may: 🔧 Request Changes** — ask for modifications; or **✅ Approve & Continue** — approve units and advance to **CONSTRUCTION PHASE**."
+**User Response**: "approved go"
+**Status**: Approved 2026-05-24
+**Context**: Units Generation Part 2 Step 16–17 — final gate cleared.
+
+---
+
+## Units Generation — Approved + Advancing to CONSTRUCTION
+**Timestamp**: 2026-05-24T00:00:00Z
+**User Input**: "approved go"
+**AI Response**: Logged Units Generation final approval (rule-Step 18). Closed all checkboxes in `unit-of-work-plan.md` (F.2–F.4 marked `[x]`). Updated `aidlc-state.md`: Inception Units Generation `[x]`, Lifecycle Phase = CONSTRUCTION, Current Stage = Per-Unit Loop at **U1 (Architecture & DI Scaffold)**. INCEPTION PHASE complete. Loading construction rule details for U1: assessing whether Functional Design, NFR Requirements, and NFR Design execute or skip per their CONDITIONAL gates in `core-workflow.md`; Code Generation always executes; Infrastructure Design SKIP per execution-plan.md.
+**Context**: Workflow advance — INCEPTION → CONSTRUCTION. Entering U1 Per-Unit Loop.
+
+---
+
+## CONSTRUCTION — U1 Per-Unit Loop Start
+**Timestamp**: 2026-05-24T00:00:00Z
+**User Input**: (n/a — workflow-driven)
+**AI Response**: Beginning U1 (Architecture & DI Scaffold). Per `aidlc-docs/inception/application-design/unit-of-work.md` §3-U1: scope is Hilt setup, per-layer modules (Network/Repository/DataStore/Nfc), HiltViewModel skeletons, StateFlow + Channel<UiEffect> wiring, DataStore<Settings> with read-only `SettingsRepository`, sealed NfcResult/NfcIntent skeletons, and the `app/src/main/java/com/spoolpainter/app/` package layout. Stories in scope: NFR-1, NFR-2, NFR-3 (settings), S-15.1. Public interfaces produced: `SettingsRepository.settings: StateFlow<Settings>` (read), `MainViewModel.state: StateFlow<MainUiState>` (state shape stable). Exit criteria: app compiles, debug build runs on device (milestone install gate), `SettingsRepository` default-read tests pass.
+
+Next decision (per core-workflow.md CONDITIONAL gates):
+- **Functional Design** — U1 has no new business logic / no new data models for the *runtime* (just DI plumbing + state shapes that are already defined in `application-design.md`). **Skip candidate.**
+- **NFR Requirements** — NFR-1 (architecture) and NFR-2 (Hilt) are already locked by Application Design. NFR-3 settings persistence shape is fixed. No new NFR assessment needed for U1. **Skip candidate.**
+- **NFR Design** — Skipped because NFR Requirements skipped.
+- **Infrastructure Design** — SKIP (execution-plan.md decision; pure Android client).
+- **Code Generation** — ALWAYS executes; this is U1's substantive stage.
+
+Will surface a stage-decision prompt asking the user to confirm the conditional skips before advancing directly to U1 Code Generation Part 1 (planning).
+**Context**: CONSTRUCTION U1 — gate-assessment step before per-unit stages.
+
+---
+
+## CONSTRUCTION — U1 Stage-Decision Gate
+**Timestamp**: 2026-05-25T00:54:11Z
+**AI Prompt**: "U1 stage-decision gate: confirm the recommended skips (Functional Design, NFR Requirements, NFR Design, Infrastructure Design) and proceed straight to Code Generation Part 1 (planning)?"
+**User Response**: "Approve skips → Code Gen Part 1"
+**Status**: Approved
+**Context**: U1 conditional gates closed. Functional Design, NFR Requirements, NFR Design SKIP (no new business logic / NFRs already locked by Application Design). Infrastructure Design SKIP per execution-plan.md. Advancing to Code Generation Part 1.
+
+---
+
+## CONSTRUCTION — U1 Code Generation Part 1 (Planning) — Plan Drafted
+**Timestamp**: 2026-05-25T00:54:11Z
+**User Input**: (n/a — workflow-driven)
+**AI Response**: Drafted `aidlc-docs/construction/plans/u1-architecture-di-scaffold-code-generation-plan.md`. Plan is decomposed into 15 numbered sections with 60+ checkboxed steps covering: (1) Build/dep setup — version-catalog additions for Hilt 2.52, KSP, DataStore 1.1.1, coroutines 1.8.1, kotlinx-serialization, lifecycle Compose, turbine + mockk for tests; root + app build.gradle.kts plugin and dep wiring. (2) `SpoolPainterApplication` (`@HiltAndroidApp`) + manifest `android:name=".SpoolPainterApplication"`. (3) Package layout per `.kiro/steering/structure.md`: `di/`, `data/local/`, `domain/primitives/`, `ui/screens/main/`, `ui/screens/settings/`, `ui/components/sheets/`, `ui/common/`. (4) `Settings` data class + `SettingsSerializer` + `SettingsRepository` with `StateFlow<Settings>` derived via `stateIn(externalScope, Eagerly, Settings())`; suspend setters for url/sortOrder/themeOverride. (5) Four Hilt modules — `DataStoreModule` (provides `DataStore<Settings>`), `RepositoryModule` (provides app-scoped `CoroutineScope`), `NetworkModule` (empty — U3 fills), `NfcModule` (empty — U4 fills). (6) `NfcResult` + `NfcIntent` skeletons with **only** the Idle/Reading/Writing/Verifying/Read cases — Success/Error/Write/Verify deferred to U4 because they reference U2's `CardUid`/`TagClassification`/`OpenSpoolPayload`. (7) ViewModel skeletons (`MainViewModel`, `SettingsViewModel`, four sheet VMs) + `MainUiState` placeholder + `SettingsUiState(url, sortOrder, themeOverride)` + shared `UiEffect` sealed type with `StateFlow<UiState>` + `Channel<UiEffect>` wired per Q-DP1=A / Q-DP3=C. (8) `MainActivity` annotated `@AndroidEntryPoint`; v1 nfcHandler / ViewModelProvider wiring removed; `onResume`/`onPause` left with TODO comments for U4 NFC attach/detach; `MainScreen` placeholder Composable with `Modifier.testTag("main-screen-placeholder-text")`. (9) Brownfield deletes — v1 `MainViewModel.kt`, `MainScreenContent.kt`, `SpoolPainterScreen.kt`, `SettingsScreen.kt` (v1), `SpoolmanFilamentDropdown.kt`, `FilamentForm.kt`, `NfcStatusCard.kt` deleted; v1 NFC + SpoolmanService + domain/models kept dormant for U2/U3/U4 to migrate or delete; neutral components (MaterialSelector, BrandSelector, ColorSelector, TemperatureCard, CustomSnackbar, SpoolPainterLogo, Theme) preserved. (10) Tests — `SettingsRepositoryTest` covering default-read + each setter via Turbine; no ViewModel tests yet (per `unit-of-work.md` §3-U1). (11) Documentation — `aidlc-docs/construction/u1-architecture-di-scaffold/code/u1-summary.md`. (12) Build verification — `compileDebugKotlin`, targeted unit test, `assembleDebug` (exercises Hilt KSP), then user-driven milestone install gate. (13) Story traceability table: NFR-1, NFR-2, NFR-3, S-15.1. (14) Out-of-scope parking lot for U2..U10. (15) Approval gate. Forward-reference policy explicitly documented so U1 does not import U2/U3/U4 types.
+**Context**: Code Generation Part 1 Steps 1–4 complete (plan analyzed, written, saved). Steps 5–8 follow with this prompt.
+
+---
+
+## CONSTRUCTION — U1 Code Generation Part 1 — Approval Prompt (Step 6/7)
+**Timestamp**: 2026-05-25T00:54:11Z
+**AI Prompt**: "📋 U1 Code Generation Part 1 (Planning) Complete. Detailed plan saved at `aidlc-docs/construction/plans/u1-architecture-di-scaffold-code-generation-plan.md` — 15 sections, 60+ checkboxed steps, story traceability for NFR-1/NFR-2/NFR-3/S-15.1. **You may: 🔧 Request Changes** — ask for modifications to the plan; or **✅ Approve & Continue** — approve the plan and proceed to **Code Generation Part 2 (Generation)**."
+**User Response**: (pending)
+**Status**: Awaiting Part-1 approval
+**Context**: Code Generation Part 1 Step 7 — explicit gate before Part 2 generation.
+
+---
+
+## CONSTRUCTION — U1 Code Generation Part 1 — Approval Received (Step 8)
+**Timestamp**: 2026-05-25T00:54:11Z
+**User Input**: "aproved and continue where will code be genrated?"
+**AI Response**: Approved. Restated code-location rules: app code under `app/src/main/java/com/spoolpainter/app/...`, tests under `app/src/test/...`, build/manifest at workspace root (`gradle/libs.versions.toml`, root `build.gradle.kts`, `app/build.gradle.kts`, `app/src/main/AndroidManifest.xml`), docs at `aidlc-docs/construction/u1-architecture-di-scaffold/code/u1-summary.md`. Marked Code Generation Part 1 complete in `aidlc-state.md`. Beginning Part 2 (Generation) — executing plan steps in order, marking checkboxes [x] in plan as completed.
+**Status**: Approved
+**Context**: Code Generation Part 1 closed; advancing to Part 2.
+
+---
+
+## CONSTRUCTION — U1 Code Generation Part 2 (Generation) — Complete
+**Timestamp**: 2026-05-25T01:14:00Z
+**User Input**: (n/a — workflow-driven execution of approved plan)
+**AI Response**: Executed `aidlc-docs/construction/plans/u1-architecture-di-scaffold-code-generation-plan.md` end-to-end. Created 21 files (SpoolPainterApplication, Settings + SettingsSerializer + SettingsRepository, four DI modules, two NFC primitive skeletons, UiEffect, Main + Settings UiState/VMs, four sheet VMs, MainScreen placeholder, SettingsRepositoryTest). Modified 5 files (libs.versions.toml, root build.gradle.kts, app/build.gradle.kts, AndroidManifest.xml, MainActivity.kt). Deleted 7 v1 files (v1 MainViewModel, MainScreenContent, SpoolPainterScreen, v1 SettingsScreen, SpoolmanFilamentDropdown, FilamentForm, NfcStatusCard). Verification: `./gradlew :app:compileDebugKotlin` PASSED (only pre-existing v1 Compose deprecation warnings on neutral retained components — addressed when those are reworked at U5+); `./gradlew :app:testDebugUnitTest --tests SettingsRepositoryTest` PASSED (4/4 tests via Turbine); `./gradlew :app:assembleDebug` PASSED — Hilt KSP processed graph cleanly, produced `app/build/outputs/apk/debug/app-debug.apk` (~34 MB). **Environment finding**: Gradle 8.13 + JDK 24 (default `JAVA_HOME` on this machine) fails task instantiation with `Type T not present` for `:app:testDebugUnitTest`; workaround used was `JAVA_HOME=/Library/Java/JavaVirtualMachines/amazon-corretto-17.jdk/Contents/Home ./gradlew <task>`. Documented in `aidlc-docs/construction/u1-architecture-di-scaffold/code/u1-summary.md` §Build & Test Verification with two durable fix options (gradle.properties `org.gradle.java.home`, or `daemon.jvm.criteria`); decision deferred to U10 release polish. Plan checkboxes for Steps 1–14 marked [x]; Step 12.4 (milestone install gate) and Step 15 (final approval) remain unchecked — those are user-driven. Wrote `aidlc-docs/construction/u1-architecture-di-scaffold/code/u1-summary.md` covering files created/modified/deleted, story coverage, public interfaces produced, forward references deferred, exit-criteria checklist, forbidden-patterns audit. Updated `aidlc-state.md` Current Stage and Status. Surfacing standardized 2-option Code Generation completion message next.
+**Context**: Code Generation Part 2 Steps 10–13 complete. Advancing to Step 14 (completion message) → Step 15 (await approval).
+
+---
+
+## CONSTRUCTION — U1 Code Generation — Approval Prompt (Step 14/15)
+**Timestamp**: 2026-05-25T01:14:00Z
+**AI Prompt**: "💻 Code Generation Complete - U1 (Architecture & DI Scaffold). 21 files created, 5 modified, 7 v1 files deleted. compileDebugKotlin ✅, testDebugUnitTest ✅ (4/4), assembleDebug ✅. Milestone install gate (Q-T2=B) remains user-driven: install `app/build/outputs/apk/debug/app-debug.apk` on a physical device and confirm app launches to placeholder. **You may: 🔧 Request Changes** — ask for modifications to the generated code; or **✅ Continue to Next Stage** — approve U1 and advance to **U2 (Domain Primitives)**."
+**User Response**: (pending)
+**Status**: Awaiting U1 code-generation approval + install-gate sign-off
+**Context**: Code Generation Part 2 Step 15 — explicit gate before U2.
+
+---
+
+## CONSTRUCTION — U1 Code Generation — Approval Received + Pause Requested
+**Timestamp**: 2026-05-25T01:25:00Z
+**User Input**: "all i am seeing v2 under construction,  is this whar yiu expect?" → (after AI confirmation that the placeholder is the expected U1 milestone-install-gate output) → "mark u1 done, and then pausw"
+**AI Response**: Confirmed U1 install gate (Q-T2=B) passed — placeholder render proves Hilt graph + DI-backed MainActivity → MainViewModel → MainScreen chain wires up correctly. Marked U1 DONE in `aidlc-state.md` (Stage Progress checkbox [x], Current Status updated, expanded CONSTRUCTION phase tracker to per-unit checklist U1..U10 + Build & Test). Logged final approval here. Per-Unit Loop paused before U2; resume by issuing AIDLC continuation prompt. Plan + summary + audit are coherent record of U1 close-out.
+**Status**: U1 DONE; AIDLC paused
+**Context**: U1 closed (Code Generation Part 2 Step 16 — final approval recorded). Awaiting user resume signal before opening U2.
+
+---
+
+## CONSTRUCTION — U2 Per-Unit Loop Resume
+**Timestamp**: 2026-05-26T00:00:00Z
+**User Input**: "Using AIDLC continue on next unit"
+**AI Response**: Resumed AIDLC at U2 (Domain Primitives). Per `aidlc-docs/inception/application-design/unit-of-work.md` §3-U2: scope is `CardUid` (FR-1.2 / S-1.2), `CardUidEncoding` (FR-2.1, FR-2.2 / S-2.1, S-2.2), `TagClassification` (Blank | OpenSpool | Vendor — basis for FR-4.7 / S-4.6), and `OpenSpoolPayload` rename (cleanup of v1 `OpenSpoolData`). Stories in scope: S-1.2, S-2.1, S-2.2. Surfacing U2 stage-decision gate to user with recommendation: Functional Design EXECUTE (lot_nr parser/serialiser + UID canonicalisation + tag classification — non-trivial business rules called out by name in execution-plan.md), NFR Requirements / NFR Design / Infrastructure Design SKIP.
+**Context**: CONSTRUCTION U2 — gate-assessment step before per-unit stages.
+
+---
+
+## CONSTRUCTION — U2 Stage-Decision Gate
+**Timestamp**: 2026-05-26T00:00:00Z
+**AI Prompt**: "U2 stage-decision gate: Functional Design EXECUTE; NFR Requirements / NFR Design / Infrastructure Design SKIP. Approve?"
+**User Response**: "continuw"
+**Status**: Approved
+**Context**: U2 conditional gates closed. Functional Design EXECUTE (UID canonicalisation, lot_nr parse/serialise round-trip, tag classification rules). NFR Requirements / NFR Design SKIP (only NFR-4.1 unit-test bar applies; no tech-stack pick open). Infrastructure Design SKIP per execution-plan.md. Advancing to Functional Design Step 1.
+
+---
+
+## CONSTRUCTION — U2 Functional Design Plan Drafted
+**Timestamp**: 2026-05-26T00:00:00Z
+**User Input**: (n/a — workflow-driven)
+**AI Response**: Drafted `aidlc-docs/construction/plans/u2-domain-primitives-functional-design-plan.md`. 14 embedded `[Answer]:` questions covering: Q-U2-1 fromBytes empty input; Q-U2-2 byte-to-hex mapping; Q-U2-3 value-class vs data-class; Q-U2-4a-d decode separator/whitespace/case/hex strictness; Q-U2-5 opaque tail string vs list; Q-U2-6 encode dedup policy; Q-U2-7 Blank-tag definition; Q-U2-8 Vendor reason string vs enum; Q-U2-9 OpenSpoolPayload field set + lotNr field; Q-U2-10 protocol/version field handling; Q-U2-11 codec location; Q-U2-12 fromJson error signalling; Q-U2-13 brownfield v1 OpenSpoolData migration timing; Q-U2-14 card_uid: prefix constant location. Each question carries explicit options + recommended answer + rationale. Surfacing batched to user via AskUserQuestion.
+**Context**: Functional Design Step 2-4 complete (plan drafted, questions embedded, file saved). Step 5 follows.
+
+---
+
+## CONSTRUCTION — U2 Functional Design Q&A Disposition
+**Timestamp**: 2026-05-26T00:00:00Z
+**AI Prompt**: "U2 Functional Design plan is drafted with 14 embedded clarifying questions. How do you want to handle them? (Accept all recommendations / Walk through them in batches / Open the plan file myself)"
+**User Response**: "Accept all recommendations"
+**Status**: Approved
+**Context**: All 14 `[Answer]:` tags filled per recommended answers. Answers locked into plan file. No follow-up clarifications needed. Advancing to Functional Design Step 6 (artefact generation).
+
+---
+
+## CONSTRUCTION — U2 Functional Design Artefacts Generated
+**Timestamp**: 2026-05-26T00:00:00Z
+**User Input**: (n/a — workflow-driven)
+**AI Response**: Generated three artefacts under `aidlc-docs/construction/u2-domain-primitives/functional-design/`:
+- `business-logic-model.md` — algorithmic pseudocode for `CardUid.fromBytes`, `CardUidEncoding.decode/encode`, `OpenSpoolPayloadCodec.fromJson/toJson`, `TagClassification` decision tree; round-trip property; totality summary table.
+- `business-rules.md` — 47 rules across 8 sections (CardUid / CardUidEncoding / TagClassification / OpenSpoolPayload / OpenSpoolPayloadCodec / OpenSpoolDecodeResult / Brownfield migration / Test obligations); each rule traced to FR-ID, S-ID, or Q-U2-*=answer.
+- `domain-entities.md` — final type signatures for `CardUid`, `CardUidEncoding` + `Decoded`, `TagClassification`, `OpenSpoolPayload`, `OpenSpoolPayloadCodec`, `OpenSpoolDecodeResult`; type-relationship diagram; file checklist preview for Code Generation Part 1.
+No frontend-components.md (U2 ships no UI). Surfacing standardised 2-option completion message next.
+**Context**: Functional Design Step 6 complete. Step 7 (completion message) follows; Step 8 awaits user approval.
+
+---
+
+## CONSTRUCTION — U2 Functional Design — Approval Prompt (Step 7/8)
+**Timestamp**: 2026-05-26T00:00:00Z
+**AI Prompt**: "🔧 Functional Design Complete - U2 (Domain Primitives). Three artefacts under `aidlc-docs/construction/u2-domain-primitives/functional-design/`. **You may: 🔧 Request Changes** — ask for modifications to the functional design; or **✅ Continue to Next Stage** — approve and proceed to **U2 Code Generation Part 1 (Planning)**."
+**User Response**: "approved, go"
+**Status**: Approved
+**Context**: U2 Functional Design closed. Advancing to Code Generation Part 1 (planning).
+
+---
+
+## CONSTRUCTION — U2 Code Generation Part 1 (Planning) — Plan Drafted
+**Timestamp**: 2026-05-26T00:00:00Z
+**User Input**: (n/a — workflow-driven)
+**AI Response**: Drafted `aidlc-docs/construction/plans/u2-domain-primitives-code-generation-plan.md`. Plan is decomposed into 9 sections with ~30 numbered checkbox steps covering: §1 build/dep verification (no new deps); §2 business logic generation (6 type files: CardUid, OpenSpoolPayload, OpenSpoolDecodeResult, OpenSpoolPayloadCodec, TagClassification, CardUidEncoding); §3 brownfield migration per Q-U2-13=A (delete OpenSpoolData.kt; surgical edit of FilamentSpool.kt to drop fromOpenSpool method only; explicit non-action list for dormant v1 NFC / SpoolmanService / etc. owned by U3/U4); §4 unit-test generation (6 test files covering BR-U2-T-1..6); §5 documentation (u2-summary.md mirroring U1 summary structure); §6 build/test verification (compileDebugKotlin / testDebugUnitTest / assembleDebug; brownfield grep invariant; rule audit; explicitly NO milestone install gate per unit-of-work.md §2); §7 story traceability table (S-1.2/S-2.1/S-2.2 → code + tests); §8 out-of-scope parking lot; §9 approval gate. JDK-17 `JAVA_HOME` workaround inherited from U1.
+**Context**: Code Generation Part 1 Steps 1-4 complete (plan analyzed, written, saved). Steps 5-8 follow with approval prompt below.
+
+---
+
+## CONSTRUCTION — U2 Code Generation Part 1 — Approval Prompt (Step 6/7)
+**Timestamp**: 2026-05-26T00:00:00Z
+**AI Prompt**: "📋 U2 Code Generation Part 1 (Planning) Complete. Detailed plan saved at `aidlc-docs/construction/plans/u2-domain-primitives-code-generation-plan.md` — 9 sections, ~30 checkboxed steps, story traceability for S-1.2 / S-2.1 / S-2.2. **You may: 🔧 Request Changes** — ask for modifications to the plan; or **✅ Approve & Continue** — approve the plan and proceed to **Code Generation Part 2 (Generation)**."
+**User Response**: "continue"
+**Status**: Approved
+**Context**: U2 Code Generation Part 1 closed. Advancing to Code Generation Part 2 (Generation) — executing approved plan §1..§6 in order.
+
+---
+
+## CONSTRUCTION — U2 Code Generation Part 2 (Generation) — Complete
+**Timestamp**: 2026-05-26T00:00:00Z
+**User Input**: (n/a — workflow-driven execution of approved plan)
+**AI Response**: Executed `aidlc-docs/construction/plans/u2-domain-primitives-code-generation-plan.md` end-to-end. **6 source files created** (CardUid.kt, OpenSpoolPayload.kt, OpenSpoolDecodeResult.kt, OpenSpoolPayloadCodec.kt, TagClassification.kt, CardUidEncoding.kt). **6 test files created** (CardUidTest, CardUidEncodingDecodeTest, CardUidEncodingEncodeTest, CardUidEncodingRoundTripTest, OpenSpoolDecodeResultTest, OpenSpoolPayloadCodecTest — totalling 64 new tests on top of U1's 4). **2 files modified**: FilamentSpool.kt (dropped `fromOpenSpool` method + import per Q-U2-13=A); app/build.gradle.kts (added `testImplementation("org.json:json:20231013")` because `org.json.JSONObject` is not on the JVM unit-test classpath, only the Android-runtime stub). **1 file deleted**: domain/models/OpenSpoolData.kt. Verification: `compileDebugKotlin` ✅ (only pre-existing v1 Compose deprecation warnings); `testDebugUnitTest` ✅ (**68 / 68 tests pass, 0 failures**); `assembleDebug` ✅ (33 MB APK, no growth from U1 baseline); brownfield invariant `grep -rn OpenSpoolData app/src` returns **zero matches**. Plan checkboxes for steps 1.0..6.6 all marked [x]. Wrote `aidlc-docs/construction/u2-domain-primitives/code/u2-summary.md` covering files / story coverage / public interfaces / forward references / build verification / exit-criteria checklist / forbidden-patterns audit / functional-design rule-coverage spot map. **No milestone install gate** required for U2 (per `unit-of-work.md` §2 — gates are at U1/U5/U6/U10).
+**Context**: Code Generation Part 2 Steps 10–13 complete. Advancing to Step 14 (completion message) → Step 15 (await approval).
+
+---
+
+## CONSTRUCTION — U2 Code Generation — Approval Prompt (Step 14/15)
+**Timestamp**: 2026-05-26T00:00:00Z
+**AI Prompt**: "💻 Code Generation Complete - U2 (Domain Primitives). 6 source + 6 test files created, 2 modified, 1 deleted. compileDebugKotlin ✅, testDebugUnitTest ✅ (68/68), assembleDebug ✅. No milestone install gate. **You may: 🔧 Request Changes** — ask for modifications to the generated code; or **✅ Continue to Next Stage** — approve U2 and advance to **U3 (Spoolman Repository)**."
+**User Response**: "approved"
+**Status**: U2 DONE
+**Context**: U2 (Domain Primitives) closed (Code Generation Part 2 Step 16 — final approval recorded). Marked U2 [x] in `aidlc-state.md`. Per-Unit Loop ready to open U3 (Spoolman Client Overhaul) on user signal.
+
+---

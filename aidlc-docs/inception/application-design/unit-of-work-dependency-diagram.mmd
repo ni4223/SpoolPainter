@@ -1,0 +1,35 @@
+flowchart TD
+    classDef foundation fill:#e3f2fd,stroke:#1565c0,color:#0d47a1
+    classDef flow fill:#fff3e0,stroke:#ef6c00,color:#e65100
+    classDef sidemode fill:#fce4ec,stroke:#ad1457,color:#880e4f
+    classDef support fill:#f3e5f5,stroke:#6a1b9a,color:#4a148c
+    classDef release fill:#e8f5e9,stroke:#2e7d32,color:#1b5e20
+    classDef stub fill:#f5f5f5,stroke:#616161,color:#212121,stroke-dasharray: 4 4
+    classDef gate fill:#ffebee,stroke:#b71c1c,color:#b71c1c
+
+    subgraph V20[v2.0]
+      U1["U1<br/>Architecture &amp; DI Scaffold"]:::foundation
+      U2["U2<br/>Domain Primitives"]:::foundation
+      U3["U3<br/>Spoolman Client"]:::foundation
+      U4["U4<br/>NFC Repository &amp; State"]:::foundation
+      U5["U5<br/>Read-and-Pair Flow"]:::flow
+      U6a["U6a<br/>Create-and-Pair Flow"]:::flow
+      U6b["U6b<br/>Move-on-Bind + Two-Tag"]:::flow
+      U7["U7<br/>Side Modes (Raw / Vendor UID-only)"]:::sidemode
+      U8["U8<br/>Pickers + Custom Entries"]:::support
+      U9["U9<br/>Settings + Theming + UI Shell"]:::support
+      U10["U10<br/>v2.0 Release Polish + Testing-track Prep"]:::release
+    end
+
+    GATE{{"HARD GATE<br/>v2.0 ships to Play Store testing track<br/>(owned by user, outside AIDLC)"}}:::gate
+
+    subgraph V21[v2.1 — lightweight stubs]
+      U11["U11<br/>Vendor Decode Engine + GPL-3.0"]:::stub
+      U12["U12<br/>Vendor Key Settings + Encrypted Storage"]:::stub
+    end
+
+    U1 --> U2 --> U3 --> U4 --> U5 --> U6a --> U6b --> U7 --> U8 --> U9 --> U10 --> GATE --> U11
+    GATE --> U12
+
+    %% Interface seam: U6a declares MoveOnBindUseCase, U6b implements
+    U6a -. "MoveOnBindUseCase interface" .-> U6b
