@@ -3,7 +3,7 @@
 ## Project Information
 - **Project Type**: Brownfield
 - **Start Date**: 2026-05-23T00:00:00Z
-- **Current Stage**: CONSTRUCTION - Per-Unit Loop, U3 (Spoolman Client Overhaul) — **DONE 2026-05-24** (user approved). Per-Unit Loop ready to open U4 (NFC Repository).
+- **Current Stage**: CONSTRUCTION - Per-Unit Loop, U4 (NFC Repository) — **DONE 2026-05-24** (user approved). Per-Unit Loop ready to open U5 (Read-and-Pair Flow).
 
 ## Workspace State
 - **Existing Code**: Yes
@@ -47,7 +47,7 @@
 - [x] U1 (Architecture & DI Scaffold) — DONE 2026-05-25 (Functional Design / NFR Requirements / NFR Design / Infrastructure Design SKIP per stage gate; Code Generation Part 1 + Part 2 approved; install gate passed)
 - [x] U2 (Domain Primitives) — DONE 2026-05-26 (Functional Design EXECUTED + approved; NFR Requirements / NFR Design / Infrastructure Design SKIP per stage gate; Code Generation Part 1 + Part 2 approved; 64 new unit tests passing; no milestone install gate per `unit-of-work.md` §2). Artefacts: `aidlc-docs/construction/u2-domain-primitives/{functional-design/*.md, code/u2-summary.md}` + `aidlc-docs/construction/plans/u2-domain-primitives-{functional-design,code-generation}-plan.md`)
 - [x] U3 (Spoolman Client Overhaul) — DONE 2026-05-24 (Functional Design EXECUTED + approved (all 11 Q-U3 questions answered with recommended options); NFR Requirements / NFR Design / Infrastructure Design SKIP per stage gate; Code Generation Part 1 + Part 2 approved; 64 new unit tests passing; no milestone install gate per `unit-of-work.md` §2). Artefacts: `aidlc-docs/construction/u3-spoolman-repository/{functional-design/*.md, code/u3-summary.md}` + `aidlc-docs/construction/plans/u3-spoolman-repository-{functional-design,code-generation}-plan.md`.
-- [ ] U4 (NFC Repository) — pending
+- [x] U4 (NFC Repository) — DONE 2026-05-24 (Functional Design EXECUTED + approved (all 11 Q-U4 questions answered with recommended options via "Go Go Go!!"); NFR Requirements / NFR Design / Infrastructure Design SKIP per stage gate; Code Generation Part 1 + Part 2 approved; 50 new unit tests passing — running total 182; no milestone install gate per `unit-of-work.md` §2). Artefacts: `aidlc-docs/construction/u4-nfc-repository/{functional-design/*.md, code/u4-summary.md}` + `aidlc-docs/construction/plans/u4-nfc-repository-{functional-design,code-generation}-plan.md`.
 - [ ] U5 (Read-and-Pair Flow) — pending
 - [ ] U6a (Create-and-Pair) — pending
 - [ ] U6b (Move-on-bind + Two-tag) — pending
@@ -63,8 +63,8 @@
 
 ## Current Status
 - **Lifecycle Phase**: CONSTRUCTION
-- **Current Stage**: **U3 DONE (2026-05-24)**. Last completed unit: U3 (Spoolman Client Overhaul). Verification on record: `compileDebugKotlin` ✅, `testDebugUnitTest` ✅ (**132 / 132 — 4 U1 + 64 U2 + 64 U3**), `assembleDebug` ✅ (33 MB APK, no growth from U2 baseline — zero new runtime deps). Brownfield invariants: zero `OpenSpoolData` references; zero `class SpoolmanService` references in `app/src/main`. JDK note unchanged: builds require `JAVA_HOME = JDK 17`; durable fix deferred to U10.
-- **Next Stage**: On user signal → **U4 (NFC Repository)** Per-Unit Loop start. Resume by saying "Using AI-DLC, continue with U4" (or similar). U4 scope per `unit-of-work.md` §3-U4: `NfcAdapterWrapper` thin adapter; `NfcRepository` (`@Singleton`) with sealed `NfcResult` state machine; `NfcResult.Success`/`Error` complete sealed-type fill-in; `NfcIntent.Write`/`Verify` complete sealed-type fill-in; tag classifier (`classify(NdefMessage?) → TagClassification`); foreground-dispatch lifecycle (`attach(activity)` / `detach()`); write-then-verify (NFR-6). After U4: U5 → U6a → U6b → U7 → U8 → U9 → U10.
+- **Current Stage**: **U4 DONE (2026-05-24)**. Last completed unit: U4 (NFC Repository). Verification on record: `compileDebugKotlin` ✅, `testDebugUnitTest` ✅ (**182 / 182 — 4 U1 + 64 U2 + 64 U3 + 50 U4**), `assembleDebug` ✅ (≈ 33.3 MB APK; +0.2 MB from U3 baseline due to kotlinx-datetime). Brownfield invariants: zero `OpenSpoolData` references; zero `class SpoolmanService` references; zero `NfcManager`/`NfcController`/`NfcHandler` references; zero `TODO U4` references. JDK note unchanged: builds require `JAVA_HOME = JDK 17`; durable fix deferred to U10. Doc-drift recorded (Q-U4-11=A): `component-methods.md` §1 references `OpenSpoolPayloadParser`; U4 wires `OpenSpoolPayloadCodec` directly; sync deferred to U10.
+- **Next Stage**: On user signal → **U5 (Read-and-Pair Flow)** Per-Unit Loop start. Resume by saying "Using AI-DLC, continue with U5" (or similar). U5 scope per `unit-of-work.md` §3-U5: `ReadAndPairUseCase` orchestrating `NfcRepository.arm(Read)` → `consumeLastSeen` → `SpoolmanRepository.findSpoolsByCardUid(uid)` → branch (0/1/many matches × OpenSpool/Blank/Vendor); `MainViewModel.onReadTapped` + `onSpoolSelected`; `MainScreen` read composables + `SpoolmanDropdown` impl; surfaces network errors via the same `Channel<UiEffect>` pattern. **U5 is the first milestone install gate** — debug build runs on device end-to-end (UID display, OpenSpool prefill, dropdown match prefill, ambiguity error). After U5: U6a → U6b → U7 → U8 → U9 → U10.
 - **Status**: 11 v2.0 units locked (U1..U10 with U6 split into U6a/U6b); 2 v2.1 lightweight stubs (U11/U12) parked behind a hard gate. Strict construction order: U1 → U2 → U3 → U4 → U5 → U6a → U6b → U7 → U8 → U9 → U10. Milestone install gates at U1, U5, U6, U10. U10 doubles as Play Store testing-track release validation.
 
 ## Extension Configuration

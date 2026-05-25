@@ -1,7 +1,12 @@
 package com.spoolpainter.app.domain.primitives
 
-// U1 ships only Read. Write(payload, expectedUid?) and Verify(expectedPayload)
-// land in U4 once U2's OpenSpoolPayload + CardUid exist.
+import com.spoolpainter.app.domain.models.OpenSpoolPayload
+
 sealed interface NfcIntent {
     data object Read : NfcIntent
+    data class Write(
+        val payload: OpenSpoolPayload,
+        val expectedUid: CardUid? = null,
+    ) : NfcIntent
+    data class Verify(val expectedPayload: OpenSpoolPayload) : NfcIntent
 }

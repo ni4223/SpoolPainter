@@ -679,3 +679,46 @@ No frontend-components.md (U2 ships no UI). Surfacing standardised 2-option comp
 **Context**: Per `unit-of-work.md` §2 DoD #6 + §2.1, the close-out commit will bundle U3 code + tests + AIDLC artefacts + the carry-over `aidlc-state.md` / `audit.md` updates from the AIDLC pause. Push remains user-owned.
 
 ---
+
+## SESSION RESUME — U4 Per-Unit Loop Opened
+**Timestamp**: 2026-05-24T00:00:00Z
+**User Input**: "Using AI-DLC, continue with U4"
+**AI Response**: Resumed AIDLC at U4 (NFC Repository). Verified entry criteria: U3 DONE 2026-05-24 (close-out commit `8c020f9` on branch `v2`); U2 already shipped `CardUid` + `TagClassification` + `OpenSpoolPayload` + `OpenSpoolPayloadCodec`; U1 left placeholder sealed types `NfcResult` (only `Idle/Reading/Writing/Verifying`) + `NfcIntent` (only `Read`) for U4 to fill in, plus `MainActivity.onResume/onPause` `TODO U4: nfcRepository.attach/detach` hooks. Working tree clean; no carry-over for U4. About to present U4 stage-gate assessment (Functional Design / NFR Requirements / NFR Design / Infrastructure Design / Code Generation).
+**Status**: U4 entry criteria met; stage-gate assessment pending user confirmation.
+**Context**: U4 scope per `unit-of-work.md` §3-U4 — `NfcAdapterWrapper` thin wrapper, `NfcRepository` (`@Singleton`) with `state`/`lastSeenTag`/`attach`/`detach`/`arm`/`consumeLastSeen`/`disarm`, finalised `NfcResult.Success/Error` + `NfcIntent.Write/Verify`, tag classifier, write-then-verify (NFR-6), `MainActivity` lifecycle wiring closure. Cross-unit consumers: U5 (Read-and-Pair), U6a/U6b (Create-and-Pair / Move-on-bind / Two-tag), U7 (Raw write / Vendor UID-only).
+
+---
+
+## STAGE GATE — U4 Stage-Gate Plan Approved
+**Timestamp**: 2026-05-24T00:00:00Z
+**User Input**: "Approve as proposed (Recommended)" — selected via AskUserQuestion (Approve U4 stage-gate plan: FD EXECUTE; NFR Req / NFR Design / Infra SKIP; Code Gen EXECUTE).
+**AI Response**: U4 stage-gate plan approved as proposed. Functional Design Part 1 plan authored at `aidlc-docs/construction/plans/u4-nfc-repository-functional-design-plan.md` with 11 open questions (Q-U4-1 .. Q-U4-11) covering: classifier MIME-record preference, write payload MIME type, `consumeLastSeen` semantics for Write/Verify, verify byte-comparison strictness, TTL value, v1 NFC types migration strategy, whether `NfcIntent.Verify` ships in U4, Clock injection shape, `NFC not available` surfacing, `MainActivity.onNewIntent` wiring shape, `OpenSpoolPayloadParser` vs `OpenSpoolPayloadCodec` reconciliation. Awaiting user answers (or "accept all recommendations").
+**Status**: Functional Design Part 1 plan complete; awaiting answers.
+**Context**: Stage-gate decision recorded. Functional Design Part 2 (artefact generation) blocked until questions answered.
+
+---
+
+## U4 — Functional Design Part 1 Approved (All Recommendations Accepted)
+**Timestamp**: 2026-05-24T00:00:00Z
+**User Input**: "Go Go Go!!"
+**AI Response**: Recorded the recommended option for every Q-U4-1 .. Q-U4-11 in the plan's Decision Records table. Decisions: Q-U4-1=A modified (accept `application/vnd.openspool+json` + `application/json` per Q-U4-2 coupling, no `text/plain` fallback); Q-U4-2=C (`application/vnd.openspool+json`); Q-U4-3=A (Write/Verify always require fresh tap); Q-U4-4=A (exact `NdefMessage.toByteArray()` equality); Q-U4-5=A (TTL = 5000 ms); Q-U4-6=A (big-bang delete v1 NfcManager/NfcController/NfcHandler); Q-U4-7=A (ship NfcIntent.Verify with full impl); Q-U4-8=A (inject kotlinx.datetime.Clock); Q-U4-9=A (lazy "NFC not available" via state Error on arm); Q-U4-10=A (MainActivity.onNewIntent calls onTagDiscovered directly); Q-U4-11=A (use OpenSpoolPayloadCodec directly; record doc-drift fix-up). Generated FD Part 2 artefacts: `aidlc-docs/construction/u4-nfc-repository/functional-design/{domain-entities,business-rules,business-logic-model}.md`.
+**Status**: Functional Design complete; proceeded to Code Generation Part 1.
+
+---
+
+## U4 — Code Generation Part 1 (plan) authored
+**Timestamp**: 2026-05-24T00:00:00Z
+**User Input**: (continuation of "Go Go Go!!" — same approval window)
+**AI Response**: Authored `aidlc-docs/construction/plans/u4-nfc-repository-code-generation-plan.md` covering §1 build deps (add kotlinx-datetime); §2 sealed-type completion (NfcResult.Success/Error, NfcIntent.Write/Verify); §3 hardware NFC layer (NfcAdapterWrapper, NfcRepository, RawTagRead, TagBuffer, NdefRecordView; v1 deletes); §4 MainActivity wiring (attach/detach + onNewIntent); §5 test plan (~50 cases across 7 test classes); §6 verification commands; §7 story / requirement coverage map; §8 out-of-scope guards; §9 summary artefact; §10 approval gate.
+**Status**: Code Generation Part 1 plan published.
+
+---
+
+## U4 — Code Generation Part 2 (generation) executed
+**Timestamp**: 2026-05-24T00:00:00Z
+**User Input**: (continuation of "Go Go Go!!" — same approval window)
+**AI Response**: Executed every checkbox in the Code Generation plan. Files created (12): `NfcAdapterWrapper.kt`, `NfcRepository.kt`, `NdefRecordView.kt`, `RawTagRead.kt`, `TagBuffer.kt` (5 source); `FakeNfcAdapterWrapper.kt`, `MutableClock.kt`, `NfcTestSupport.kt`, `NfcRepositoryStateMachineTest.kt`, `NfcRepositoryClassifierTest.kt`, `NfcRepositoryWriteVerifyTest.kt`, `NfcRepositoryConsumeLastSeenTest.kt`, `NfcRepositoryLifecycleTest.kt`, `NfcRepositoryStandaloneVerifyTest.kt`, `NfcRepositoryUidExtractionTest.kt` (3 support + 7 test classes). Files modified (6): `NfcResult.kt` (added Success + Error), `NfcIntent.kt` (added Write + Verify), `NfcModule.kt` (NfcAdapter / wrapper / Clock providers), `MainActivity.kt` (closed U1 TODOs + onNewIntent wiring), `app/build.gradle.kts` (added kotlinx-datetime + `testOptions.unitTests.isReturnDefaultValues = true` so JVM tests can call android.util.Log.w as a no-op), `gradle/libs.versions.toml` (kotlinx-datetime entry). Files deleted (3): `NfcManager.kt`, `NfcController.kt`, `NfcHandler.kt` (Q-U4-6=A big-bang delete). Refactor note: introduced `NdefRecordView` (pure data view of an NDEF record) so the repository's classifier + verify logic can run in JVM unit tests without loading android.nfc stubs — `NfcAdapterWrapper` is the only place that touches `NdefMessage` / `NdefRecord`. Verification: `compileDebugKotlin` ✅, `testDebugUnitTest` ✅ (**182 / 182 — 4 U1 + 64 U2 + 64 U3 + 50 U4**), `assembleDebug` ✅ (≈ 33.3 MB; +0.2 MB from U3 baseline due to kotlinx-datetime). Brownfield invariants: zero `OpenSpoolData`; zero `class SpoolmanService`; zero `NfcManager`/`class NfcController`/`class NfcHandler`; zero `TODO U4`. Generated `aidlc-docs/construction/u4-nfc-repository/code/u4-summary.md`.
+**Status**: U4 DONE pending close-out commit.
+**Context**: Per `unit-of-work.md` §2 DoD #6 + §2.1, the close-out commit will bundle U4 code + tests + AIDLC artefacts in a single commit on branch `v2`. Push remains user-owned.
+
+---

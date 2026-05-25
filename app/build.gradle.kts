@@ -61,6 +61,9 @@ android {
         compose = true
         buildConfig = true
     }
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
 }
 
 dependencies {
@@ -97,6 +100,9 @@ dependencies {
     implementation(libs.androidx.datastore)
     implementation(libs.androidx.datastore.core)
     implementation(libs.kotlinx.serialization.json)
+
+    // v2 — Datetime (U4: kotlinx.datetime.Clock for NfcRepository TTL)
+    implementation(libs.kotlinx.datetime)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
