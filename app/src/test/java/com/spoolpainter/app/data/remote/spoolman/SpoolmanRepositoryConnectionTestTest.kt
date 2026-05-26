@@ -1,6 +1,7 @@
 package com.spoolpainter.app.data.remote.spoolman
 
 import com.google.gson.JsonSyntaxException
+import com.spoolpainter.app.domain.models.SpoolmanInfo
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -11,33 +12,34 @@ import org.junit.rules.TemporaryFolder
 import java.io.IOException
 
 @OptIn(ExperimentalCoroutinesApi::class)
-class SpoolmanRepositoryProbeTest {
+class SpoolmanRepositoryConnectionTestTest {
 
     @get:Rule val tempFolder = TemporaryFolder()
 
     @Test
-    fun `probe success returns Success and sets connectivity Reachable`() = runTest {
+    fun `testConnection returnsVersion onInfo200`() = runTest {
         val h = SpoolmanRepositoryHarness(tempFolder)
-        val outcome = h.repository.probe()
-        assertEquals(SpoolmanOutcome.Success(Unit), outcome)
+        h.fakeApi.info = SpoolmanInfo(version = "0.21.0")
+        val outcome = h.repository.testConnection()
+        assertEquals(SpoolmanOutcome.Success("0.21.0"), outcome)
         assertEquals(ConnectivityState.Reachable, h.repository.connectivity.value)
     }
 
     @Test
-    fun `probe HTTP error returns HttpError and sets connectivity Reachable`() = runTest {
+    fun `testConnection returnsHttpError onInfo5xx`() = runTest {
         val h = SpoolmanRepositoryHarness(tempFolder)
         h.fakeApi.failGetInfo = FakeSpoolmanApi.Failure.Http(503, "down")
-        val outcome = h.repository.probe()
+        val outcome = h.repository.testConnection()
         assertTrue(outcome is SpoolmanOutcome.HttpError)
         assertEquals(503, (outcome as SpoolmanOutcome.HttpError).code)
         assertEquals(ConnectivityState.Reachable, h.repository.connectivity.value)
     }
 
     @Test
-    fun `probe IOException returns NetworkError and sets connectivity Unreachable`() = runTest {
+    fun `testConnection returnsNetworkError onIoException`() = runTest {
         val h = SpoolmanRepositoryHarness(tempFolder)
         h.fakeApi.failGetInfo = FakeSpoolmanApi.Failure.Throws(IOException("dns"))
-        val outcome = h.repository.probe()
+        val outcome = h.repository.testConnection()
         assertTrue(outcome is SpoolmanOutcome.NetworkError)
         val state = h.repository.connectivity.value
         assertTrue(state is ConnectivityState.Unreachable)
@@ -45,25 +47,22 @@ class SpoolmanRepositoryProbeTest {
     }
 
     @Test
-    fun `probe JsonSyntaxException returns ParseError and connectivity unchanged`() = runTest {
+    fun `testConnection returnsParseError onJsonSyntaxException`() = runTest {
         val h = SpoolmanRepositoryHarness(tempFolder)
-        // Seed connectivity to Reachable first via a successful call, then trigger parse fault.
-        h.repository.probe() // success → Reachable
+        h.repository.testConnection() // success → Reachable
         h.fakeApi.failGetInfo = FakeSpoolmanApi.Failure.Throws(JsonSyntaxException("bad"))
-        val outcome = h.repository.probe()
+        val outcome = h.repository.testConnection()
         assertTrue(outcome is SpoolmanOutcome.ParseError)
         assertEquals(ConnectivityState.Reachable, h.repository.connectivity.value)
     }
 
     @Test
-    fun `probe with blank URL short-circuits to NetworkError UrlNotConfigured and connectivity Unknown`() = runTest {
+    fun `testConnection withBlankUrl shortCircuitsToNetworkErrorUrlNotConfigured`() = runTest {
         val h = SpoolmanRepositoryHarness(tempFolder, initialUrl = "")
-        val outcome = h.repository.probe()
+        val outcome = h.repository.testConnection()
         assertTrue(outcome is SpoolmanOutcome.NetworkError)
-        val cause = (outcome as SpoolmanOutcome.NetworkError).cause
-        assertTrue(cause is UrlNotConfiguredException)
+        assertTrue((outcome as SpoolmanOutcome.NetworkError).cause is UrlNotConfiguredException)
         assertEquals(ConnectivityState.Unknown, h.repository.connectivity.value)
-        // No HTTP call fired.
         assertTrue(!h.fakeApi.callLog.contains("getInfo"))
     }
 }

@@ -21,7 +21,7 @@ class SpoolmanRepositoryUrlChangeTest {
         val h = SpoolmanRepositoryHarness(tempFolder, initialUrl = "")
         assertEquals(ConnectivityState.Unknown, h.repository.connectivity.value)
         // Any call should short-circuit:
-        val outcome = h.repository.probe()
+        val outcome = h.repository.testConnection()
         assertTrue(outcome is SpoolmanOutcome.NetworkError)
         assertTrue((outcome as SpoolmanOutcome.NetworkError).cause is UrlNotConfiguredException)
     }
@@ -30,12 +30,12 @@ class SpoolmanRepositoryUrlChangeTest {
     fun `blank to non-blank initialises Spoolman client`() = runTest {
         val h = SpoolmanRepositoryHarness(tempFolder, initialUrl = "")
         h.settingsRepository.setUrl("http://test.local/")
-        val outcome = h.repository.probe()
-        assertEquals(SpoolmanOutcome.Success(Unit), outcome)
+        val outcome = h.repository.testConnection()
+        assertTrue(outcome is SpoolmanOutcome.Success)
     }
 
     @Test
-    fun `URL change clears caches and resets connectivity to Unknown`() = runTest {
+    fun `URL change refreshes caches against new URL`() = runTest {
         val h = SpoolmanRepositoryHarness(tempFolder)
         h.fakeApi.vendorList += SpoolmanVendor(id = 1, name = "V1")
         h.fakeApi.filamentList += SpoolmanFilament(id = 11, material = "PLA")
@@ -45,22 +45,26 @@ class SpoolmanRepositoryUrlChangeTest {
         )
         h.repository.refresh() // populate caches
         assertEquals(1, h.repository.vendors.value.size)
-        assertEquals(ConnectivityState.Reachable, h.repository.connectivity.value)
 
+        // Drain the fake's listings so the auto-refresh on URL bind comes
+        // back empty and proves the bind clears + refetches.
+        h.fakeApi.vendorList.clear()
+        h.fakeApi.filamentList.clear()
+        h.fakeApi.spoolList.clear()
         h.settingsRepository.setUrl("http://other.local/")
+
         assertTrue(h.repository.vendors.value.isEmpty())
         assertTrue(h.repository.filaments.value.isEmpty())
         assertTrue(h.repository.spools.value.isEmpty())
-        assertEquals(ConnectivityState.Unknown, h.repository.connectivity.value)
     }
 
     @Test
     fun `non-blank to blank tears down api`() = runTest {
         val h = SpoolmanRepositoryHarness(tempFolder)
-        h.repository.probe() // force Reachable
+        h.repository.testConnection() // force Reachable
         h.settingsRepository.setUrl("")
         assertEquals(ConnectivityState.Unknown, h.repository.connectivity.value)
-        val outcome = h.repository.probe()
+        val outcome = h.repository.testConnection()
         assertTrue(outcome is SpoolmanOutcome.NetworkError)
         assertTrue((outcome as SpoolmanOutcome.NetworkError).cause is UrlNotConfiguredException)
     }

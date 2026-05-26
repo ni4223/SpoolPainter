@@ -55,8 +55,14 @@ class SettingsViewModel @Inject constructor(
 
     fun onTestConnectionTapped() {
         viewModelScope.launch {
-            val message = when (val outcome = spoolman.probe()) {
-                is SpoolmanOutcome.Success -> "Connected to Spoolman"
+            val message = when (val outcome = spoolman.testConnection()) {
+                is SpoolmanOutcome.Success -> {
+                    val base = "Connected to Spoolman v${outcome.data}"
+                    when (spoolman.ensureExtraFieldsRegistered()) {
+                        is SpoolmanOutcome.Success -> "$base • fields ready"
+                        else -> base
+                    }
+                }
                 is SpoolmanOutcome.HttpError -> "HTTP ${outcome.code}: ${outcome.message}"
                 is SpoolmanOutcome.NetworkError -> if (outcome.cause is UrlNotConfiguredException) {
                     "Save a URL first"

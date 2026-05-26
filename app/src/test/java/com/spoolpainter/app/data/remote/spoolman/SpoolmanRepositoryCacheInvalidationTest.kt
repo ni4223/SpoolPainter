@@ -3,7 +3,10 @@ package com.spoolpainter.app.data.remote.spoolman
 import com.spoolpainter.app.domain.models.SpoolmanFilament
 import com.spoolpainter.app.domain.models.SpoolmanSpool
 import com.spoolpainter.app.domain.models.SpoolmanVendor
+import com.spoolpainter.app.domain.models.TempRanges
 import com.spoolpainter.app.domain.primitives.CardUid
+import com.spoolpainter.app.domain.primitives.ExtraCardUidsCodec
+import com.spoolpainter.app.domain.usecases.NewFilamentRequest
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -20,31 +23,36 @@ class SpoolmanRepositoryCacheInvalidationTest {
     @Test
     fun `successful PATCH replaces spool by id in spools cache`() = runTest {
         val h = SpoolmanRepositoryHarness(tempFolder)
+        h.fakeApi.spoolExtraFields += "card_uids"
         val original = SpoolmanSpool(
             id = 1,
             filament = SpoolmanFilament(id = 1, material = "PLA"),
-            lot_nr = null,
         )
         h.fakeApi.spoolList += original
         h.repository.refresh()
         assertEquals(1, h.repository.spools.value.size)
 
-        h.repository.appendCardUidToSpool(1, CardUid("abcd"))
+        h.repository.appendCardUidToSpool(1, CardUid("AABBCCDD"))
         assertEquals(1, h.repository.spools.value.size)
-        assertEquals("card_uid:abcd", h.repository.spools.value.first().lot_nr)
+        assertEquals(
+            "\"AABBCCDD\"",
+            h.repository.spools.value.first().extra?.get("card_uids"),
+        )
     }
 
     @Test
     fun `successful POST prepends new vendor in vendors cache`() = runTest {
         val h = SpoolmanRepositoryHarness(tempFolder)
+        h.fakeApi.spoolExtraFields += "card_uids"
+        h.fakeApi.filamentExtraFields += "variant"
         val outcome = h.repository.createSpoolForNewFilament(
-            NewSpoolRequest(
+            NewFilamentRequest(
+                name = "Polymaker PLA",
                 vendorName = "Polymaker",
                 materialName = "PLA",
                 colorHex = "FF0000",
                 variant = null,
                 tempRanges = TempRanges(extruderMin = 200, extruderMax = 220, bedMin = 60, bedMax = 60),
-                cardUid = CardUid("abcd"),
             ),
         )
         assertTrue(outcome is SpoolmanOutcome.Success)
@@ -60,11 +68,11 @@ class SpoolmanRepositoryCacheInvalidationTest {
         h.fakeApi.spoolList += SpoolmanSpool(
             id = 1,
             filament = SpoolmanFilament(id = 1, material = "PLA"),
-            lot_nr = "card_uid:abcd",
+            extra = mapOf("card_uids" to ExtraCardUidsCodec.encode(listOf(CardUid("AABBCCDD")))),
         )
         // Pre-condition: cache is empty (no refresh)
         assertTrue(h.repository.spools.value.isEmpty())
-        h.repository.findSpoolsByCardUid(CardUid("abcd"))
+        h.repository.findSpoolsByCardUid(CardUid("AABBCCDD"))
         assertTrue(h.repository.spools.value.isEmpty())
     }
 

@@ -6,6 +6,14 @@ value class CardUid(val hex: String) {
 
     companion object {
         fun fromBytes(bytes: ByteArray): CardUid =
-            CardUid(bytes.joinToString("") { "%02x".format(it) })
+            CardUid(bytes.joinToString("") { "%02X".format(it) })
+
+        private val HEX_PATTERN = Regex("^[0-9A-F]+$")
+
+        fun normaliseHex(raw: String): String {
+            val upper = raw.uppercase()
+            require(HEX_PATTERN.matches(upper)) { "Not valid hex: $raw" }
+            return upper
+        }
     }
 }

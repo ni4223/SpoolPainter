@@ -54,7 +54,25 @@ open class NfcAdapterWrapper @Inject constructor(
             ?: throw IllegalStateException("tag does not support NDEF")
         try {
             ndef.connect()
-            ndef.writeNdefMessage(records.toNdefMessage())
+            val message = records.toNdefMessage()
+            val payloadSize = message.byteArrayLength
+            val maxSize = ndef.maxSize
+            if (!ndef.isWritable) {
+                throw java.io.IOException("tag is read-only (locked)")
+            }
+            if (payloadSize > maxSize) {
+                throw java.io.IOException(
+                    "tag too small: payload $payloadSize B > capacity $maxSize B",
+                )
+            }
+            try {
+                ndef.writeNdefMessage(message)
+            } catch (e: java.io.IOException) {
+                throw java.io.IOException(
+                    "Ndef.writeNdefMessage IOException (payload=${payloadSize}B cap=${maxSize}B writable=${ndef.isWritable}): ${e.message ?: "no message"}",
+                    e,
+                )
+            }
         } finally {
             try {
                 ndef.close()

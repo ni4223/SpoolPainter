@@ -18,14 +18,10 @@ interface SpoolmanApi {
     suspend fun getInfo(): Response<SpoolmanInfo>
 
     @GET("api/v1/spool")
-    suspend fun findSpoolsByLotNr(
-        @Query("lot_nr") lotNrSubstring: String,
-    ): Response<List<SpoolmanSpool>>
-
-    @GET("api/v1/spool")
     suspend fun listSpools(
         @Query("limit") limit: Int? = null,
         @Query("offset") offset: Int? = null,
+        @Query("allow_archived") allowArchived: Boolean? = null,
     ): Response<List<SpoolmanSpool>>
 
     @GET("api/v1/spool/{id}")
@@ -47,8 +43,18 @@ interface SpoolmanApi {
     suspend fun createSpool(@Body body: CreateSpoolRequest): Response<SpoolmanSpool>
 
     @PATCH("api/v1/spool/{id}")
-    suspend fun patchSpoolLotNr(
+    suspend fun patchSpool(
         @Path("id") spoolId: Int,
-        @Body body: UpdateSpoolLotNrRequest,
+        @Body body: SpoolPatchBody,
     ): Response<SpoolmanSpool>
+
+    @GET("api/v1/field/{entityType}")
+    suspend fun listFields(@Path("entityType") entityType: String): Response<List<ExtraFieldDef>>
+
+    @POST("api/v1/field/{entityType}/{key}")
+    suspend fun postField(
+        @Path("entityType") entityType: String,
+        @Path("key") key: String,
+        @Body body: ExtraFieldDef,
+    ): Response<ExtraFieldDef>
 }

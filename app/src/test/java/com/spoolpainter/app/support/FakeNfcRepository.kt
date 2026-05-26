@@ -43,7 +43,14 @@ class FakeNfcRepository : NfcRepository(
         scheduledArmResult = result
     }
 
+    fun queueArmResults(vararg results: NfcResult) {
+        // FIFO queue of results pushed by successive arm() calls. If non-empty, dequeue takes
+        // precedence over scheduledArmResult.
+        armResultQueue.addAll(results.toList())
+    }
+
     private var scheduledArmResult: NfcResult? = null
+    private val armResultQueue: ArrayDeque<NfcResult> = ArrayDeque()
 
     fun setBufferedTap(result: NfcResult?) {
         nextConsumeLastSeen = result
@@ -57,9 +64,13 @@ class FakeNfcRepository : NfcRepository(
             is NfcIntent.Write -> NfcResult.Writing
             is NfcIntent.Verify -> NfcResult.Verifying
         }
-        scheduledArmResult?.let { result ->
-            _state.value = result
-            scheduledArmResult = null
+        if (armResultQueue.isNotEmpty()) {
+            _state.value = armResultQueue.removeFirst()
+        } else {
+            scheduledArmResult?.let { result ->
+                _state.value = result
+                scheduledArmResult = null
+            }
         }
     }
 

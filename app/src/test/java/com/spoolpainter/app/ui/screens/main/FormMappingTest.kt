@@ -5,6 +5,7 @@ import com.spoolpainter.app.domain.models.SpoolmanFilament
 import com.spoolpainter.app.domain.models.SpoolmanSpool
 import com.spoolpainter.app.domain.models.SpoolmanVendor
 import com.spoolpainter.app.domain.primitives.CardUid
+import com.spoolpainter.app.domain.primitives.ExtraCardUidsCodec
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -188,5 +189,59 @@ class FormMappingTest {
         assertNull(form.colorHex)
         assertNull(form.variant)
         assertEquals(true, form.rawWriteMode)
+    }
+
+    @Test
+    fun `fromSpoolman with card_uids decodes UID into form`() {
+        val spool = SpoolmanSpool(
+            id = 1,
+            filament = SpoolmanFilament(id = 10, material = "PLA"),
+            extra = mapOf(
+                "card_uids" to ExtraCardUidsCodec.encode(listOf(CardUid("AABBCCDD"))),
+            ),
+        )
+        val form = FormMapping.fromSpoolman(
+            spool = spool,
+            currentUid = null,
+            rawWriteMode = false,
+            uidSource = FormMapping.SpoolmanUidSource.FromCardUidsOrClear,
+        )
+        assertEquals(CardUid("AABBCCDD"), form.cardUid)
+    }
+
+    @Test
+    fun `fromSpoolman without card_uids clears UID`() {
+        val spool = SpoolmanSpool(
+            id = 1,
+            filament = SpoolmanFilament(id = 10, material = "PLA"),
+            extra = null,
+        )
+        val form = FormMapping.fromSpoolman(
+            spool = spool,
+            currentUid = uid,
+            rawWriteMode = false,
+            uidSource = FormMapping.SpoolmanUidSource.FromCardUidsOrClear,
+        )
+        assertNull(form.cardUid)
+    }
+
+    @Test
+    fun `fromSpoolman with multiUid in card_uids picks first UID`() {
+        val spool = SpoolmanSpool(
+            id = 1,
+            filament = SpoolmanFilament(id = 10, material = "PLA"),
+            extra = mapOf(
+                "card_uids" to ExtraCardUidsCodec.encode(
+                    listOf(CardUid("AABBCCDD"), CardUid("11223344"), CardUid("DEADBEEF")),
+                ),
+            ),
+        )
+        val form = FormMapping.fromSpoolman(
+            spool = spool,
+            currentUid = null,
+            rawWriteMode = false,
+            uidSource = FormMapping.SpoolmanUidSource.FromCardUidsOrClear,
+        )
+        assertEquals(CardUid("AABBCCDD"), form.cardUid)
     }
 }

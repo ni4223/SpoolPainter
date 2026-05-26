@@ -70,7 +70,12 @@ class NfcRepositoryLifecycleTest {
     }
 
     @Test
-    fun `detach during Writing transitions to Error`() = runTest {
+    fun `detach during Writing preserves Writing state`() = runTest {
+        // Android 14+ singleTop activities can briefly onPause → onResume
+        // around an NFC intent dispatch; we no longer surface a spurious
+        // "paused mid-write" error in that case. The user-facing timeout
+        // (withTimeoutOrNull in MainViewModel.onWriteTapped) catches a real
+        // user-driven pause.
         val wrapper = FakeNfcAdapterWrapper()
         val activity: ComponentActivity = mockk(relaxed = true)
         val repo = newRepository(wrapper = wrapper)
@@ -79,8 +84,7 @@ class NfcRepositoryLifecycleTest {
 
         repo.detach()
 
-        val state = repo.state.value as NfcResult.Error
-        assertEquals("activity paused mid-write — retry on next tap", state.reason)
+        assertTrue(repo.state.value is NfcResult.Writing)
     }
 
     @Test

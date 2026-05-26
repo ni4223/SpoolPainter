@@ -1,18 +1,11 @@
 package com.spoolpainter.app.ui.screens.main
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Settings
@@ -24,7 +17,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.ExtendedFloatingActionButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -40,10 +32,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -52,6 +41,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.spoolpainter.app.domain.models.SpoolmanSpool
 import com.spoolpainter.app.domain.primitives.NfcResult
 import com.spoolpainter.app.ui.common.UiEffect
+import com.spoolpainter.app.ui.components.FilamentForm
+import com.spoolpainter.app.ui.components.FormChange
 
 @Composable
 fun MainScreen(
@@ -59,6 +50,9 @@ fun MainScreen(
     onNavigateToSettings: () -> Unit = {},
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val customMaterial by viewModel.customMaterial.collectAsStateWithLifecycle()
+    val customBrand by viewModel.customBrand.collectAsStateWithLifecycle()
+    val canWrite by viewModel.canWrite.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(Unit) {
@@ -91,7 +85,7 @@ fun MainScreen(
         ) {
             BannerSlot(state.banner)
             ReadingHint(state.activeFlow, state.nfc)
-            UidRow(state.form.cardUid?.hex)
+            WritingHint(state.activeFlow, state.nfc)
             SpoolmanDropdown(
                 spools = state.spoolman.spools,
                 selectedId = state.spoolman.selectedSpoolId,
@@ -99,9 +93,48 @@ fun MainScreen(
                 onSelect = viewModel::onSpoolSelected,
             )
             AmbiguityBlock(state.ambiguity)
-            FormPreview(state.form)
+            FilamentForm(
+                state = state.form,
+                customMaterial = customMaterial,
+                customBrand = customBrand,
+                enabled = state.activeFlow == ActiveFlow.Idle,
+                canSave = canWrite,
+                onChange = { change ->
+                    when (change) {
+                        is FormChange.MaterialPicked -> viewModel.onMaterialPicked(change.value)
+                        is FormChange.CustomMaterialChanged -> viewModel.onCustomMaterialChanged(change.value)
+                        is FormChange.BrandPicked -> viewModel.onBrandPicked(change.value)
+                        is FormChange.CustomBrandChanged -> viewModel.onCustomBrandChanged(change.value)
+                        is FormChange.ColorHex -> viewModel.onColorHexChanged(change.value)
+                        is FormChange.Variant -> viewModel.onVariantChanged(change.value)
+                        is FormChange.TempRangesChanged -> viewModel.onTempRangesChanged(change.value)
+                    }
+                },
+                onSave = viewModel::onWriteTapped,
+            )
+            InstructionFooter(state.activeFlow)
         }
     }
+}
+
+/**
+ * v1-style instructional footer at the bottom of the screen. Shown only when
+ * idle (no read/write in flight) so it doesn't compete with the in-flight
+ * hints at the top.
+ */
+@Composable
+private fun InstructionFooter(activeFlow: ActiveFlow) {
+    if (activeFlow != ActiveFlow.Idle) return
+    Text(
+        text = "• Tap a tag to read its filament settings\n" +
+            "• Or fill the form, then tap Save & Write to write a fresh tag\n" +
+            "• Press Read tag to scan a tag without filling the form first",
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 8.dp)
+            .testTag("main-instructions"),
+        style = MaterialTheme.typography.bodySmall,
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -156,12 +189,19 @@ private fun ReadingHint(activeFlow: ActiveFlow, nfc: NfcResult) {
 }
 
 @Composable
-private fun UidRow(uidHex: String?) {
-    if (uidHex.isNullOrEmpty()) return
+private fun WritingHint(activeFlow: ActiveFlow, nfc: NfcResult) {
+    val showHint = activeFlow == ActiveFlow.WritingForPair &&
+        (nfc is NfcResult.Idle || nfc is NfcResult.Writing || nfc is NfcResult.Verifying)
+    if (!showHint) return
+    val label = when (nfc) {
+        is NfcResult.Verifying -> "Verifying tag…"
+        else -> "Tap a tag to write…"
+    }
     Text(
-        text = "UID: ${uidHex.uppercase()}",
-        modifier = Modifier.fillMaxWidth().testTag("main-uid-row"),
-        style = MaterialTheme.typography.bodyLarge,
+        text = label,
+        modifier = Modifier.fillMaxWidth().testTag("main-writing-hint"),
+        style = MaterialTheme.typography.titleMedium,
+        textAlign = TextAlign.Center,
     )
 }
 
@@ -174,6 +214,13 @@ internal fun SpoolmanDropdown(
     onSelect: (SpoolmanSpool?) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
+    // Cached spools include archived entries (move-on-bind needs them) but
+    // the dropdown is for picking an active spool to write to. Sort newest
+    // first — recently-created spools are the most likely target after a
+    // pair, so users shouldn't have to scroll past everything to find them.
+    val visibleSpools = spools
+        .filterNot { it.archived }
+        .sortedByDescending { it.id ?: Int.MIN_VALUE }
     val selected = spools.firstOrNull { it.id == selectedId }
     val displayText = if (!enabled) {
         "Configure Spoolman URL in Settings"
@@ -196,7 +243,11 @@ internal fun SpoolmanDropdown(
             modifier = Modifier.fillMaxWidth().menuAnchor(),
         )
         if (enabled) {
-            DropdownMenu(
+            // ExposedDropdownMenu (not bare DropdownMenu) auto-scrolls past
+            // its viewport — bare DropdownMenu silently clips long lists, so
+            // recently-created spools (later IDs) drop off the bottom and
+            // appear "missing" even when present in state.
+            ExposedDropdownMenu(
                 expanded = expanded,
                 onDismissRequest = { expanded = false },
             ) {
@@ -207,7 +258,7 @@ internal fun SpoolmanDropdown(
                         expanded = false
                     },
                 )
-                spools.forEach { spool ->
+                visibleSpools.forEach { spool ->
                     DropdownMenuItem(
                         text = { Text(spoolDisplayName(spool)) },
                         onClick = {
@@ -256,89 +307,6 @@ private fun AmbiguityBlock(state: AmbiguityState?) {
                 style = MaterialTheme.typography.bodySmall,
             )
         }
-    }
-}
-
-@Composable
-private fun FormPreview(form: FormState) {
-    Card(modifier = Modifier.fillMaxWidth().testTag("main-form-preview")) {
-        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            PreviewRow("Material", form.material?.name)
-            PreviewRow("Brand", form.brand?.name)
-            ColorPreviewRow(form.colorHex)
-            PreviewRow("Variant", form.variant)
-            HorizontalDivider()
-            PreviewRow(
-                "Extruder",
-                tempRangeText(form.tempRanges.extruderMin, form.tempRanges.extruderMax),
-            )
-            PreviewRow(
-                "Bed",
-                tempRangeText(form.tempRanges.bedMin, form.tempRanges.bedMax),
-            )
-        }
-    }
-}
-
-@Composable
-private fun PreviewRow(label: String, value: String?) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(
-            text = label,
-            modifier = Modifier.width(96.dp),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Text(
-            text = value?.takeIf { it.isNotBlank() } ?: "—",
-            style = MaterialTheme.typography.bodyMedium,
-        )
-    }
-}
-
-@Composable
-private fun ColorPreviewRow(colorHex: String?) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(
-            text = "Colour",
-            modifier = Modifier.width(96.dp),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        if (colorHex != null) {
-            val color = parseHex(colorHex)
-            if (color != null) {
-                Box(
-                    modifier = Modifier
-                        .size(20.dp)
-                        .clip(RoundedCornerShape(4.dp))
-                        .background(color),
-                )
-                Spacer(Modifier.width(8.dp))
-            }
-            Text(text = "#$colorHex", style = MaterialTheme.typography.bodyMedium)
-        } else {
-            Text(text = "—", style = MaterialTheme.typography.bodyMedium)
-        }
-    }
-}
-
-private fun parseHex(hex: String): Color? {
-    if (hex.length != 6) return null
-    return try {
-        val r = hex.substring(0, 2).toInt(16)
-        val g = hex.substring(2, 4).toInt(16)
-        val b = hex.substring(4, 6).toInt(16)
-        Color(red = r, green = g, blue = b)
-    } catch (_: NumberFormatException) {
-        null
-    }
-}
-
-private fun tempRangeText(min: Int?, max: Int?): String {
-    return when {
-        min == null && max == null -> "—"
-        else -> "${min ?: "—"}–${max ?: "—"} °C"
     }
 }
 

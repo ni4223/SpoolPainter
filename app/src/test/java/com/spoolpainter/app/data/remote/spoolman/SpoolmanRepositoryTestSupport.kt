@@ -45,6 +45,12 @@ class SpoolmanRepositoryHarness(
             scope = scope,
             ioDispatcher = UnconfinedTestDispatcher(),
         )
-        // Allow the URL collector to run synchronously under UnconfinedTestDispatcher.
+        // The URL collector ran synchronously under UnconfinedTestDispatcher
+        // and auto-registered extra-field schemas. Clear the call log + the
+        // registered-field sets so tests start from a clean slate and assert
+        // only on calls they explicitly trigger.
+        fakeApi.callLog.clear()
+        fakeApi.spoolExtraFields.clear()
+        fakeApi.filamentExtraFields.clear()
     }
 }

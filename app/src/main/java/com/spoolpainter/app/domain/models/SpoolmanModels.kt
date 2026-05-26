@@ -7,7 +7,8 @@ data class SpoolmanSpool(
     val used_weight: Float = 0f,
     val location: String? = null,
     val lot_nr: String? = null,
-    val archived: Boolean = false
+    val archived: Boolean = false,
+    val extra: Map<String, String>? = null,
 )
 
 data class SpoolmanFilament(
@@ -17,7 +18,8 @@ data class SpoolmanFilament(
     val vendor: SpoolmanVendor? = null,
     val color_hex: String? = null,
     val settings_extruder_temp: Int? = null,
-    val settings_bed_temp: Int? = null
+    val settings_bed_temp: Int? = null,
+    val extra: Map<String, String>? = null,
 )
 
 data class SpoolmanVendor(

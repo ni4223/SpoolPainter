@@ -24,7 +24,7 @@ class ConnectivityStateTransitionTest {
     @Test
     fun `BR-U3-CONN-2 successful 2xx transitions to Reachable`() = runTest {
         val h = SpoolmanRepositoryHarness(tempFolder)
-        h.repository.probe()
+        h.repository.testConnection()
         assertEquals(ConnectivityState.Reachable, h.repository.connectivity.value)
     }
 
@@ -32,7 +32,7 @@ class ConnectivityStateTransitionTest {
     fun `BR-U3-CONN-3 HTTP 4xx_5xx still transitions to Reachable`() = runTest {
         val h = SpoolmanRepositoryHarness(tempFolder)
         h.fakeApi.failGetInfo = FakeSpoolmanApi.Failure.Http(500, "boom")
-        h.repository.probe()
+        h.repository.testConnection()
         assertEquals(ConnectivityState.Reachable, h.repository.connectivity.value)
     }
 
@@ -40,7 +40,7 @@ class ConnectivityStateTransitionTest {
     fun `BR-U3-CONN-4 IOException transitions to Unreachable with reason`() = runTest {
         val h = SpoolmanRepositoryHarness(tempFolder)
         h.fakeApi.failGetInfo = FakeSpoolmanApi.Failure.Throws(IOException("dns"))
-        h.repository.probe()
+        h.repository.testConnection()
         val state = h.repository.connectivity.value
         assertTrue(state is ConnectivityState.Unreachable)
         assertEquals("dns", (state as ConnectivityState.Unreachable).reason)
@@ -49,23 +49,23 @@ class ConnectivityStateTransitionTest {
     @Test
     fun `BR-U3-CONN-5 URL not configured short-circuit sets Unknown`() = runTest {
         val h = SpoolmanRepositoryHarness(tempFolder, initialUrl = "")
-        h.repository.probe()
+        h.repository.testConnection()
         assertEquals(ConnectivityState.Unknown, h.repository.connectivity.value)
     }
 
     @Test
     fun `BR-U3-CONN-6 ParseError leaves connectivity unchanged`() = runTest {
         val h = SpoolmanRepositoryHarness(tempFolder)
-        h.repository.probe() // → Reachable
+        h.repository.testConnection() // → Reachable
         h.fakeApi.failGetInfo = FakeSpoolmanApi.Failure.Throws(JsonSyntaxException("bad"))
-        h.repository.probe()
+        h.repository.testConnection()
         assertEquals(ConnectivityState.Reachable, h.repository.connectivity.value)
     }
 
     @Test
     fun `BR-U3-CONN-7 atomic transition before outcome is returned`() = runTest {
         val h = SpoolmanRepositoryHarness(tempFolder)
-        val outcome = h.repository.probe()
+        val outcome: SpoolmanOutcome<*> = h.repository.testConnection()
         // Both must be observable post-call.
         assertTrue(outcome is SpoolmanOutcome.Success)
         assertEquals(ConnectivityState.Reachable, h.repository.connectivity.value)

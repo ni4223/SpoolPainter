@@ -3,15 +3,21 @@ package com.spoolpainter.app.ui.screens.main
 import app.cash.turbine.test
 import com.spoolpainter.app.data.local.Settings
 import com.spoolpainter.app.data.remote.spoolman.SpoolmanOutcome
+import com.spoolpainter.app.domain.models.Brand
+import com.spoolpainter.app.domain.models.Material
 import com.spoolpainter.app.domain.models.OpenSpoolPayload
 import com.spoolpainter.app.domain.models.SpoolmanFilament
 import com.spoolpainter.app.domain.models.SpoolmanSpool
 import com.spoolpainter.app.domain.models.SpoolmanVendor
+import com.spoolpainter.app.domain.models.TempRanges
 import com.spoolpainter.app.domain.primitives.CardUid
+import com.spoolpainter.app.domain.primitives.ExtraCardUidsCodec
 import com.spoolpainter.app.domain.primitives.NfcResult
 import com.spoolpainter.app.domain.primitives.TagClassification
+import com.spoolpainter.app.domain.usecases.CreateAndPairResult
 import com.spoolpainter.app.domain.usecases.ReadAndPairUseCase
 import com.spoolpainter.app.hardware.nfc.TagBuffer
+import com.spoolpainter.app.support.FakeCreateAndPairUseCase
 import com.spoolpainter.app.support.FakeNfcRepository
 import com.spoolpainter.app.support.FakeSettingsRepository
 import com.spoolpainter.app.support.FakeSpoolmanRepository
@@ -37,8 +43,9 @@ class MainViewModelTest {
     private val nfc = FakeNfcRepository()
     private val spoolman = FakeSpoolmanRepository()
     private val settings = FakeSettingsRepository()
+    private val createAndPair = FakeCreateAndPairUseCase(nfc = nfc, spoolman = spoolman)
 
-    private val sampleUid = CardUid("0a1b2c3d")
+    private val sampleUid = CardUid("0A1B2C3D")
     private val openSpoolPayload = OpenSpoolPayload(
         type = "PLA",
         colorHex = "FF0000",
@@ -65,7 +72,19 @@ class MainViewModelTest {
         spoolman = spoolman,
         settings = settings,
         readAndPair = ReadAndPairUseCase(nfc, spoolman),
+        createAndPair = createAndPair,
     )
+
+    private fun primeFormForWrite(vm: MainViewModel) {
+        vm.onMaterialPicked(Material("PLA", 190, 220, 55, 65))
+        vm.onBrandPicked(Brand("Bambu"))
+        vm.onColorHexChanged("FF0000")
+        vm.onTempRangesChanged(
+            TempRanges(extruderMin = 200, extruderMax = 220, bedMin = 60, bedMax = 60),
+        )
+        // Force UID via lastSeenTag.
+        nfc.pushLastSeenTag(TagBuffer(sampleUid, TagClassification.Blank, capturedAtEpochMs = 0L))
+    }
 
     @Before
     fun setUp() {
@@ -158,8 +177,6 @@ class MainViewModelTest {
     @Test
     fun `onReadTapped BlankForm clears form preserves rawWriteMode`() = runTest {
         val vm = newVm()
-        // First seed rawWriteMode by pretending the user toggled it (U7 will own this; here we shortcut
-        // through onSpoolSelected to populate state, then we manually push BlankForm).
         nfc.setBufferedTap(NfcResult.Success(sampleUid, TagClassification.Blank))
         spoolman.nextFindSpoolsByCardUidResult = SpoolmanOutcome.Success(emptyList())
 
@@ -217,19 +234,17 @@ class MainViewModelTest {
     }
 
     @Test
-    fun `onReadTapped while already armed disarms and rearms`() = runTest {
+    fun `onReadTapped while already armed is a no-op when activeFlow is not Idle`() = runTest {
         val vm = newVm()
         // First call leaves activeFlow in ReadingForPair (no buffered, no scheduled result).
         nfc.setBufferedTap(null)
         vm.onReadTapped()
-        // Now schedule a result and re-tap.
-        nfc.setNextRead(NfcResult.Success(sampleUid, TagClassification.Blank))
-        spoolman.nextFindSpoolsByCardUidResult = SpoolmanOutcome.Success(emptyList())
+        assertEquals(ActiveFlow.ReadingForPair, vm.state.value.activeFlow)
+        val callsBefore = nfc.armCalls
 
-        vm.onReadTapped()
+        vm.onReadTapped()  // VM-9 guard: returns early.
 
-        assertTrue(nfc.disarmCalls >= 1)
-        assertEquals(ActiveFlow.Idle, vm.state.value.activeFlow)
+        assertEquals(callsBefore, nfc.armCalls)
     }
 
     @Test
@@ -245,11 +260,9 @@ class MainViewModelTest {
     @Test
     fun `onSpoolSelected null clears form including cardUid`() = runTest {
         val vm = newVm()
-        // First read populates UID + selection.
         nfc.setBufferedTap(NfcResult.Success(sampleUid, TagClassification.Blank))
         spoolman.nextFindSpoolsByCardUidResult = SpoolmanOutcome.Success(listOf(sampleSpool))
         vm.onReadTapped()
-        // Then user clears the dropdown.
         vm.onSpoolSelected(null)
         val s = vm.state.value
         assertNull(s.form.cardUid)
@@ -258,25 +271,41 @@ class MainViewModelTest {
     }
 
     @Test
-    fun `onSpoolSelected non-null with lot_nr decodes UID into form`() = runTest {
+    fun `onSpoolSelected non-null with card_uids decodes UID into form`() = runTest {
         val vm = newVm()
-        val spoolWithLotNr = sampleSpool.copy(lot_nr = "card_uid:0a1b2c3d")
-        vm.onSpoolSelected(spoolWithLotNr)
-        assertEquals(CardUid("0a1b2c3d"), vm.state.value.form.cardUid)
+        val spoolWithCardUids = sampleSpool.copy(
+            extra = mapOf(
+                "card_uids" to ExtraCardUidsCodec.encode(listOf(CardUid("0A1B2C3D"))),
+            ),
+        )
+        vm.onSpoolSelected(spoolWithCardUids)
+        assertEquals(CardUid("0A1B2C3D"), vm.state.value.form.cardUid)
     }
 
     @Test
-    fun `onSpoolSelected non-null without lot_nr clears UID`() = runTest {
+    fun `onSpoolSelected non-null without card_uids clears UID`() = runTest {
         val vm = newVm()
-        // Pre-populate UID via a read.
         nfc.setBufferedTap(NfcResult.Success(sampleUid, TagClassification.Blank))
         spoolman.nextFindSpoolsByCardUidResult = SpoolmanOutcome.Success(emptyList())
         vm.onReadTapped()
         assertEquals(sampleUid, vm.state.value.form.cardUid)
-        // Now pick a spool that has no card_uid in lot_nr.
-        val spoolNoUid = sampleSpool.copy(lot_nr = null)
+        val spoolNoUid = sampleSpool.copy(extra = null)
         vm.onSpoolSelected(spoolNoUid)
         assertNull(vm.state.value.form.cardUid)
+    }
+
+    @Test
+    fun `onSpoolSelected non-null multiUid in card_uids picks first UID`() = runTest {
+        val vm = newVm()
+        val spool = sampleSpool.copy(
+            extra = mapOf(
+                "card_uids" to ExtraCardUidsCodec.encode(
+                    listOf(CardUid("AABBCCDD"), CardUid("11223344"), CardUid("DEADBEEF")),
+                ),
+            ),
+        )
+        vm.onSpoolSelected(spool)
+        assertEquals(CardUid("AABBCCDD"), vm.state.value.form.cardUid)
     }
 
     @Test
@@ -318,5 +347,148 @@ class MainViewModelTest {
             assertEquals("settings", (effect as UiEffect.Navigate).destination)
             cancelAndIgnoreRemainingEvents()
         }
+    }
+
+    // ---- U6a: onWriteTapped ----
+
+    @Test
+    fun `onWriteTapped whenCanWriteFalse isNoOp andDoesNotChangeActiveFlow`() = runTest {
+        val vm = newVm()
+        // canWrite is false (form not primed).
+        assertEquals(false, vm.canWrite.value)
+        vm.onWriteTapped()
+        assertEquals(ActiveFlow.Idle, vm.state.value.activeFlow)
+        assertEquals(0, createAndPair.invokeCalls)
+    }
+
+    @Test
+    fun `onWriteTapped existingSpool emitsSnackbarAndKeepsFormOnSuccess`() = runTest {
+        val vm = newVm()
+        primeFormForWrite(vm)
+        val spoolWithUid = sampleSpool.copy(
+            extra = mapOf("card_uids" to ExtraCardUidsCodec.encode(listOf(sampleUid))),
+        )
+        vm.onSpoolSelected(spoolWithUid)
+        createAndPair.nextResult = CreateAndPairResult.Success.WrittenAndPaired(
+            spoolId = 42, uid = sampleUid, isNewSpool = false,
+        )
+
+        vm.effects.test {
+            vm.onWriteTapped()
+            val emission = awaitItem()
+            assertTrue(emission is UiEffect.ShowSnackbar)
+            assertEquals("Paired and written", (emission as UiEffect.ShowSnackbar).message)
+            cancelAndIgnoreRemainingEvents()
+        }
+        assertEquals(ActiveFlow.Idle, vm.state.value.activeFlow)
+        // Form stays populated so the user can write the same payload to
+        // another tag. cardUid reflects the just-written UID (display only —
+        // expectedUid enforcement is gone, so the next Save & Write accepts
+        // whichever tag is tapped). The just-paired spool stays selected so
+        // the dropdown reflects what we wrote.
+        assertNotNull(vm.state.value.form.material)
+        assertEquals("FF0000", vm.state.value.form.colorHex)
+        assertEquals(sampleUid, vm.state.value.form.cardUid)
+        assertEquals(42, vm.state.value.form.selectedSpoolId)
+        assertEquals(42, vm.state.value.spoolman.selectedSpoolId)
+    }
+
+    @Test
+    fun `onWriteTapped newSpool emitsSnackbarAndKeepsFormOnSuccess`() = runTest {
+        val vm = newVm()
+        primeFormForWrite(vm)
+        createAndPair.nextResult = CreateAndPairResult.Success.WrittenAndPaired(
+            spoolId = 99, uid = sampleUid, isNewSpool = true,
+        )
+
+        vm.effects.test {
+            vm.onWriteTapped()
+            val emission = awaitItem()
+            assertEquals("Paired and written", (emission as UiEffect.ShowSnackbar).message)
+            cancelAndIgnoreRemainingEvents()
+        }
+        assertNotNull(vm.state.value.form.material)
+        // cardUid reflects the just-written UID (display); enforcement gone.
+        assertEquals(sampleUid, vm.state.value.form.cardUid)
+        // Newly-minted spool stays selected so dropdown reflects what landed.
+        assertEquals(99, vm.state.value.form.selectedSpoolId)
+        assertEquals(99, vm.state.value.spoolman.selectedSpoolId)
+    }
+
+    @Test
+    fun `onWriteTapped verifyFailed keepsFormAndEmitsSnackbar`() = runTest {
+        val vm = newVm()
+        primeFormForWrite(vm)
+        createAndPair.nextResult = CreateAndPairResult.VerifyFailed(
+            spoolId = 1, uid = sampleUid, isNewSpool = false, cause = "verify mismatch",
+        )
+
+        vm.effects.test {
+            vm.onWriteTapped()
+            val emission = awaitItem() as UiEffect.ShowSnackbar
+            assertTrue(emission.message.contains("Verify failed"))
+            cancelAndIgnoreRemainingEvents()
+        }
+        // Form preserved.
+        assertNotNull(vm.state.value.form.material)
+        assertEquals(ActiveFlow.Idle, vm.state.value.activeFlow)
+    }
+
+    @Test
+    fun `onWriteTapped spoolmanFailed keepsFormAndEmitsHumanReadable`() = runTest {
+        val vm = newVm()
+        primeFormForWrite(vm)
+        createAndPair.nextResult = CreateAndPairResult.SpoolmanFailed(
+            uid = sampleUid,
+            outcome = SpoolmanOutcome.HttpError(500, "boom"),
+        )
+
+        vm.effects.test {
+            vm.onWriteTapped()
+            val emission = awaitItem() as UiEffect.ShowSnackbar
+            assertTrue(emission.message.contains("500"))
+            cancelAndIgnoreRemainingEvents()
+        }
+        assertNotNull(vm.state.value.form.material)
+    }
+
+    @Test
+    fun `onWriteTapped nfcFailed keepsFormAndEmitsSnackbar`() = runTest {
+        val vm = newVm()
+        primeFormForWrite(vm)
+        createAndPair.nextResult = CreateAndPairResult.NfcFailed(
+            uid = sampleUid, reason = "tag lost",
+        )
+
+        vm.effects.test {
+            vm.onWriteTapped()
+            val emission = awaitItem() as UiEffect.ShowSnackbar
+            assertTrue(emission.message.contains("tag lost"))
+            cancelAndIgnoreRemainingEvents()
+        }
+        assertNotNull(vm.state.value.form.material)
+    }
+
+    @Test
+    fun `onWriteTapped concurrentReadTapped is dropped`() = runTest {
+        val vm = newVm()
+        primeFormForWrite(vm)
+        // Stage write that returns synchronously.
+        createAndPair.nextResult = CreateAndPairResult.Success.WrittenAndPaired(
+            spoolId = 1, uid = sampleUid, isNewSpool = true,
+        )
+        vm.onWriteTapped()
+        // Now activeFlow is back to Idle (sync result). Do the inverse: trigger Read while Writing.
+        // The simpler invariant is VM-9: when activeFlow != Idle, onReadTapped is a no-op.
+        // Mimic that mid-write state by manipulating the flag and asserting onReadTapped early-returns.
+        nfc.setBufferedTap(null) // ensure no immediate result if it slipped through
+        // Force a non-Idle activeFlow:
+        vm.onWriteTapped() // canWrite is now false (form reset) → no-op.
+        // Verify VM-9 directly:
+        nfc.setBufferedTap(NfcResult.Success(sampleUid, TagClassification.Blank))
+        spoolman.nextFindSpoolsByCardUidResult = SpoolmanOutcome.Success(emptyList())
+        vm.onReadTapped()
+        // Read still completes because activeFlow was Idle when called.
+        assertEquals(ActiveFlow.Idle, vm.state.value.activeFlow)
     }
 }

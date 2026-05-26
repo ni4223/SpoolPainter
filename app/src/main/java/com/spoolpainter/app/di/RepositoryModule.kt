@@ -2,6 +2,7 @@ package com.spoolpainter.app.di
 
 import com.spoolpainter.app.data.local.SettingsRepository
 import com.spoolpainter.app.data.local.SettingsRepositoryImpl
+import com.spoolpainter.app.domain.usecases.MoveOnBindUseCase
 import dagger.Binds
 import dagger.Module
 import dagger.Provides
@@ -36,4 +37,7 @@ abstract class RepositoryBindingsModule {
     @Binds
     @Singleton
     abstract fun bindSettingsRepository(impl: SettingsRepositoryImpl): SettingsRepository
+
+    @Binds
+    abstract fun bindMoveOnBindUseCase(impl: MoveOnBindUseCase.NoOp): MoveOnBindUseCase
 }

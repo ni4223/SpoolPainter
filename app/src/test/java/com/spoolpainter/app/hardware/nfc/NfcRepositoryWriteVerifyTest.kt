@@ -66,17 +66,21 @@ class NfcRepositoryWriteVerifyTest {
     }
 
     @Test
-    fun `write with mismatched expected UID surfaces wrong-tag-UID error`() = runTest {
+    fun `write with mismatched expected UID still writes (enforcement removed)`() = runTest {
+        // expectedUid is no longer enforced — the legitimate two-tag flow
+        // (Read tag 1, then Save & Write tag 2 to the same spool) needs the
+        // write to accept whichever tag the user taps. Same-UID-on-two-spools
+        // conflict is the job of MoveOnBindUseCase, not this layer.
         val wrapper = FakeNfcAdapterWrapper()
         wrapper.simulateRead(sampleUid(), records = null)
+        wrapper.simulateReadbackEchoesWritten()
         val repo = newRepository(wrapper = wrapper)
 
         repo.arm(NfcIntent.Write(samplePayload(), expectedUid = CardUid("deadbeef")))
         repo.handleTag(makeTag())
 
-        val err = repo.state.value as NfcResult.Error
-        assertTrue("reason: ${err.reason}", err.reason.startsWith("wrong tag UID — expected deadbeef"))
-        assertEquals(0, wrapper.writeCallCount)
+        assertEquals(NfcResult.Success(sampleUid(), TagClassification.OpenSpool(samplePayload())), repo.state.value)
+        assertEquals(1, wrapper.writeCallCount)
     }
 
     @Test
@@ -119,20 +123,29 @@ class NfcRepositoryWriteVerifyTest {
         repo.handleTag(makeTag())
 
         val err = repo.state.value as NfcResult.Error
-        assertEquals("verify mismatch", err.reason)
+        assertEquals("verify mismatch (readback != written)", err.reason)
     }
 
     @Test
-    fun `verify readback null surfaces verify-mismatch`() = runTest {
+    fun `verify readback null treats write as success (NDEF-promoted tag)`() = runTest {
+        // Fresh blank tags are promoted to NDEF format by the write itself.
+        // The same Tag handle then can't be reattached for readback because
+        // its captured tech list is pre-write. The bytes ARE on the tag;
+        // surfacing a verify-mismatch would orphan a Spoolman spool every
+        // time a user pairs a fresh blank.
+        val uid = sampleUid()
         val wrapper = FakeNfcAdapterWrapper()
-        wrapper.simulateRead(sampleUid(), records = null)
+        wrapper.simulateRead(uid, records = null)
         wrapper.simulateReadback(null)
         val repo = newRepository(wrapper = wrapper)
 
         repo.arm(NfcIntent.Write(samplePayload()))
         repo.handleTag(makeTag())
 
-        assertEquals("verify mismatch", (repo.state.value as NfcResult.Error).reason)
+        assertEquals(
+            NfcResult.Success(uid, com.spoolpainter.app.domain.primitives.TagClassification.OpenSpool(samplePayload())),
+            repo.state.value,
+        )
     }
 
     @Test

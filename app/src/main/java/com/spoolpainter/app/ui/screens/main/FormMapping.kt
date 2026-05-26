@@ -1,13 +1,13 @@
 package com.spoolpainter.app.ui.screens.main
 
 import com.spoolpainter.app.data.local.MaterialDatabase
-import com.spoolpainter.app.data.remote.spoolman.CardUidEncoding
 import com.spoolpainter.app.domain.models.Brand
 import com.spoolpainter.app.domain.models.Material
 import com.spoolpainter.app.domain.models.OpenSpoolPayload
 import com.spoolpainter.app.domain.models.SpoolmanSpool
 import com.spoolpainter.app.domain.models.TempRanges
 import com.spoolpainter.app.domain.primitives.CardUid
+import com.spoolpainter.app.domain.primitives.ExtraCardUidsCodec
 
 internal object FormMapping {
 
@@ -22,27 +22,48 @@ internal object FormMapping {
         val tempRanges = deriveSpoolmanTemps(materialData, spool)
         val resolvedUid = when (uidSource) {
             SpoolmanUidSource.PreserveCurrent -> currentUid
-            SpoolmanUidSource.FromLotNrOrClear ->
-                CardUidEncoding.decode(spool.lot_nr ?: "").uids.firstOrNull()
+            SpoolmanUidSource.FromCardUidsOrClear ->
+                ExtraCardUidsCodec.decode(spool.extra?.get("card_uids") ?: "").firstOrNull()
         }
         return FormState(
             cardUid = resolvedUid,
             material = materialData,
             brand = Brand(spool.filament.vendor?.name ?: "Unknown"),
             colorHex = canonicaliseColorHex(spool.filament.color_hex),
-            variant = null,
+            // Variant lives on extra.variant. NOT on filament.name — that
+            // field is the full filament display name (e.g. "Polymaker PLA
+            // Matte") and pulling it through as variant would clobber the
+            // form. If extra.variant is missing, leave variant null and let
+            // the tag's OpenSpool subtype fill it in via the merge in
+            // MainViewModel.applyResult.
+            variant = decodeExtraVariant(spool.filament.extra?.get("variant")),
             tempRanges = tempRanges,
             selectedSpoolId = spool.id,
             rawWriteMode = rawWriteMode,
         )
     }
 
+    /**
+     * Spoolman stores extra `text` fields as JSON-encoded strings — `"matte"` not
+     * `matte` — per its `extra_fields.py:60-66` validator. Strip the wrapping
+     * quotes if present so the raw value reaches the form.
+     */
+    private fun decodeExtraVariant(raw: String?): String? {
+        if (raw.isNullOrEmpty()) return null
+        val unwrapped = if (raw.length >= 2 && raw.startsWith("\"") && raw.endsWith("\"")) {
+            raw.substring(1, raw.length - 1)
+        } else {
+            raw
+        }
+        return unwrapped.takeIf { it.isNotBlank() }
+    }
+
     enum class SpoolmanUidSource {
         /** Read flow + auto-pair after read: keep the UID we just tapped. */
         PreserveCurrent,
 
-        /** Manual dropdown selection: derive the UID from the spool's lot_nr (or null). */
-        FromLotNrOrClear,
+        /** Manual dropdown selection: derive the UID from the spool's extra.card_uids (or null). */
+        FromCardUidsOrClear,
     }
 
     fun fromOpenSpool(

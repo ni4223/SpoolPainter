@@ -30,6 +30,31 @@ data class FormState(
     val rawWriteMode: Boolean = false,
 )
 
+/**
+ * True when the form has enough content to issue a write.
+ *
+ * Note: UID is **not** required up-front. v1's contract — preserved here — is
+ * that the user can fill the form for a fresh spool, hit Save & Write, and the
+ * UID gets captured by the same NFC tap that performs the write. UID is
+ * required only at write time, inside [CreateAndPairUseCase].
+ *
+ * Bed temps are optional (mirrors v1) — they're written if present and skipped
+ * otherwise.
+ */
+val FormState.canSubmit: Boolean
+    get() {
+        val color = colorHex
+        val ranges = tempRanges
+        if (material == null) return false
+        if (color.isNullOrBlank() || !color.matches(HEX6_REGEX)) return false
+        if (ranges.extruderMin == null || ranges.extruderMax == null) return false
+        if (ranges.extruderMin > ranges.extruderMax) return false
+        if (ranges.bedMin != null && ranges.bedMax != null && ranges.bedMin > ranges.bedMax) return false
+        return true
+    }
+
+private val HEX6_REGEX = Regex("^[0-9A-Fa-f]{6}$")
+
 data class SpoolmanState(
     val spools: List<SpoolmanSpool> = emptyList(),
     val selectedSpoolId: Int? = null,
@@ -44,6 +69,7 @@ sealed interface BannerState {
 sealed interface ActiveFlow {
     data object Idle : ActiveFlow
     data object ReadingForPair : ActiveFlow
+    data object WritingForPair : ActiveFlow
 }
 
 data class AmbiguityState(

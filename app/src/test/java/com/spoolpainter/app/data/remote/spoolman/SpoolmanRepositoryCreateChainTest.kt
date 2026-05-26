@@ -2,10 +2,12 @@ package com.spoolpainter.app.data.remote.spoolman
 
 import com.spoolpainter.app.domain.models.SpoolmanFilament
 import com.spoolpainter.app.domain.models.SpoolmanVendor
-import com.spoolpainter.app.domain.primitives.CardUid
+import com.spoolpainter.app.domain.models.TempRanges
+import com.spoolpainter.app.domain.usecases.NewFilamentRequest
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -21,19 +23,51 @@ class SpoolmanRepositoryCreateChainTest {
         material: String = "PLA",
         color: String = "FF0000",
         variant: String? = null,
-        uid: String = "abcd",
-    ): NewSpoolRequest = NewSpoolRequest(
+    ): NewFilamentRequest = NewFilamentRequest(
+        name = "$vendor $material",
         vendorName = vendor,
         materialName = material,
         colorHex = color,
         variant = variant,
         tempRanges = TempRanges(extruderMin = 200, extruderMax = 220, bedMin = 60, bedMax = 60),
-        cardUid = CardUid(uid),
     )
 
+    private fun preregisterExtras(api: FakeSpoolmanApi) {
+        // Spool create no longer sets card_uids, so only filament needs the
+        // variant field pre-registered for happy-path tests.
+        api.filamentExtraFields += "variant"
+    }
+
     @Test
-    fun `vendor lookup hit reuses existing vendor (no POST)`() = runTest {
+    fun `createSpoolForNewFilament happyPath emitsExtraVariantOnFilamentAndNoCardUidsOnSpool`() =
+        runTest {
+            val h = SpoolmanRepositoryHarness(tempFolder)
+            preregisterExtras(h.fakeApi)
+            val outcome = h.repository.createSpoolForNewFilament(req(variant = "Matte"))
+            assertTrue(outcome is SpoolmanOutcome.Success)
+            val createdFilament = h.fakeApi.filamentList.single()
+            assertEquals("\"Matte\"", createdFilament.extra?.get("variant"))
+            val createdSpool = (outcome as SpoolmanOutcome.Success).data
+            // The spool is created without card_uids; the use case PATCHes it
+            // in via appendCardUidToSpool after the tap reveals the UID.
+            assertNull(createdSpool.extra?.get("card_uids"))
+            assertNull(createdSpool.lot_nr)
+        }
+
+    @Test
+    fun `createSpoolForNewFilament omitsExtraVariant whenVariantNullOrBlank`() = runTest {
         val h = SpoolmanRepositoryHarness(tempFolder)
+        preregisterExtras(h.fakeApi)
+        val outcome = h.repository.createSpoolForNewFilament(req(variant = "   "))
+        assertTrue(outcome is SpoolmanOutcome.Success)
+        val createdFilament = h.fakeApi.filamentList.single()
+        assertTrue(createdFilament.extra == null || !createdFilament.extra!!.containsKey("variant"))
+    }
+
+    @Test
+    fun `createSpoolForNewFilament reusesExistingVendor`() = runTest {
+        val h = SpoolmanRepositoryHarness(tempFolder)
+        preregisterExtras(h.fakeApi)
         h.fakeApi.vendorList += SpoolmanVendor(id = 7, name = "Polymaker")
         val outcome = h.repository.createSpoolForNewFilament(req())
         assertTrue(outcome is SpoolmanOutcome.Success)
@@ -41,8 +75,27 @@ class SpoolmanRepositoryCreateChainTest {
     }
 
     @Test
+    fun `createSpoolForNewFilament lazyBootstrap onFilament400`() = runTest {
+        val h = SpoolmanRepositoryHarness(tempFolder)
+        // filament side NOT pre-registered → first createFilament 400, bootstrap registers, retry succeeds.
+        val outcome = h.repository.createSpoolForNewFilament(req(variant = "Matte"))
+        assertTrue("got $outcome", outcome is SpoolmanOutcome.Success)
+        assertTrue(h.fakeApi.callLog.contains("postField(filament,variant)"))
+    }
+
+    @Test
+    fun `createSpoolForNewFilament doesNotSetLotNr`() = runTest {
+        val h = SpoolmanRepositoryHarness(tempFolder)
+        preregisterExtras(h.fakeApi)
+        val outcome = h.repository.createSpoolForNewFilament(req())
+        assertTrue(outcome is SpoolmanOutcome.Success)
+        assertNull((outcome as SpoolmanOutcome.Success).data.lot_nr)
+    }
+
+    @Test
     fun `vendor lookup miss issues POST`() = runTest {
         val h = SpoolmanRepositoryHarness(tempFolder)
+        preregisterExtras(h.fakeApi)
         val outcome = h.repository.createSpoolForNewFilament(req())
         assertTrue(outcome is SpoolmanOutcome.Success)
         assertTrue(h.fakeApi.callLog.any { it.startsWith("createVendor") })
@@ -51,6 +104,7 @@ class SpoolmanRepositoryCreateChainTest {
     @Test
     fun `case-insensitive vendor match`() = runTest {
         val h = SpoolmanRepositoryHarness(tempFolder)
+        preregisterExtras(h.fakeApi)
         h.fakeApi.vendorList += SpoolmanVendor(id = 7, name = "polymaker")
         val outcome = h.repository.createSpoolForNewFilament(req(vendor = "POLYMAKER"))
         assertTrue(outcome is SpoolmanOutcome.Success)
@@ -60,6 +114,7 @@ class SpoolmanRepositoryCreateChainTest {
     @Test
     fun `filament lookup hit reuses existing filament`() = runTest {
         val h = SpoolmanRepositoryHarness(tempFolder)
+        preregisterExtras(h.fakeApi)
         val vendor = SpoolmanVendor(id = 7, name = "Polymaker")
         h.fakeApi.vendorList += vendor
         h.fakeApi.filamentList += SpoolmanFilament(
@@ -68,49 +123,6 @@ class SpoolmanRepositoryCreateChainTest {
         val outcome = h.repository.createSpoolForNewFilament(req())
         assertTrue(outcome is SpoolmanOutcome.Success)
         assertTrue(h.fakeApi.callLog.none { it.startsWith("createFilament") })
-    }
-
-    @Test
-    fun `filament lookup miss issues POST`() = runTest {
-        val h = SpoolmanRepositoryHarness(tempFolder)
-        h.fakeApi.vendorList += SpoolmanVendor(id = 7, name = "Polymaker")
-        val outcome = h.repository.createSpoolForNewFilament(req())
-        assertTrue(outcome is SpoolmanOutcome.Success)
-        assertTrue(h.fakeApi.callLog.any { it.startsWith("createFilament") })
-    }
-
-    @Test
-    fun `variant null and empty are equivalent for filament match`() = runTest {
-        val h = SpoolmanRepositoryHarness(tempFolder)
-        val vendor = SpoolmanVendor(id = 7, name = "Polymaker")
-        h.fakeApi.vendorList += vendor
-        h.fakeApi.filamentList += SpoolmanFilament(
-            id = 11, name = null, material = "PLA", vendor = vendor, color_hex = "FF0000",
-        )
-        val outcome = h.repository.createSpoolForNewFilament(req(variant = ""))
-        assertTrue(outcome is SpoolmanOutcome.Success)
-        assertTrue(h.fakeApi.callLog.none { it.startsWith("createFilament") })
-    }
-
-    @Test
-    fun `variant whitespace-only normalised to null`() = runTest {
-        val h = SpoolmanRepositoryHarness(tempFolder)
-        val vendor = SpoolmanVendor(id = 7, name = "Polymaker")
-        h.fakeApi.vendorList += vendor
-        h.fakeApi.filamentList += SpoolmanFilament(
-            id = 11, name = null, material = "PLA", vendor = vendor, color_hex = "FF0000",
-        )
-        val outcome = h.repository.createSpoolForNewFilament(req(variant = "   "))
-        assertTrue(outcome is SpoolmanOutcome.Success)
-        assertTrue(h.fakeApi.callLog.none { it.startsWith("createFilament") })
-    }
-
-    @Test
-    fun `spool POST sets lot_nr to card_uid prefix`() = runTest {
-        val h = SpoolmanRepositoryHarness(tempFolder)
-        val outcome = h.repository.createSpoolForNewFilament(req(uid = "abcdef"))
-        assertTrue(outcome is SpoolmanOutcome.Success)
-        assertEquals("card_uid:abcdef", (outcome as SpoolmanOutcome.Success).data.lot_nr)
     }
 
     @Test
@@ -124,30 +136,9 @@ class SpoolmanRepositoryCreateChainTest {
     }
 
     @Test
-    fun `fail at filament short-circuits chain (vendor stays committed)`() = runTest {
+    fun `empty vendor rejected without HTTP`() = runTest {
         val h = SpoolmanRepositoryHarness(tempFolder)
-        h.fakeApi.failCreateFilament = FakeSpoolmanApi.Failure.Http(503, "sql err")
-        val outcome = h.repository.createSpoolForNewFilament(req())
-        assertTrue(outcome is SpoolmanOutcome.HttpError)
-        // Vendor created remains in Spoolman (Q11=A — no rollback)
-        assertEquals(1, h.fakeApi.vendorList.size)
-        assertTrue(h.fakeApi.callLog.none { it.startsWith("createSpool") })
-    }
-
-    @Test
-    fun `fail at spool short-circuits (vendor and filament stay committed)`() = runTest {
-        val h = SpoolmanRepositoryHarness(tempFolder)
-        h.fakeApi.failCreateSpool = FakeSpoolmanApi.Failure.Http(500, "boom")
-        val outcome = h.repository.createSpoolForNewFilament(req())
-        assertTrue(outcome is SpoolmanOutcome.HttpError)
-        assertEquals(1, h.fakeApi.vendorList.size)
-        assertEquals(1, h.fakeApi.filamentList.size)
-    }
-
-    @Test
-    fun `empty UID rejected without HTTP`() = runTest {
-        val h = SpoolmanRepositoryHarness(tempFolder)
-        val outcome = h.repository.createSpoolForNewFilament(req(uid = ""))
+        val outcome = h.repository.createSpoolForNewFilament(req(vendor = ""))
         assertTrue(outcome is SpoolmanOutcome.NetworkError)
         assertTrue((outcome as SpoolmanOutcome.NetworkError).cause is IllegalArgumentException)
         assertTrue(h.fakeApi.callLog.isEmpty())
