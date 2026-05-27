@@ -5,8 +5,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
@@ -35,12 +35,21 @@ fun RepairConfirmSheet(
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            val multi = state.otherSpoolDisplays.size >= 2
             Text(
-                text = "Re-pair this tag to the selected spool?",
+                text = if (multi) {
+                    "This tag is paired with multiple spools. Move it to the selected spool?"
+                } else {
+                    "Re-pair this tag to the selected spool?"
+                },
                 style = MaterialTheme.typography.titleMedium,
             )
             Text(
-                text = "Currently on: ${state.otherSpoolDisplay}",
+                text = if (multi) {
+                    "Currently on:\n" + state.otherSpoolDisplays.joinToString("\n") { "• $it" }
+                } else {
+                    "Currently on: ${state.otherSpoolDisplays.firstOrNull().orEmpty()}"
+                },
                 style = MaterialTheme.typography.bodyMedium,
             )
             Row(
@@ -53,7 +62,7 @@ fun RepairConfirmSheet(
                 ) {
                     Text("Cancel")
                 }
-                FilledTonalButton(
+                Button(
                     onClick = onConfirm,
                     modifier = Modifier.testTag("repair-confirm-sheet-confirm"),
                 ) {

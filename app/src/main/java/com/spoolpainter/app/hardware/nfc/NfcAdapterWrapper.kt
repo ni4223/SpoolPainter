@@ -51,7 +51,7 @@ open class NfcAdapterWrapper @Inject constructor(
 
     open suspend fun writeRecords(tag: Tag, records: List<NdefRecordView>) = withContext(dispatcher) {
         val ndef = Ndef.get(tag)
-            ?: throw IllegalStateException("tag does not support NDEF")
+            ?: throw NonNdefTagException()
         try {
             ndef.connect()
             val message = records.toNdefMessage()
@@ -110,3 +110,11 @@ open class NfcAdapterWrapper @Inject constructor(
     private fun NdefRecord.toView(): NdefRecordView =
         NdefRecordView(tnf = tnf, type = type ?: ByteArray(0), payload = payload ?: ByteArray(0))
 }
+
+/**
+ * Thrown when [NfcAdapterWrapper.writeRecords] encounters a tag that does not
+ * expose the NDEF tech — typically a factory-locked vendor tag. NfcRepository
+ * maps this to the standard vendor-tag error so the UI surfaces "Vendor tag —
+ * write blocked" rather than "tag does not support NDEF" (UI-09).
+ */
+class NonNdefTagException : IllegalStateException("non-NDEF tag (vendor)")

@@ -5,8 +5,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
@@ -36,7 +36,7 @@ fun PairAnotherTagSheet(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(
-                text = "Pair another tag with this spool?",
+                text = "Saved. Pair another tag with this spool?",
                 style = MaterialTheme.typography.titleMedium,
             )
             Text(
@@ -53,7 +53,7 @@ fun PairAnotherTagSheet(
                 ) {
                     Text("Done")
                 }
-                FilledTonalButton(
+                Button(
                     onClick = onAccept,
                     modifier = Modifier.testTag("pair-another-tag-sheet-accept"),
                 ) {

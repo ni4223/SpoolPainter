@@ -173,6 +173,15 @@ open class NfcRepository internal constructor(
         val records = encodePayloadRecords(intent.payload)
         try {
             wrapper.writeRecords(tag, records)
+        } catch (t: NonNdefTagException) {
+            // Tag exposes no NDEF tech — the read-side classifier couldn't
+            // tell this apart from a truly blank/formattable tag (records
+            // are null in both cases). Surface as a vendor-tag rejection
+            // (FR-4.7) so the UI copy is consistent.
+            transition {
+                NfcResult.Error("vendor-tag protected (FR-4.7): non-NDEF tag", t)
+            }
+            return
         } catch (t: Throwable) {
             transition { NfcResult.Error("write failed: ${t.message ?: t::class.simpleName}", t) }
             logCause("write failed", t)

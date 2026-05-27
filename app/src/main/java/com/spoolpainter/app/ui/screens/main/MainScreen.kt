@@ -111,7 +111,7 @@ fun MainScreen(
             SpoolmanDropdown(
                 spools = state.spoolman.spools,
                 selectedId = state.spoolman.selectedSpoolId,
-                enabled = state.spoolman.urlConfigured,
+                enabled = state.spoolman.urlConfigured && state.activeFlow == ActiveFlow.Idle,
                 onSelect = viewModel::onSpoolSelected,
             )
             AmbiguityBlock(state.ambiguity)

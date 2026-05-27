@@ -18,7 +18,7 @@ class MoveOnBindConfirmerImpl @Inject constructor() : MoveOnBindConfirmer {
     override val pendingRequest: StateFlow<RepairConfirmRequest?> = _pendingRequest.asStateFlow()
 
     override suspend fun confirm(
-        other: SpoolmanSpool,
+        others: List<SpoolmanSpool>,
         targetSpoolId: Int,
         uid: CardUid,
     ): Boolean {
@@ -27,7 +27,7 @@ class MoveOnBindConfirmerImpl @Inject constructor() : MoveOnBindConfirmer {
         }
         val deferred = CompletableDeferred<Boolean>()
         pendingResult = deferred
-        _pendingRequest.value = RepairConfirmRequest(other, targetSpoolId, uid)
+        _pendingRequest.value = RepairConfirmRequest(others, targetSpoolId, uid)
         return try {
             deferred.await()
         } finally {

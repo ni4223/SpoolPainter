@@ -16,47 +16,49 @@ class MoveOnBindUseCaseImpl @Inject constructor(
             is SpoolmanOutcome.Success -> outcome.data
             else -> return MoveOnBindUseCase.Outcome.Failed(
                 reason = humanReadable(outcome),
-                partiallyModifiedSpoolId = null,
+                partiallyModifiedSpoolIds = emptyList(),
             )
         }
+        // Sources to sweep are everyone except the target spool. Self-match
+        // (size==1 && id==target) is just Proceed.
+        val sources = matches.filter { it.id != targetSpoolId }
         return when {
-            matches.isEmpty() -> MoveOnBindUseCase.Outcome.Proceed
-            matches.size == 1 && matches.single().id == targetSpoolId ->
-                MoveOnBindUseCase.Outcome.Proceed
-            matches.size == 1 -> performMove(uid, targetSpoolId, matches.single())
-            else -> MoveOnBindUseCase.Outcome.AmbiguousOwnership(matches)
+            sources.isEmpty() -> MoveOnBindUseCase.Outcome.Proceed
+            else -> performMove(uid, targetSpoolId, sources)
         }
     }
 
     private suspend fun performMove(
         uid: CardUid,
         targetSpoolId: Int,
-        other: SpoolmanSpool,
+        sources: List<SpoolmanSpool>,
     ): MoveOnBindUseCase.Outcome {
-        val confirmed = confirmer.confirm(other, targetSpoolId, uid)
+        val confirmed = confirmer.confirm(sources, targetSpoolId, uid)
         if (!confirmed) return MoveOnBindUseCase.Outcome.Declined
 
-        val otherId = other.id
-            ?: return MoveOnBindUseCase.Outcome.Failed(
-                reason = "owning spool has no id",
-                partiallyModifiedSpoolId = null,
-            )
-
-        when (val rmv = spoolman.removeCardUidFromSpool(otherId, uid)) {
-            is SpoolmanOutcome.Success -> Unit
-            else -> return MoveOnBindUseCase.Outcome.Failed(
-                reason = humanReadable(rmv),
-                partiallyModifiedSpoolId = null,
-            )
+        val moved = mutableListOf<Int>()
+        for (source in sources) {
+            val sourceId = source.id
+                ?: return MoveOnBindUseCase.Outcome.Failed(
+                    reason = "owning spool has no id",
+                    partiallyModifiedSpoolIds = moved.toList(),
+                )
+            when (val rmv = spoolman.removeCardUidFromSpool(sourceId, uid)) {
+                is SpoolmanOutcome.Success -> moved += sourceId
+                else -> return MoveOnBindUseCase.Outcome.Failed(
+                    reason = humanReadable(rmv),
+                    partiallyModifiedSpoolIds = moved.toList(),
+                )
+            }
         }
         when (val apd = spoolman.appendCardUidToSpool(targetSpoolId, uid)) {
             is SpoolmanOutcome.Success -> Unit
             else -> return MoveOnBindUseCase.Outcome.Failed(
                 reason = humanReadable(apd),
-                partiallyModifiedSpoolId = otherId,
+                partiallyModifiedSpoolIds = moved.toList(),
             )
         }
-        return MoveOnBindUseCase.Outcome.Moved(fromSpoolId = otherId)
+        return MoveOnBindUseCase.Outcome.Moved(fromSpoolIds = moved.toList())
     }
 
     private fun humanReadable(outcome: SpoolmanOutcome<*>): String = when (outcome) {

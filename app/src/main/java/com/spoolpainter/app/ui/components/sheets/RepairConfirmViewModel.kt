@@ -12,9 +12,13 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import javax.inject.Inject
 
+/**
+ * UI state for [RepairConfirmSheet]. [otherSpoolDisplays] lists 1..N current
+ * owners of the tapped UID — usually 1, but ≥2 when the UID was bound to
+ * multiple spools (data conflict). The user's "Move it" sweeps all of them.
+ */
 data class RepairConfirmUiState(
-    val otherSpoolDisplay: String,
-    val otherSpoolId: Int,
+    val otherSpoolDisplays: List<String>,
     val targetSpoolId: Int,
     val uid: CardUid,
     val visible: Boolean,
@@ -32,8 +36,7 @@ class RepairConfirmViewModel @Inject constructor(
                     HIDDEN
                 } else {
                     RepairConfirmUiState(
-                        otherSpoolDisplay = displayName(req.other),
-                        otherSpoolId = req.other.id ?: 0,
+                        otherSpoolDisplays = req.others.map(::displayName),
                         targetSpoolId = req.targetSpoolId,
                         uid = req.uid,
                         visible = true,
@@ -63,8 +66,7 @@ class RepairConfirmViewModel @Inject constructor(
 
     private companion object {
         val HIDDEN = RepairConfirmUiState(
-            otherSpoolDisplay = "",
-            otherSpoolId = 0,
+            otherSpoolDisplays = emptyList(),
             targetSpoolId = 0,
             uid = CardUid(""),
             visible = false,

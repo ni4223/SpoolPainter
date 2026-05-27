@@ -51,7 +51,7 @@ class MoveOnBindUseCaseTest {
 
         val outcome = useCase.invoke(uid, targetSpoolId = 42)
 
-        assertEquals(MoveOnBindUseCase.Outcome.Moved(fromSpoolId = 7), outcome)
+        assertEquals(MoveOnBindUseCase.Outcome.Moved(fromSpoolIds = listOf(7)), outcome)
         assertEquals(1, confirmer.confirmCalls)
         assertEquals(1, spoolman.removeCalls)
         assertEquals(1, spoolman.appendCalls)
@@ -80,7 +80,7 @@ class MoveOnBindUseCaseTest {
 
         assertTrue("got $outcome", outcome is MoveOnBindUseCase.Outcome.Failed)
         val failed = outcome as MoveOnBindUseCase.Outcome.Failed
-        assertEquals(null, failed.partiallyModifiedSpoolId)
+        assertEquals(emptyList<Int>(), failed.partiallyModifiedSpoolIds)
         assertEquals(0, spoolman.appendCalls)
     }
 
@@ -95,20 +95,40 @@ class MoveOnBindUseCaseTest {
 
         assertTrue("got $outcome", outcome is MoveOnBindUseCase.Outcome.Failed)
         val failed = outcome as MoveOnBindUseCase.Outcome.Failed
-        assertEquals(7, failed.partiallyModifiedSpoolId)
+        assertEquals(listOf(7), failed.partiallyModifiedSpoolIds)
     }
 
     @Test
-    fun `ambiguous when two owners`() = runTest {
+    fun `multi-source sweep moves uid off all owners on confirm`() = runTest {
         spoolman.nextFindSpoolsByCardUidResult =
             SpoolmanOutcome.Success(listOf(spool(7), spool(8)))
+        spoolman.nextRemoveCardUidResult = SpoolmanOutcome.Success(spool(7))
+        spoolman.nextAppendCardUidResult = SpoolmanOutcome.Success(spool(42))
+        confirmer.nextResult = true
 
         val outcome = useCase.invoke(uid, targetSpoolId = 42)
 
-        assertTrue("got $outcome", outcome is MoveOnBindUseCase.Outcome.AmbiguousOwnership)
-        val ambig = outcome as MoveOnBindUseCase.Outcome.AmbiguousOwnership
-        assertEquals(2, ambig.currentOwners.size)
-        assertEquals(0, confirmer.confirmCalls)
+        assertTrue("got $outcome", outcome is MoveOnBindUseCase.Outcome.Moved)
+        val moved = outcome as MoveOnBindUseCase.Outcome.Moved
+        assertEquals(listOf(7, 8), moved.fromSpoolIds)
+        assertEquals(1, confirmer.confirmCalls)
+        assertEquals(2, spoolman.removeCalls)
+        assertEquals(1, spoolman.appendCalls)
+        // Confirmer received both owners in its request payload.
+        assertEquals(2, confirmer.lastRequest?.others?.size)
+    }
+
+    @Test
+    fun `multi-source declined keeps everything as-is`() = runTest {
+        spoolman.nextFindSpoolsByCardUidResult =
+            SpoolmanOutcome.Success(listOf(spool(7), spool(8)))
+        confirmer.nextResult = false
+
+        val outcome = useCase.invoke(uid, targetSpoolId = 42)
+
+        assertEquals(MoveOnBindUseCase.Outcome.Declined, outcome)
+        assertEquals(0, spoolman.removeCalls)
+        assertEquals(0, spoolman.appendCalls)
     }
 
     @Test
@@ -119,6 +139,6 @@ class MoveOnBindUseCaseTest {
 
         assertTrue("got $outcome", outcome is MoveOnBindUseCase.Outcome.Failed)
         val failed = outcome as MoveOnBindUseCase.Outcome.Failed
-        assertEquals(null, failed.partiallyModifiedSpoolId)
+        assertEquals(emptyList<Int>(), failed.partiallyModifiedSpoolIds)
     }
 }

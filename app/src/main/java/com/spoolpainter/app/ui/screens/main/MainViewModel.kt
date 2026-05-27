@@ -140,7 +140,7 @@ class MainViewModel @Inject constructor(
                         it.copy(
                             activeFlow = ActiveFlow.AwaitingRepairConfirmation(
                                 uid = req.uid,
-                                currentOwner = req.other,
+                                currentOwners = req.others,
                                 targetSpoolId = req.targetSpoolId,
                             ),
                         )
@@ -396,9 +396,9 @@ class MainViewModel @Inject constructor(
             is CreateAndPairResult.Success.WrittenAndPaired -> {
                 // First-tag write succeeded. Transition to PromptingPairAnother
                 // so the bottom sheet asks "Pair another tag with this spool?".
-                // The form is intentionally NOT cleared here — clearing happens
-                // when the user dismisses the prompt or the second-tag flow
-                // returns terminal Success/Failure (see applyTwoTagResult).
+                // The sheet's title acts as the success confirmation — a
+                // separate snackbar would slide up underneath the sheet and be
+                // immediately covered (UI-03).
                 _state.update { current ->
                     current.copy(
                         form = current.form.copy(
@@ -409,7 +409,6 @@ class MainViewModel @Inject constructor(
                         activeFlow = ActiveFlow.PromptingPairAnother(spoolId = result.spoolId),
                     )
                 }
-                _effects.trySend(UiEffect.ShowSnackbar("Paired and written"))
             }
             is CreateAndPairResult.VerifyFailed -> {
                 _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
@@ -421,12 +420,23 @@ class MainViewModel @Inject constructor(
             }
             is CreateAndPairResult.NfcFailed -> {
                 _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
-                _effects.trySend(UiEffect.ShowSnackbar("NFC error: ${result.reason}"))
+                val msg = if (result.reason.contains("vendor-tag", ignoreCase = true)) {
+                    "Vendor tag — write blocked"
+                } else {
+                    "NFC error: ${result.reason}"
+                }
+                _effects.trySend(UiEffect.ShowSnackbar(msg))
             }
             is CreateAndPairResult.Cancelled -> {
                 _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
                 viewModelScope.launch { nfc.disarm() }
-                _effects.trySend(UiEffect.ShowSnackbar("No tag tapped — try again"))
+                // Move-on-bind decline already gave the user explicit choice
+                // via the RepairConfirmSheet; emitting "No tag tapped" here is
+                // misleading. Only show the snackbar for the genuine timeout
+                // / no-tap path.
+                if (!result.reason.startsWith("repair declined", ignoreCase = true)) {
+                    _effects.trySend(UiEffect.ShowSnackbar("No tag tapped — try again"))
+                }
             }
         }
     }
@@ -445,15 +455,10 @@ class MainViewModel @Inject constructor(
 
     fun onPairAnotherTagDismissed() {
         if (_state.value.activeFlow !is ActiveFlow.PromptingPairAnother) return
-        _state.update {
-            it.copy(
-                activeFlow = ActiveFlow.Idle,
-                form = FormState(rawWriteMode = it.form.rawWriteMode),
-                spoolman = it.spoolman.copy(selectedSpoolId = null),
-            )
-        }
-        _customMaterial.value = ""
-        _customBrand.value = ""
+        // UI-06 + UI-10: preserve form AND spool selection so the user can see
+        // what they just paired. They can manually clear via the dropdown's
+        // "Clear selection" entry if they want a fresh entry.
+        _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
         _effects.trySend(UiEffect.ShowSnackbar("Saved with one tag"))
     }
 
@@ -464,15 +469,9 @@ class MainViewModel @Inject constructor(
     private fun applyTwoTagResult(result: TwoTagResult) {
         when (result) {
             is TwoTagResult.Success.SecondTagPaired -> {
-                _state.update {
-                    it.copy(
-                        activeFlow = ActiveFlow.Idle,
-                        form = FormState(rawWriteMode = it.form.rawWriteMode),
-                        spoolman = it.spoolman.copy(selectedSpoolId = null),
-                    )
-                }
-                _customMaterial.value = ""
-                _customBrand.value = ""
+                // UI-06 + UI-10: preserve form AND spool selection so the
+                // dropdown still shows the just-paired spool.
+                _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
                 _effects.trySend(UiEffect.ShowSnackbar("Both tags paired"))
             }
             is TwoTagResult.VendorTagRejected -> {
@@ -502,7 +501,11 @@ class MainViewModel @Inject constructor(
             }
             is TwoTagResult.Cancelled -> {
                 _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
-                _effects.trySend(UiEffect.ShowSnackbar("Second-tag pairing cancelled (${result.reason})"))
+                // Suppress on explicit user decline (RepairConfirmSheet
+                // Cancel). Emit only for genuine timeouts / unknown reasons.
+                if (!result.reason.startsWith("repair declined", ignoreCase = true)) {
+                    _effects.trySend(UiEffect.ShowSnackbar("Second-tag pairing cancelled (${result.reason})"))
+                }
             }
         }
     }
@@ -517,7 +520,34 @@ class MainViewModel @Inject constructor(
                 "Could not reach Spoolman: ${outcome.cause.message ?: outcome.cause::class.simpleName}"
             }
         }
-        is SpoolmanOutcome.ParseError -> "Spoolman response could not be parsed"
+        is SpoolmanOutcome.ParseError -> {
+            // UI-08: when the cause is an IllegalStateException with a
+            // descriptive message (e.g. "ambiguous ownership: spool ids 7, 8"),
+            // surface the message directly rather than the misleading
+            // "response could not be parsed" copy. AmbiguousOwnership and
+            // similar logical conflicts are wrapped this way by the use-cases.
+            val cause = outcome.cause
+            if (cause is IllegalStateException) {
+                val msg = cause.message.orEmpty()
+                if (msg.startsWith("ambiguous ownership:")) {
+                    val ids = msg.substringAfter("spool ids ", "")
+                        .split(",")
+                        .map { it.trim() }
+                        .filter { it.isNotEmpty() }
+                    if (ids.isNotEmpty()) {
+                        "This tag is already paired with spools ${ids.joinToString(", ") { "#$it" }}. Fix in Spoolman first."
+                    } else {
+                        "This tag is paired with multiple spools. Fix in Spoolman first."
+                    }
+                } else if (msg.isNotBlank()) {
+                    msg
+                } else {
+                    "Spoolman response could not be parsed"
+                }
+            } else {
+                "Spoolman response could not be parsed"
+            }
+        }
     }
 
     private companion object {

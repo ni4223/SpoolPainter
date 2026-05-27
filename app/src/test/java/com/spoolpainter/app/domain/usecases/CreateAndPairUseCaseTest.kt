@@ -211,7 +211,7 @@ class CreateAndPairUseCaseTest {
     @Test
     fun `move_on_bind failed returnsSpoolmanFailedNoAppend`() = runTest {
         val moveOnBind = FakeMoveOnBindUseCase().apply {
-            nextOutcome = MoveOnBindUseCase.Outcome.Failed("simulated", partiallyModifiedSpoolId = null)
+            nextOutcome = MoveOnBindUseCase.Outcome.Failed("simulated", partiallyModifiedSpoolIds = emptyList())
         }
         val useCase = CreateAndPairUseCase(nfc, spoolman, moveOnBind)
         stageSingleTapSuccess()

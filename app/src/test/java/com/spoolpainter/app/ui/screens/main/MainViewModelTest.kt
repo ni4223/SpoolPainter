@@ -379,13 +379,11 @@ class MainViewModelTest {
             spoolId = 42, uid = sampleUid, isNewSpool = false,
         )
 
-        vm.effects.test {
-            vm.onWriteTapped()
-            val emission = awaitItem()
-            assertTrue(emission is UiEffect.ShowSnackbar)
-            assertEquals("Paired and written", (emission as UiEffect.ShowSnackbar).message)
-            cancelAndIgnoreRemainingEvents()
-        }
+        vm.onWriteTapped()
+        // UI-03 (U6b polish): the "Paired and written" snackbar was removed
+        // because it slid up underneath the PairAnotherTagSheet and was
+        // immediately covered. Success is now communicated by the sheet's
+        // title ("Saved. Pair another tag with this spool?").
         // U6b: first-pair success transitions to PromptingPairAnother so the
         // bottom sheet asks "Pair another tag with this spool?". Form is
         // intentionally NOT cleared here — that happens on dismiss / Done.
@@ -409,12 +407,8 @@ class MainViewModelTest {
             spoolId = 99, uid = sampleUid, isNewSpool = true,
         )
 
-        vm.effects.test {
-            vm.onWriteTapped()
-            val emission = awaitItem()
-            assertEquals("Paired and written", (emission as UiEffect.ShowSnackbar).message)
-            cancelAndIgnoreRemainingEvents()
-        }
+        vm.onWriteTapped()
+        // UI-03: snackbar removed; sheet title carries the success message.
         assertNotNull(vm.state.value.form.material)
         // cardUid reflects the just-written UID (display); enforcement gone.
         assertEquals(sampleUid, vm.state.value.form.cardUid)

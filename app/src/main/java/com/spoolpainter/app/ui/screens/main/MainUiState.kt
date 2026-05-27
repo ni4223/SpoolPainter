@@ -74,7 +74,7 @@ sealed interface ActiveFlow {
     data class WritingSecondTag(val spoolId: Int) : ActiveFlow
     data class AwaitingRepairConfirmation(
         val uid: CardUid,
-        val currentOwner: SpoolmanSpool,
+        val currentOwners: List<SpoolmanSpool>,
         val targetSpoolId: Int,
     ) : ActiveFlow
 }

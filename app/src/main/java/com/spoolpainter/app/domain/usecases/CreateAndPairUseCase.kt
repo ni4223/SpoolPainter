@@ -75,8 +75,9 @@ open class CreateAndPairUseCase @Inject constructor(
 
         // 3. Move-on-bind precheck (S-5.1 / S-5.2): runs BEFORE the append so
         //    a UID currently owned by another spool is moved (or the user
-        //    declines) atomically. AmbiguousOwnership and Failed surface as
-        //    SpoolmanFailed; Declined surfaces as Cancelled.
+        //    declines) atomically. Multi-source conflicts (UID on 2+ spools)
+        //    are swept in one confirmation — the same flow handles both
+        //    single- and multi-source cases.
         when (val mob = moveOnBind.invoke(tappedUid, spoolId)) {
             is MoveOnBindUseCase.Outcome.Proceed,
             is MoveOnBindUseCase.Outcome.Moved -> Unit
@@ -88,14 +89,6 @@ open class CreateAndPairUseCase @Inject constructor(
                 return CreateAndPairResult.SpoolmanFailed(
                     tappedUid,
                     SpoolmanOutcome.ParseError(IllegalStateException(mob.reason)),
-                )
-            is MoveOnBindUseCase.Outcome.AmbiguousOwnership ->
-                return CreateAndPairResult.SpoolmanFailed(
-                    tappedUid,
-                    SpoolmanOutcome.ParseError(IllegalStateException(
-                        "ambiguous ownership: spool ids " +
-                            mob.currentOwners.mapNotNull { it.id }.joinToString(", "),
-                    )),
                 )
         }
 

@@ -8,9 +8,9 @@ interface MoveOnBindUseCase {
 
     sealed interface Outcome {
         data object Proceed : Outcome
-        data class Moved(val fromSpoolId: Int) : Outcome
+        /** UID was moved off [fromSpoolIds] (one or more) onto the target. */
+        data class Moved(val fromSpoolIds: List<Int>) : Outcome
         data object Declined : Outcome
-        data class Failed(val reason: String, val partiallyModifiedSpoolId: Int?) : Outcome
-        data class AmbiguousOwnership(val currentOwners: List<SpoolmanSpool>) : Outcome
+        data class Failed(val reason: String, val partiallyModifiedSpoolIds: List<Int>) : Outcome
     }
 }

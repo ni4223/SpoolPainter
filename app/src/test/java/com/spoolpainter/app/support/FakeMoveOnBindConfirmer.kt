@@ -25,12 +25,12 @@ open class FakeMoveOnBindConfirmer : MoveOnBindConfirmer {
         private set
 
     override suspend fun confirm(
-        other: SpoolmanSpool,
+        others: List<SpoolmanSpool>,
         targetSpoolId: Int,
         uid: CardUid,
     ): Boolean {
         confirmCalls++
-        val req = RepairConfirmRequest(other, targetSpoolId, uid)
+        val req = RepairConfirmRequest(others, targetSpoolId, uid)
         lastRequest = req
         _pendingRequest.value = req
         // Synchronous: return immediately. Production impl awaits a deferred,

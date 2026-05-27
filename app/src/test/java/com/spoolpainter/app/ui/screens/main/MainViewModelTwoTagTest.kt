@@ -118,38 +118,40 @@ class MainViewModelTwoTagTest {
     }
 
     @Test
-    fun `onPairAnotherTagDismissed clears form and returns to Idle`() = runTest {
+    fun `onPairAnotherTagDismissed preserves form and selection and returns to Idle`() = runTest {
         val vm = newVm()
         stagePromptingPairAnother(vm)
 
         vm.effects.test {
-            // Drain "Paired and written" emission from staging.
-            assertEquals("Paired and written", (awaitItem() as UiEffect.ShowSnackbar).message)
             vm.onPairAnotherTagDismissed()
             val emission = awaitItem() as UiEffect.ShowSnackbar
             assertEquals("Saved with one tag", emission.message)
             cancelAndIgnoreRemainingEvents()
         }
         assertEquals(ActiveFlow.Idle, vm.state.value.activeFlow)
-        assertNull(vm.state.value.form.material)
-        assertNull(vm.state.value.spoolman.selectedSpoolId)
+        // UI-06 + UI-10: form and spool selection are both preserved.
+        assertNotNull(vm.state.value.form.material)
+        assertNotNull(vm.state.value.form.selectedSpoolId)
+        assertNotNull(vm.state.value.spoolman.selectedSpoolId)
     }
 
     @Test
-    fun `applyTwoTagResult Success clears form and emits Both tags paired snackbar`() = runTest {
+    fun `applyTwoTagResult Success preserves form and selection and emits Both tags paired snackbar`() = runTest {
         val vm = newVm()
         stagePromptingPairAnother(vm)
         twoTag.nextResult = TwoTagResult.Success.SecondTagPaired(spoolId = 42, uid = CardUid("11223344"))
 
         vm.effects.test {
-            assertEquals("Paired and written", (awaitItem() as UiEffect.ShowSnackbar).message)
             vm.onPairAnotherTagAccepted()
             val emission = awaitItem() as UiEffect.ShowSnackbar
             assertEquals("Both tags paired", emission.message)
             cancelAndIgnoreRemainingEvents()
         }
         assertEquals(ActiveFlow.Idle, vm.state.value.activeFlow)
-        assertNull(vm.state.value.form.material)
+        // UI-06 + UI-10: form and selection both preserved.
+        assertNotNull(vm.state.value.form.material)
+        assertNotNull(vm.state.value.form.selectedSpoolId)
+        assertNotNull(vm.state.value.spoolman.selectedSpoolId)
     }
 
     @Test
@@ -159,7 +161,6 @@ class MainViewModelTwoTagTest {
         twoTag.nextResult = TwoTagResult.VendorTagRejected(CardUid("11223344"))
 
         vm.effects.test {
-            assertEquals("Paired and written", (awaitItem() as UiEffect.ShowSnackbar).message)
             vm.onPairAnotherTagAccepted()
             val emission = awaitItem() as UiEffect.ShowSnackbar
             assertTrue(emission.message.contains("Vendor tag"))
@@ -176,12 +177,11 @@ class MainViewModelTwoTagTest {
         stagePromptingPairAnother(vm)
         twoTag.nextResult = TwoTagResult.MoveOnBindPartial(
             uid = CardUid("11223344"),
-            partiallyModifiedSpoolId = 7,
+            partiallyModifiedSpoolId = 7,  // unchanged in TwoTagResult.MoveOnBindPartial
             reason = "boom",
         )
 
         vm.effects.test {
-            assertEquals("Paired and written", (awaitItem() as UiEffect.ShowSnackbar).message)
             vm.onPairAnotherTagAccepted()
             val emission = awaitItem() as UiEffect.ShowSnackbar
             assertTrue("got: ${emission.message}", emission.message.contains("#7"))
@@ -195,7 +195,7 @@ class MainViewModelTwoTagTest {
         // Bare VM (no flow active). When confirmer publishes a request, VM
         // transitions to AwaitingRepairConfirmation.
         confirmer.emitPending(
-            RepairConfirmRequest(other = sampleSpool, targetSpoolId = 99, uid = sampleUid),
+            RepairConfirmRequest(others = listOf(sampleSpool), targetSpoolId = 99, uid = sampleUid),
         )
         assertTrue(
             "got ${vm.state.value.activeFlow}",
@@ -219,6 +219,30 @@ class MainViewModelTwoTagTest {
     }
 
     @Test
+    fun `UI-08 AmbiguousOwnership ParseError surfaces friendly copy with spool ids`() = runTest {
+        val vm = newVm()
+        stagePromptingPairAnother(vm)
+        twoTag.nextResult = TwoTagResult.SpoolmanFailed(
+            uid = CardUid("11223344"),
+            outcome = SpoolmanOutcome.ParseError(
+                IllegalStateException("ambiguous ownership: spool ids 7, 8"),
+            ),
+        )
+
+        vm.effects.test {
+            vm.onPairAnotherTagAccepted()
+            val emission = awaitItem() as UiEffect.ShowSnackbar
+            assertTrue("got: ${emission.message}", emission.message.contains("#7"))
+            assertTrue("got: ${emission.message}", emission.message.contains("#8"))
+            assertTrue(
+                "got: ${emission.message}",
+                emission.message.contains("Fix in Spoolman", ignoreCase = true),
+            )
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
     fun `applyTwoTagResult SpoolmanFailed emits human readable snackbar`() = runTest {
         val vm = newVm()
         stagePromptingPairAnother(vm)
@@ -228,7 +252,6 @@ class MainViewModelTwoTagTest {
         )
 
         vm.effects.test {
-            assertEquals("Paired and written", (awaitItem() as UiEffect.ShowSnackbar).message)
             vm.onPairAnotherTagAccepted()
             val emission = awaitItem() as UiEffect.ShowSnackbar
             assertTrue(emission.message.contains("500"))

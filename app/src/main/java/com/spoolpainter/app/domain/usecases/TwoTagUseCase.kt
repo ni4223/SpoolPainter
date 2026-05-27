@@ -81,7 +81,7 @@ open class TwoTagUseCase @Inject constructor(
             is MoveOnBindUseCase.Outcome.Declined ->
                 return TwoTagResult.Cancelled("repair declined — UID still on the originally-paired spool")
             is MoveOnBindUseCase.Outcome.Failed -> {
-                val partial = mob.partiallyModifiedSpoolId
+                val partial = mob.partiallyModifiedSpoolIds.firstOrNull()
                 return if (partial != null) {
                     TwoTagResult.MoveOnBindPartial(tappedUid, partial, mob.reason)
                 } else {
@@ -91,14 +91,6 @@ open class TwoTagUseCase @Inject constructor(
                     )
                 }
             }
-            is MoveOnBindUseCase.Outcome.AmbiguousOwnership ->
-                return TwoTagResult.SpoolmanFailed(
-                    tappedUid,
-                    SpoolmanOutcome.ParseError(IllegalStateException(
-                        "ambiguous ownership: spool ids " +
-                            mob.currentOwners.mapNotNull { it.id }.joinToString(", "),
-                    )),
-                )
         }
 
         when (val append = spoolman.appendCardUidToSpool(input.spoolId, tappedUid)) {

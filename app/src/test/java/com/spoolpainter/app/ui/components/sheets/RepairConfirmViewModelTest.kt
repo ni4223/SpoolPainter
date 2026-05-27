@@ -66,14 +66,17 @@ class RepairConfirmViewModelTest {
             // initial hidden
             assertFalse(awaitItem().visible)
 
-            confirmer.emitPending(RepairConfirmRequest(spool, targetSpoolId = 42, uid = uid))
+            confirmer.emitPending(RepairConfirmRequest(listOf(spool), targetSpoolId = 42, uid = uid))
 
             val s = awaitItem()
             assertTrue(s.visible)
-            assertEquals(7, s.otherSpoolId)
+            assertEquals(1, s.otherSpoolDisplays.size)
             assertEquals(42, s.targetSpoolId)
             assertEquals(uid, s.uid)
-            assertTrue("display: ${s.otherSpoolDisplay}", s.otherSpoolDisplay.contains("Bambu"))
+            assertTrue(
+                "display: ${s.otherSpoolDisplays.first()}",
+                s.otherSpoolDisplays.first().contains("Bambu"),
+            )
             cancelAndIgnoreRemainingEvents()
         }
     }
