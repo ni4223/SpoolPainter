@@ -10,6 +10,7 @@ import com.spoolpainter.app.domain.models.SpoolmanFilament
 import com.spoolpainter.app.domain.models.SpoolmanSpool
 import com.spoolpainter.app.domain.models.SpoolmanVendor
 import com.spoolpainter.app.domain.primitives.CardUid
+import com.spoolpainter.app.domain.primitives.ColorHexCodec
 import com.spoolpainter.app.domain.primitives.ExtraCardUidsCodec
 import com.spoolpainter.app.domain.usecases.NewFilamentRequest
 import kotlinx.coroutines.CoroutineDispatcher
@@ -99,6 +100,11 @@ open class SpoolmanRepository @Inject constructor(
     open suspend fun getSpool(spoolId: Int): SpoolmanOutcome<SpoolmanSpool> {
         val api = cachedApi ?: return urlNotConfigured()
         return performHttp("getSpool") { api.getSpool(spoolId) }
+    }
+
+    open suspend fun getFilament(filamentId: Int): SpoolmanOutcome<SpoolmanFilament> {
+        val api = cachedApi ?: return urlNotConfigured()
+        return performHttp("getFilament") { api.getFilament(filamentId) }
     }
 
     open suspend fun appendCardUidToSpool(spoolId: Int, uid: CardUid): SpoolmanOutcome<SpoolmanSpool> {
@@ -306,21 +312,30 @@ open class SpoolmanRepository @Inject constructor(
         val vendorId = vendor.id ?: return SpoolmanOutcome.ParseError(
             IllegalStateException("vendor.id missing for ${vendor.name}"),
         )
-        val variantNormalised = req.variant?.trim()?.takeIf { it.isNotEmpty() }
+        val variantNormalised = canonVariant(req.variant)
+        val targetHex = ColorHexCodec.canonicalise(req.colorHex)
         return performHttp("listFilaments") { api.listFilaments() }.flatMap { list ->
             val match = list.firstOrNull { f ->
                 if (f.vendor?.id != vendorId) return@firstOrNull false
                 if (!(f.material ?: "").equals(materialName, ignoreCase = true)) return@firstOrNull false
-                if ((f.color_hex ?: "") != req.colorHex) return@firstOrNull false
+                if (ColorHexCodec.canonicalise(f.color_hex) != targetHex) return@firstOrNull false
                 // Match variant from extra.variant only. filament.name is the
                 // full display name ("Polymaker PLA Matte"), not the variant.
-                val existingVariant = decodeJsonString(f.extra?.get("variant"))
-                existingVariant == variantNormalised
+                // Variant comparison treats null/blank as equivalent and is
+                // case-insensitive (FR-U6b-Δ-4).
+                val existingVariant = canonVariant(decodeJsonString(f.extra?.get("variant")))
+                when {
+                    existingVariant == null && variantNormalised == null -> true
+                    existingVariant == null || variantNormalised == null -> false
+                    else -> existingVariant.equals(variantNormalised, ignoreCase = true)
+                }
             }
             if (match != null) {
                 android.util.Log.d(
                     "SpoolmanRepo",
-                    "filament match hit: id=${match.id} name=${match.name} variant=$variantNormalised existingVariant=${decodeJsonString(match.extra?.get("variant"))}",
+                    "filament match hit: id=${match.id} name=${match.name} variant=$variantNormalised " +
+                        "existingVariant=${canonVariant(decodeJsonString(match.extra?.get("variant")))} " +
+                        "colorHex(target=$targetHex existing=${ColorHexCodec.canonicalise(match.color_hex)})",
                 )
                 SpoolmanOutcome.Success(match)
             } else {
@@ -432,6 +447,13 @@ open class SpoolmanRepository @Inject constructor(
     private fun prependFilament(filament: SpoolmanFilament) {
         _filaments.value = listOf(filament) + _filaments.value.filter { it.id != filament.id }
     }
+
+    /**
+     * Trims a variant string and treats blank as null. Used in the filament
+     * matcher so `null`, `""`, and `"  "` all collapse to the same bucket.
+     */
+    private fun canonVariant(raw: String?): String? =
+        raw?.trim()?.takeIf { it.isNotBlank() }
 
     /**
      * Spoolman returns extra `text` fields as JSON-encoded strings (`"matte"`).

@@ -70,6 +70,13 @@ sealed interface ActiveFlow {
     data object Idle : ActiveFlow
     data object ReadingForPair : ActiveFlow
     data object WritingForPair : ActiveFlow
+    data class PromptingPairAnother(val spoolId: Int) : ActiveFlow
+    data class WritingSecondTag(val spoolId: Int) : ActiveFlow
+    data class AwaitingRepairConfirmation(
+        val uid: CardUid,
+        val currentOwner: SpoolmanSpool,
+        val targetSpoolId: Int,
+    ) : ActiveFlow
 }
 
 data class AmbiguityState(

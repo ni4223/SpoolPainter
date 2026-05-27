@@ -5,6 +5,7 @@ import com.spoolpainter.app.domain.primitives.NfcResult
 import com.spoolpainter.app.domain.primitives.TagClassification
 import com.spoolpainter.app.hardware.nfc.NfcTestSupport.makeTag
 import com.spoolpainter.app.hardware.nfc.NfcTestSupport.newRepository
+import com.spoolpainter.app.hardware.nfc.NfcTestSupport.jsonMimeRecords
 import com.spoolpainter.app.hardware.nfc.NfcTestSupport.openSpoolMimeRecords
 import com.spoolpainter.app.hardware.nfc.NfcTestSupport.samplePayload
 import com.spoolpainter.app.hardware.nfc.NfcTestSupport.sampleUid
@@ -22,8 +23,10 @@ class NfcRepositoryStandaloneVerifyTest {
     fun `arm Verify happy path returns Success when readback matches`() = runTest {
         val wrapper = FakeNfcAdapterWrapper()
         val payload = samplePayload()
-        wrapper.simulateRead(sampleUid(), openSpoolMimeRecords(payload))
-        wrapper.simulateReadback(openSpoolMimeRecords(payload))
+        wrapper.simulateRead(sampleUid(), jsonMimeRecords(payload))
+        // Readback must match the bytes encodePayloadRecords produces — which
+        // is application/json after FR-U6b-Δ-3.
+        wrapper.simulateReadback(jsonMimeRecords(payload))
         val repo = newRepository(wrapper = wrapper)
 
         repo.arm(NfcIntent.Verify(payload))

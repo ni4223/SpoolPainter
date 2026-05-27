@@ -30,6 +30,9 @@ interface SpoolmanApi {
     @GET("api/v1/filament")
     suspend fun listFilaments(): Response<List<SpoolmanFilament>>
 
+    @GET("api/v1/filament/{id}")
+    suspend fun getFilament(@Path("id") filamentId: Int): Response<SpoolmanFilament>
+
     @GET("api/v1/vendor")
     suspend fun listVendors(): Response<List<SpoolmanVendor>>
 

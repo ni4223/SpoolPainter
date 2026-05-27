@@ -24,6 +24,7 @@ class FakeSpoolmanApi : SpoolmanApi {
     var failListSpools: Failure? = null
     var failGetSpool: Failure? = null
     var failListFilaments: Failure? = null
+    var failGetFilament: Failure? = null
     var failListVendors: Failure? = null
     var failCreateVendor: Failure? = null
     var failCreateFilament: Failure? = null
@@ -73,6 +74,14 @@ class FakeSpoolmanApi : SpoolmanApi {
         callLog += "listFilaments"
         failListFilaments?.let { return it.toResponse() }
         return Response.success(filamentList.toList())
+    }
+
+    override suspend fun getFilament(filamentId: Int): Response<SpoolmanFilament> {
+        callLog += "getFilament($filamentId)"
+        failGetFilament?.let { return it.toResponse() }
+        val filament = filamentList.firstOrNull { it.id == filamentId }
+            ?: return Response.error(404, "not found".toResponseBody(null))
+        return Response.success(filament)
     }
 
     override suspend fun listVendors(): Response<List<SpoolmanVendor>> {

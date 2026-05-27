@@ -7,6 +7,7 @@ import com.spoolpainter.app.domain.models.OpenSpoolPayload
 import com.spoolpainter.app.domain.models.SpoolmanSpool
 import com.spoolpainter.app.domain.models.TempRanges
 import com.spoolpainter.app.domain.primitives.CardUid
+import com.spoolpainter.app.domain.primitives.ColorHexCodec
 import com.spoolpainter.app.domain.primitives.ExtraCardUidsCodec
 
 internal object FormMapping {
@@ -106,11 +107,7 @@ internal object FormMapping {
     fun clearedFromDropdown(currentUid: CardUid?, rawWriteMode: Boolean): FormState =
         FormState(cardUid = currentUid, rawWriteMode = rawWriteMode)
 
-    internal fun canonicaliseColorHex(raw: String?): String? =
-        raw?.removePrefix("#")
-            ?.let { if (it.length > 6) it.takeLast(6) else it }
-            ?.uppercase()
-            ?.takeIf { it.isNotEmpty() }
+    internal fun canonicaliseColorHex(raw: String?): String? = ColorHexCodec.canonicalise(raw)
 
     private fun deriveSpoolmanTemps(
         materialData: Material?,

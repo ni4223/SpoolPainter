@@ -16,7 +16,8 @@ internal class FakeNfcAdapterWrapper : NfcAdapterWrapper(adapter = null, dispatc
     private var nextWriteThrowable: Throwable? = null
     private var nextReadback: () -> List<NdefRecordView>? = { lastWrittenRecords }
 
-    private var lastWrittenRecords: List<NdefRecordView>? = null
+    var lastWrittenRecords: List<NdefRecordView>? = null
+        private set
     var writeCallCount: Int = 0
         private set
 

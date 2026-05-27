@@ -28,6 +28,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -43,16 +44,28 @@ import com.spoolpainter.app.domain.primitives.NfcResult
 import com.spoolpainter.app.ui.common.UiEffect
 import com.spoolpainter.app.ui.components.FilamentForm
 import com.spoolpainter.app.ui.components.FormChange
+import com.spoolpainter.app.ui.components.sheets.BottomSheetHost
+import com.spoolpainter.app.ui.components.sheets.PairAnotherTagUiState
+import com.spoolpainter.app.ui.components.sheets.RepairConfirmViewModel
 
 @Composable
 fun MainScreen(
     viewModel: MainViewModel = hiltViewModel(),
+    repairConfirmViewModel: RepairConfirmViewModel = hiltViewModel(),
     onNavigateToSettings: () -> Unit = {},
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val customMaterial by viewModel.customMaterial.collectAsStateWithLifecycle()
     val customBrand by viewModel.customBrand.collectAsStateWithLifecycle()
     val canWrite by viewModel.canWrite.collectAsStateWithLifecycle()
+    val repairConfirmState by repairConfirmViewModel.uiState.collectAsStateWithLifecycle()
+    val pairAnotherState by remember(state.activeFlow) {
+        derivedStateOf {
+            (state.activeFlow as? ActiveFlow.PromptingPairAnother)?.let {
+                PairAnotherTagUiState(spoolId = it.spoolId, visible = true)
+            }
+        }
+    }
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(Unit) {
@@ -84,6 +97,15 @@ fun MainScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             BannerSlot(state.banner)
+            BottomSheetHost(
+                activeFlow = state.activeFlow,
+                repairConfirmState = repairConfirmState,
+                pairAnotherState = pairAnotherState,
+                onRepairConfirm = repairConfirmViewModel::onConfirm,
+                onRepairDismiss = repairConfirmViewModel::onDismiss,
+                onPairAnotherAccept = viewModel::onPairAnotherTagAccepted,
+                onPairAnotherDismiss = viewModel::onPairAnotherTagDismissed,
+            )
             ReadingHint(state.activeFlow, state.nfc)
             WritingHint(state.activeFlow, state.nfc)
             SpoolmanDropdown(
@@ -190,7 +212,9 @@ private fun ReadingHint(activeFlow: ActiveFlow, nfc: NfcResult) {
 
 @Composable
 private fun WritingHint(activeFlow: ActiveFlow, nfc: NfcResult) {
-    val showHint = activeFlow == ActiveFlow.WritingForPair &&
+    val isWriting = activeFlow == ActiveFlow.WritingForPair ||
+        activeFlow is ActiveFlow.WritingSecondTag
+    val showHint = isWriting &&
         (nfc is NfcResult.Idle || nfc is NfcResult.Writing || nfc is NfcResult.Verifying)
     if (!showHint) return
     val label = when (nfc) {

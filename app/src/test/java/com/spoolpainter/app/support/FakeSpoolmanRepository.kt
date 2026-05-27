@@ -45,6 +45,11 @@ class FakeSpoolmanRepository(
     var nextCreateSpoolResult: SpoolmanOutcome<SpoolmanSpool>? = null
     var nextTestConnectionResult: SpoolmanOutcome<String>? = null
     var nextEnsureExtraFieldsResult: SpoolmanOutcome<Unit>? = null
+    var nextGetFilamentResult: SpoolmanOutcome<SpoolmanFilament>? = null
+    var lastGetFilamentId: Int? = null
+        private set
+    var getFilamentCalls: Int = 0
+        private set
 
     var lastFindUid: CardUid? = null
         private set
@@ -77,6 +82,13 @@ class FakeSpoolmanRepository(
         lastGetSpoolId = spoolId
         getSpoolCalls++
         return nextGetSpoolResult
+    }
+
+    override suspend fun getFilament(filamentId: Int): SpoolmanOutcome<SpoolmanFilament> {
+        lastGetFilamentId = filamentId
+        getFilamentCalls++
+        return nextGetFilamentResult
+            ?: SpoolmanOutcome.HttpError(404, "not found")
     }
 
     override suspend fun appendCardUidToSpool(
@@ -115,6 +127,14 @@ class FakeSpoolmanRepository(
 
     fun setSpools(spools: List<SpoolmanSpool>) {
         _spools.value = spools
+    }
+
+    fun setFilaments(filaments: List<SpoolmanFilament>) {
+        _filaments.value = filaments
+    }
+
+    fun setVendors(vendors: List<SpoolmanVendor>) {
+        _vendors.value = vendors
     }
 
     private object NoopApiFactory : SpoolmanApiFactory(

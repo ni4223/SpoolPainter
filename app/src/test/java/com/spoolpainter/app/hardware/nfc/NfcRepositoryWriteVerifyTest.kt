@@ -165,6 +165,26 @@ class NfcRepositoryWriteVerifyTest {
     }
 
     @Test
+    fun `write encodes MIME type as application_json (FR-U6b-Δ-3 Snapmaker U1 compat)`() = runTest {
+        val wrapper = FakeNfcAdapterWrapper()
+        wrapper.simulateRead(sampleUid(), records = null)
+        wrapper.simulateReadbackEchoesWritten()
+        val repo = newRepository(wrapper = wrapper)
+
+        repo.arm(NfcIntent.Write(samplePayload()))
+        repo.handleTag(makeTag())
+
+        val written = wrapper.lastWrittenRecords ?: error("no records written")
+        assertEquals(1, written.size)
+        val record = written.single()
+        assertEquals(NdefRecordView.TNF_MIME_MEDIA, record.tnf)
+        assertEquals(
+            NfcRepository.MIME_JSON,
+            String(record.type, Charsets.US_ASCII),
+        )
+    }
+
+    @Test
     fun `two consecutive writes produce identical NDEF bytes (FR-6_2 two-tag invariant)`() = runTest {
         val wrapper = FakeNfcAdapterWrapper()
         val payload = samplePayload()

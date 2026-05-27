@@ -56,8 +56,7 @@ open class CreateAndPairUseCase @Inject constructor(
         // 2. Arm Write — NfcRepository writes + verifies on the same physical
         //    tap. The use case accepts whichever tag the user taps; UID-
         //    enforcement (the prior `expectedUid` rejection) is removed —
-        //    a stray tap is recoverable, and the same-UID-on-two-spools
-        //    conflict is the proper job of MoveOnBindUseCase (U6b).
+        //    a stray tap is recoverable.
         val payload = makePayload(snapshot, spoolId = spoolId)
         val writeResult = armWriteAndAwait(payload)
         val tappedUid = when (writeResult) {
@@ -74,9 +73,33 @@ open class CreateAndPairUseCase @Inject constructor(
             )
         }
 
-        moveOnBind.invoke(tappedUid, spoolId)
+        // 3. Move-on-bind precheck (S-5.1 / S-5.2): runs BEFORE the append so
+        //    a UID currently owned by another spool is moved (or the user
+        //    declines) atomically. AmbiguousOwnership and Failed surface as
+        //    SpoolmanFailed; Declined surfaces as Cancelled.
+        when (val mob = moveOnBind.invoke(tappedUid, spoolId)) {
+            is MoveOnBindUseCase.Outcome.Proceed,
+            is MoveOnBindUseCase.Outcome.Moved -> Unit
+            is MoveOnBindUseCase.Outcome.Declined ->
+                return CreateAndPairResult.Cancelled(
+                    "repair declined — UID still on the originally-paired spool",
+                )
+            is MoveOnBindUseCase.Outcome.Failed ->
+                return CreateAndPairResult.SpoolmanFailed(
+                    tappedUid,
+                    SpoolmanOutcome.ParseError(IllegalStateException(mob.reason)),
+                )
+            is MoveOnBindUseCase.Outcome.AmbiguousOwnership ->
+                return CreateAndPairResult.SpoolmanFailed(
+                    tappedUid,
+                    SpoolmanOutcome.ParseError(IllegalStateException(
+                        "ambiguous ownership: spool ids " +
+                            mob.currentOwners.mapNotNull { it.id }.joinToString(", "),
+                    )),
+                )
+        }
 
-        // 3. PATCH the spool to record the UID we just tapped. Idempotent.
+        // 4. PATCH the spool to record the UID we just tapped. Idempotent.
         when (val append = spoolman.appendCardUidToSpool(spoolId, tappedUid)) {
             is SpoolmanOutcome.Success -> Unit
             else -> return CreateAndPairResult.SpoolmanFailed(tappedUid, append)

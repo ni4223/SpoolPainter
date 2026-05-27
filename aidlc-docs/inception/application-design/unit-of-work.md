@@ -404,11 +404,13 @@ If the workspace contains uncommitted changes from prior units that were never c
 
 ---
 
-### U8 — Pickers + Custom Entries
+### U8 — Pickers + Custom Entries + Filament Metadata UX
 
-**Domain**: Pickers / Local-data.
+**Domain**: Pickers / Local-data / Filament-metadata UX.
 
-**Scope**:
+**Note**: Scope broadened on 2026-05-26 by `requirements-delta-orphan-filament-and-extra-fields.md` (FR-13, FR-14, FR-15; new stories S-8.5, S-8.6). The original "Pickers + Custom Entries" scope is retained verbatim — the delta extends it with orphan-filament-picker + inline "More details" expander + filament metadata PATCH path.
+
+**Scope (original — retained)**:
 - `MaterialPresetSource` (hardcoded; FR-8.1 / S-8.1).
 - `BrandPresetSource` (hardcoded; FR-8.2 / S-8.1).
 - `MaterialBrandLocalStore` — DataStore-Proto-backed user-added entries (Q-CD2=A; FR-8.5 / S-8.3, S-8.4). Schema: `CustomMaterials { repeated CustomMaterial }` + `CustomBrands { repeated CustomBrand }`.
@@ -417,25 +419,50 @@ If the workspace contains uncommitted changes from prior units that were never c
 - `AddCustomBrandSheet` + `AddCustomBrandViewModel`.
 - `MaterialPicker` / `BrandPicker` Compose components fully wired (skeletons existed in U6a; this unit hardens behaviour with the merged source).
 
-**Components produced**:
+**Scope (added by orphan-filament + extra-fields delta)**:
+- **U8-Δ-1 — Orphan-filament picker** (FR-13 / S-8.5). Main-screen dropdown gains a "Filaments without spools" section above the existing spools section. `MainViewModel.orphanFilaments` derived state. `MainViewModel.onFilamentSelected(SpoolmanFilament)` analogous to `onSpoolSelected`. New `createSpoolForExistingFilament(filamentId, expanderOverrides)` path (or short-circuit inside `createSpoolForNewFilament`) — bypasses `resolveOrCreateFilament`, optionally PATCHes filament metadata if expander values changed, calls `createSpoolStep`.
+- **U8-Δ-2 — Inline "More details ▾" expander** (FR-14 / S-8.6). `FilamentForm` extended with collapsed-by-default `MoreDetailsExpander` Composable. Five fields: empty spool weight, price, full spool weight (override 1000 g default), diameter (override 1.75 mm default), density (override per-material default). State on `FormState` as nullable Float overrides. Default form layout byte-identical to U6a (the expander is opt-in).
+- **U8-Δ-3 — Filament metadata PATCH path** (FR-15). New `SpoolmanRepository.patchFilament(filamentId, body)` + `SpoolmanApi.patchFilament` Retrofit endpoint + `PatchFilamentBody` DTO. Issued only when matcher resolves to existing filament AND any expander value differs from stored. Idempotent skip when equal.
+- **Model extensions**: `SpoolmanFilament` adds `spool_weight`, `price`, `weight`, `diameter`, `density` (all `Float?`). `CreateFilamentRequest` adds `spool_weight: Float?` + `price: Float?`. `weight`, `diameter`, `density` switch from required-with-defaults-at-call-site to optional-with-fallback (call-site computes the fallback when the form override is absent).
+- **`FormMapping.fromSpoolman`** reads filament metadata into the new `FormState` fields so an existing-filament prefill populates the expander.
+
+**Components produced (original)**:
 - `data/local/presets/MaterialPresetSource.kt`, `BrandPresetSource.kt`.
 - `data/local/userdata/MaterialBrandLocalStore.kt` (Proto schema + DataStore wiring; Hilt module from U1 already declares `DataStore<CustomMaterials>` + `DataStore<CustomBrands>` — provider implementations land here).
 - `data/local/MaterialBrandRepository.kt`.
 - Two sheets + their VMs.
 
-**Stories in scope**: S-8.1, S-8.2, S-8.3, S-8.4.
+**Components produced (added)**:
+- `ui/components/MoreDetailsExpander.kt` (or extend `FilamentForm.kt` inline).
+- `data/remote/spoolman/PatchFilamentBody.kt` (or add to `SpoolmanRequests.kt`).
+- `SpoolmanApi.patchFilament` endpoint.
+- `SpoolmanRepository.patchFilament(filamentId, body)`.
+- `SpoolmanRepository.createSpoolForExistingFilament(filamentId, overrides)` OR equivalent short-circuit inside `createSpoolForNewFilament`.
+- `MainViewModel.onFilamentSelected(SpoolmanFilament)`, `MainViewModel.orphanFilaments: StateFlow<List<SpoolmanFilament>>`.
+- Dropdown composable change (current `SpoolDropdown` or equivalent — verify name in code) — sectioned layout.
+
+**Stories in scope**: S-8.1, S-8.2, S-8.3, S-8.4, **S-8.5**, **S-8.6**.
 
 **Public interfaces produced**:
 - `MaterialBrandRepository` — consumed by `MainViewModel` (already wired in U6a; U8 lands the real impl behind the same interface).
+- `SpoolmanRepository.patchFilament` — net-new API surface for filament metadata edits.
 
-**Entry criteria**: U6a complete (pickers integrated into form there).
+**Entry criteria**: U6a complete (pickers integrated into form there). U6b's matcher fix (Δ-4) MUST be in place before U8-Δ-1 lands — the orphan-filament path relies on the matcher correctly resolving to existing filaments without spawning duplicates.
 
-**Exit criteria**: Repository tests pass for merge + dedup; sheet ViewModel tests pass for add custom flow; round-trip test (custom entry persists across DataStore restart).
+**Exit criteria**: Repository tests pass for merge + dedup; sheet ViewModel tests pass for add custom flow; round-trip test (custom entry persists across DataStore restart). **Added**: orphan list derivation test; `MoreDetailsExpander` visibility + binding test; PATCH idempotency test; orphan-filament round-trip integration test (pick orphan → Save & Write → exactly 1 new spool created under the existing filament).
 
-**Tests**:
+**Tests (original)**:
 - `MaterialBrandRepository.materials` — merge, case-insensitive dedup, Spoolman precedence.
 - Custom material persists across DataStore restart (in-memory test DataStore).
 - Custom material flows into `createSpoolForNewFilament` request when user creates a spool with that material (integration with U6a, mocked).
+
+**Tests (added)**:
+- `MainViewModelOrphanFilamentTest` — `orphanFilaments` derivation from `filaments - spools.map { filament.id }`; `onFilamentSelected` seeds form correctly; `onWriteTapped` after orphan selection routes to existing-filament path (no duplicate filament created).
+- `MoreDetailsExpanderTest` (Compose UI test) — toggle visibility (default collapsed); each field binds to `FormState`; default-collapsed-form is byte-identical to U6a.
+- `SpoolmanRepositoryPatchFilamentTest` — PATCH issued only when values differ; idempotent skip when equal; 4xx/5xx surface `SpoolmanOutcome.HttpError`.
+- `CreateAndPairUseCase` integration: orphan-filament path bypasses `resolveOrCreateFilament` and PATCHes filament metadata before `createSpoolStep` when expander values differ.
+
+**Test count target**: U8's prior target was not explicitly fixed. With S-8.5 + S-8.6 the added test surface is ~10-15 cases. To be finalised in U8's Code Generation Part 1 plan when U8 opens.
 
 ---
 

@@ -8,7 +8,7 @@ import com.spoolpainter.app.domain.usecases.MoveOnBindUseCase
 class FakeCreateAndPairUseCase(
     nfc: FakeNfcRepository = FakeNfcRepository(),
     spoolman: FakeSpoolmanRepository = FakeSpoolmanRepository(),
-    moveOnBind: MoveOnBindUseCase = MoveOnBindUseCase.NoOp(),
+    moveOnBind: MoveOnBindUseCase = MoveOnBindNoOp,
 ) : CreateAndPairUseCase(nfc, spoolman, moveOnBind) {
 
     var nextResult: CreateAndPairResult = CreateAndPairResult.Cancelled("not-staged")

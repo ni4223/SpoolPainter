@@ -14,8 +14,12 @@ import com.spoolpainter.app.domain.primitives.TagClassification
 import com.spoolpainter.app.domain.usecases.CreateAndPairInput
 import com.spoolpainter.app.domain.usecases.CreateAndPairResult
 import com.spoolpainter.app.domain.usecases.CreateAndPairUseCase
+import com.spoolpainter.app.domain.usecases.MoveOnBindConfirmer
 import com.spoolpainter.app.domain.usecases.ReadAndPairResult
 import com.spoolpainter.app.domain.usecases.ReadAndPairUseCase
+import com.spoolpainter.app.domain.usecases.TwoTagInput
+import com.spoolpainter.app.domain.usecases.TwoTagResult
+import com.spoolpainter.app.domain.usecases.TwoTagUseCase
 import com.spoolpainter.app.hardware.nfc.NfcRepository
 import com.spoolpainter.app.ui.common.UiEffect
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -43,6 +47,8 @@ class MainViewModel @Inject constructor(
     settings: SettingsRepository,
     private val readAndPair: ReadAndPairUseCase,
     private val createAndPair: CreateAndPairUseCase,
+    private val twoTag: TwoTagUseCase,
+    private val confirmer: MoveOnBindConfirmer,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(MainUiState())
@@ -61,6 +67,7 @@ class MainViewModel @Inject constructor(
 
     private var readJob: Job? = null
     private var writeJob: Job? = null
+    private var priorActiveFlow: ActiveFlow? = null
 
     internal val readTimeoutMs: Long = READ_TIMEOUT_MS_DEFAULT
     internal val writeTimeoutMs: Long = WRITE_TIMEOUT_MS_DEFAULT
@@ -119,6 +126,36 @@ class MainViewModel @Inject constructor(
                 .collect { value ->
                     _state.update { it.copy(spoolman = it.spoolman.copy(urlConfigured = value)) }
                 }
+        }
+        // Move-on-bind confirmation prompt: when a use-case asks the confirmer
+        // for user input, surface the prompt as an ActiveFlow transition so the
+        // bottom-sheet host renders. When the request resolves (null), restore
+        // whatever flow was active beforehand — defensively, since the
+        // continuation should write a fresh state shortly after.
+        viewModelScope.launch {
+            confirmer.pendingRequest.collect { req ->
+                if (req != null) {
+                    priorActiveFlow = _state.value.activeFlow
+                    _state.update {
+                        it.copy(
+                            activeFlow = ActiveFlow.AwaitingRepairConfirmation(
+                                uid = req.uid,
+                                currentOwner = req.other,
+                                targetSpoolId = req.targetSpoolId,
+                            ),
+                        )
+                    }
+                } else {
+                    val prior = priorActiveFlow ?: ActiveFlow.Idle
+                    _state.update { current ->
+                        if (current.activeFlow is ActiveFlow.AwaitingRepairConfirmation) {
+                            current.copy(activeFlow = prior)
+                        } else {
+                            current
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -357,11 +394,11 @@ class MainViewModel @Inject constructor(
     private fun applyWriteResult(result: CreateAndPairResult) {
         when (result) {
             is CreateAndPairResult.Success.WrittenAndPaired -> {
-                // cardUid reflects the tag we just wrote — pure display, no
-                // behavioral consequence. expectedUid enforcement was dropped
-                // (the next Save & Write accepts whichever tag the user taps),
-                // so there's no need to null cardUid here. Keep the spool
-                // selection so the dropdown reflects what we just paired.
+                // First-tag write succeeded. Transition to PromptingPairAnother
+                // so the bottom sheet asks "Pair another tag with this spool?".
+                // The form is intentionally NOT cleared here — clearing happens
+                // when the user dismisses the prompt or the second-tag flow
+                // returns terminal Success/Failure (see applyTwoTagResult).
                 _state.update { current ->
                     current.copy(
                         form = current.form.copy(
@@ -369,7 +406,7 @@ class MainViewModel @Inject constructor(
                             selectedSpoolId = result.spoolId,
                         ),
                         spoolman = current.spoolman.copy(selectedSpoolId = result.spoolId),
-                        activeFlow = ActiveFlow.Idle,
+                        activeFlow = ActiveFlow.PromptingPairAnother(spoolId = result.spoolId),
                     )
                 }
                 _effects.trySend(UiEffect.ShowSnackbar("Paired and written"))
@@ -390,6 +427,82 @@ class MainViewModel @Inject constructor(
                 _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
                 viewModelScope.launch { nfc.disarm() }
                 _effects.trySend(UiEffect.ShowSnackbar("No tag tapped — try again"))
+            }
+        }
+    }
+
+    fun onPairAnotherTagAccepted() {
+        val current = _state.value.activeFlow as? ActiveFlow.PromptingPairAnother ?: return
+        val spoolId = current.spoolId
+        _state.update { it.copy(activeFlow = ActiveFlow.WritingSecondTag(spoolId)) }
+        viewModelScope.launch {
+            val result = withTimeoutOrNull(writeTimeoutMs) {
+                twoTag.invoke(TwoTagInput(spoolId))
+            } ?: TwoTagResult.Cancelled("timeout")
+            applyTwoTagResult(result)
+        }
+    }
+
+    fun onPairAnotherTagDismissed() {
+        if (_state.value.activeFlow !is ActiveFlow.PromptingPairAnother) return
+        _state.update {
+            it.copy(
+                activeFlow = ActiveFlow.Idle,
+                form = FormState(rawWriteMode = it.form.rawWriteMode),
+                spoolman = it.spoolman.copy(selectedSpoolId = null),
+            )
+        }
+        _customMaterial.value = ""
+        _customBrand.value = ""
+        _effects.trySend(UiEffect.ShowSnackbar("Saved with one tag"))
+    }
+
+    fun onRepairResult(confirm: Boolean) {
+        confirmer.submitResult(confirm)
+    }
+
+    private fun applyTwoTagResult(result: TwoTagResult) {
+        when (result) {
+            is TwoTagResult.Success.SecondTagPaired -> {
+                _state.update {
+                    it.copy(
+                        activeFlow = ActiveFlow.Idle,
+                        form = FormState(rawWriteMode = it.form.rawWriteMode),
+                        spoolman = it.spoolman.copy(selectedSpoolId = null),
+                    )
+                }
+                _customMaterial.value = ""
+                _customBrand.value = ""
+                _effects.trySend(UiEffect.ShowSnackbar("Both tags paired"))
+            }
+            is TwoTagResult.VendorTagRejected -> {
+                _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
+                _effects.trySend(UiEffect.ShowSnackbar("Vendor tag — write blocked"))
+            }
+            is TwoTagResult.VerifyFailed -> {
+                _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
+                _effects.trySend(UiEffect.ShowSnackbar("Second-tag verify failed: ${result.cause}"))
+            }
+            is TwoTagResult.SpoolmanFailed -> {
+                _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
+                _effects.trySend(UiEffect.ShowSnackbar(humanReadable(result.outcome)))
+            }
+            is TwoTagResult.MoveOnBindPartial -> {
+                _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
+                _effects.trySend(
+                    UiEffect.ShowSnackbar(
+                        "Partial state in Spoolman — UID was removed from spool " +
+                            "#${result.partiallyModifiedSpoolId}; restore manually if needed",
+                    ),
+                )
+            }
+            is TwoTagResult.NfcFailed -> {
+                _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
+                _effects.trySend(UiEffect.ShowSnackbar("Tag write failed: ${result.reason}"))
+            }
+            is TwoTagResult.Cancelled -> {
+                _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
+                _effects.trySend(UiEffect.ShowSnackbar("Second-tag pairing cancelled (${result.reason})"))
             }
         }
     }

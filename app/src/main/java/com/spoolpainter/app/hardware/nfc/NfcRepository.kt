@@ -262,10 +262,14 @@ open class NfcRepository internal constructor(
 
     private fun encodePayloadRecords(payload: OpenSpoolPayload): List<NdefRecordView> {
         val json = OpenSpoolPayloadCodec.toJson(payload)
+        // MIME is application/json (FR-U6b-Δ-3) — Snapmaker U1 firmware filters
+        // by MIME and only accepts application/json. The read-side classifier
+        // dual-accepts both this and the legacy application/vnd.openspool+json
+        // so tags written by intermediate v2 builds still round-trip.
         return listOf(
             NdefRecordView(
                 tnf = NdefRecordView.TNF_MIME_MEDIA,
-                type = MIME_OPENSPOOL.toByteArray(Charsets.US_ASCII),
+                type = MIME_JSON.toByteArray(Charsets.US_ASCII),
                 payload = json.toByteArray(Charsets.UTF_8),
             ),
         )

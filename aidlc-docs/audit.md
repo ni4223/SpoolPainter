@@ -980,3 +980,148 @@ Per the per-unit loop's close-out gate, U6a CANNOT close out (no `[x]`, no close
 **Context**: Three viable paths surfaced for user decision: (a) capture logcat for OPEN-1 (diagnose variant-persistence path) + trace OPEN-2 (dropdown-clear path) and ship fixes before close-out; (b) explicitly accept OPEN-1 + OPEN-2 as carry-overs into U6b/U7 and close out U6a now; (c) close OPEN-2 by inspection (likely a small VM-level fix) and capture logcat for OPEN-1 only.
 
 ---
+
+## U6b — FUNCTIONAL DESIGN Part 1 (Planning) AUTHORED
+**Timestamp**: 2026-05-26T00:00:00Z
+**User Input**: "continue AIDLC"
+**AI Response**: U6a closed out at commit `bb5dc93` (working tree clean, 6 ahead of `origin/v2`). Per the per-unit loop, opened U6b — Move-on-Bind + Two-Tag Flow. Functional Design is **EXECUTE** for U6b (new business logic: atomic move-on-bind + two-tag re-derivation). NFR Requirements / NFR Design / Infrastructure Design **SKIP** per execution-plan.md (Infrastructure Design SKIP for all units; NFR gates remain skipped — no perf/security/scalability surface introduced beyond U3-Δ already shipped). Authored FD Part 1 plan at `aidlc-docs/construction/plans/u6b-move-on-bind-two-tag-functional-design-plan.md` covering:
+- Scope: `MoveOnBindUseCase` impl (replaces U6a `NoOp`), `TwoTagUseCase`, `RepairConfirmSheet`+VM, `PairAnotherTagSheet`, `MainViewModel` extensions (3 new `ActiveFlow` variants + 4 new handlers), `MoveOnBindConfirmer` Hilt-injected single-call seam.
+- Cross-unit consumers: U7 (reuses MoveOnBind), U10 (milestone gate observations).
+- Out-of-scope: U7 side modes, U8 catalogue pickers, U9 settings, U10 polish, persistent two-tag flow (FR-6.4 forbids persistence).
+- 15 embedded `[Answer]:` questions covering: (1) reorder MoveOnBind precheck before `appendCardUidToSpool` in `CreateAndPairUseCase` (currently fires *after* per line 77 — wrong order vs S-5.1); (2) `Declined` semantics — abort B-side append; (3) `≥2` owners → `AmbiguousOwnership` refuse; (4) single-call Confirmer seam vs two-call; (5) `TwoTagUseCase` re-derives payload internally; (6) Confirmer holds continuation; (7) concise sheet copy; (8) no partial-commit rollback; (9) single in-flight Confirmer; (10) cache-miss → `getSpool` fallback; (11) string-match vendor-tag rejection; (12) 15s timeout; (13) clear form on dismiss; (14) `@Singleton` Confirmer; (15) single sheet at a time.
+- Test plan target: 244 (U6a) + ~28 (U6b) ≈ **272 / 272**.
+- U6 milestone install gate to land at U6b close-out (covers U6a + U6b together per Q-T2=B).
+
+`aidlc-docs/aidlc-state.md` Current Stage flipped to "U6b — Functional Design Part 1 IN FLIGHT 2026-05-26". U6b row updated to reflect plan authored.
+**Status**: U6b FD Part 1 plan authored. Awaiting user to fill in `[Answer]:` tags for Q-U6b-1 through Q-U6b-15. After ambiguity-pass, generate FD artefacts under `aidlc-docs/construction/u6b-move-on-bind-two-tag/functional-design/`, then present standardized 2-option completion message.
+**Context**: Branch `v2`, working tree clean before this entry except for the new plan file + state/audit updates. No code changes yet.
+
+---
+
+## U6b — FD Part 1 ANSWERS LOCKED + FD Part 2 GENERATED
+**Timestamp**: 2026-05-26T00:00:00Z
+**User Input**: "ok"
+**AI Response**: Interpreted "ok" as approval of recommended picks for all Q-U6b-1..15. Locked answers in `construction/plans/u6b-move-on-bind-two-tag-functional-design-plan.md` (`[Answer]: **<pick>** (accepted 2026-05-26)`); flipped 29 plan checkboxes from `[ ]` to `[x]`. Ambiguity pass: all 15 picks are concrete (no "depends/maybe/somewhere between"), no follow-up questions required. Generated four FD artefacts under `aidlc-docs/construction/u6b-move-on-bind-two-tag/functional-design/`:
+1. `domain-entities.md` — `MoveOnBindUseCase.Outcome` final shape (Proceed/Moved/Declined/Failed/AmbiguousOwnership), `MoveOnBindConfirmer` single-call interface + `RepairConfirmRequest`, `TwoTagResult` sealed family + `TwoTagInput`, `ActiveFlow` 3 new variants (PromptingPairAnother / WritingSecondTag / AwaitingRepairConfirmation), `RepairConfirmUiState` + `PairAnotherTagUiState` (replacing U1 placeholders), Hilt binding delta (`MoveOnBindUseCase.NoOp` deleted, `MoveOnBindUseCaseImpl` + `@Singleton MoveOnBindConfirmerImpl` introduced).
+2. `business-rules.md` — BR-U6b-CP-1..3 (CreateAndPair reorder: MOB precheck before append; outcome branching for Proceed/Moved/Declined/Failed/AmbiguousOwnership), BR-U6b-MOB-1..7 (owner lookup + branch-on-size + confirmation gate + atomic remove-then-append + partial-commit error message + multi-UID source preservation + single-in-flight enforcement), BR-U6b-MV-1..8 (canRead/canWrite gating + applyWriteResult transition + onPairAnotherTagAccepted/Dismissed + applyTwoTagResult + confirmer observer + onRepairResult + non-persistence per FR-6.4), BR-U6b-T2-1..8 (payload re-derivation with cache-miss getSpool fallback + vendor-tag rejection via string-match + verify-fail/NFC-fail mapping + move-on-bind on second tag + 15s timeout), BR-U6b-UI-1..5 (sheet host gating + scrim-dismiss + copy + banner/snackbar precedence), BR-U6b-X-1..3 (no DataStore writes + test seams + Hilt graph delta).
+3. `business-logic-model.md` — pseudo-code for MOB.invoke / T2.invoke / derivePayload / MoveOnBindConfirmerImpl; sequence diagram for the move-on-bind happy path through CP → MOB → CFM → UI/RV; end-to-end happy-path scenario combining first-pair + Pair-another-tag; concurrency model (single-thread ViewModelScope + CompletableDeferred straddling suspension boundary); 9-row failure injection matrix mapping injected failures to expected MoveOnBindUseCase.Outcome and caller mapping for both CP and T2.
+4. `frontend-components.md` — Compose hierarchy (`MainScreen → BottomSheetHost → {RepairConfirmSheet, PairAnotherTagSheet}` single sheet at a time per Q-U6b-15), `RepairConfirmSheet` props + state + concise copy + dismiss behaviour + ViewModel test surface, `PairAnotherTagSheet` props + state + copy + behaviour + ViewModel test surface, `BottomSheetHost` selector signature, MainScreen ↔ ViewModel wiring (5 callbacks routed), form-clear-on-Idle semantics moved from "first-pair-success" to "Pair-another sheet dismiss / second-pair success", snackbar copy table (7 events), API integration matrix.
+
+`aidlc-docs/aidlc-state.md` Current Stage flipped to "U6b — FD Part 2 (Generation) EXECUTED 2026-05-26"; U6b row now reads "FD artefacts ready for stage-gate approval; on approval next is Code Generation Part 1 (Planning)".
+
+**Status**: U6b FD complete. Awaiting user approval at the standardized 2-option stage gate (Request Changes / Continue to Next Stage). On Continue, the per-unit loop advances: NFR Requirements / NFR Design / Infrastructure Design **SKIP** for U6b per execution-plan.md (no new perf/sec surface introduced beyond U3-Δ already shipped; no infra changes); next stage is **Code Generation Part 1 (Planning)**.
+**Context**: No app-source changes in this session. Files touched: 1 plan + 4 FD artefacts + state.md + this audit entry. Working tree dirty against `origin/v2` post these doc-only writes; close-out commit will bundle them with Code Gen output at U6b DoD #6.
+
+---
+
+## U6b — FD APPROVED + CODE GEN Part 1 (Planning) AUTHORED
+**Timestamp**: 2026-05-26T00:00:00Z
+**User Input**: "go"
+**AI Response**: Recorded user approval of U6b Functional Design ("go" interpreted as "Continue to Next Stage" per the standardized 2-option gate). Per-unit gate decisions for U6b confirmed:
+- Functional Design — **EXECUTED + APPROVED** 2026-05-26.
+- NFR Requirements / NFR Design / Infrastructure Design — **SKIP** per execution-plan.md (no new perf/sec/scalability surface beyond U3-Δ already shipped; no infra changes; matches every prior unit U1..U6a which also skipped these gates).
+- Code Generation — **PART 1 (Planning) IN FLIGHT** below.
+
+Authored Code Generation Part 1 plan at `aidlc-docs/construction/plans/u6b-move-on-bind-two-tag-code-generation-plan.md`. Plan covers:
+- §1 Build dependencies: no `libs.versions.toml` change; no `build.gradle.kts` change. CompletableDeferred + ModalBottomSheet already on classpath.
+- §2 Domain entities: rewrite `MoveOnBindUseCase.Outcome` (5 variants); new `MoveOnBindConfirmer` interface + `RepairConfirmRequest`; new `TwoTagUseCase` open class + `TwoTagInput` + `TwoTagResult` sealed family (7 variants incl. MoveOnBindPartial); extend `ActiveFlow` with PromptingPairAnother / WritingSecondTag / AwaitingRepairConfirmation; replace placeholder `RepairConfirmUiState`; new `PairAnotherTagUiState`; PairAnotherTagViewModel marked N/A (sheet reads from MainViewModel state directly).
+- §3 Use-cases: `MoveOnBindUseCaseImpl` (find owners → branch on size → confirmation → atomic remove-then-append with partial-commit error reporting); `MoveOnBindConfirmerImpl` (`@Singleton`, single CompletableDeferred); `TwoTagUseCase.invoke` body + `derivePayload` (cache-first, getSpool/getFilament fallback); `CreateAndPairUseCase` reorder per Q-U6b-1 (move-on-bind precheck before append on B); new `SpoolmanRepository.getFilament(filamentId)` helper + matching `SpoolmanApi` endpoint.
+- §4 MainViewModel: inject `TwoTagUseCase` + `MoveOnBindConfirmer`; rewrite `applyWriteResult(WrittenAndPaired)` to transition to PromptingPairAnother instead of clearing form; add `onPairAnotherTagAccepted` / `onPairAnotherTagDismissed` / `applyTwoTagResult` / `onRepairResult` / confirmer-observer init block; extend gating to include three new ActiveFlow variants. RepairConfirmViewModel `uiState` derives from `confirmer.pendingRequest` with display-name fallback (`vendor material color #${id}` → `material #${id}` → `spool #${id}`).
+- §5 Compose UI: `RepairConfirmSheet` (concise copy per Q-U6b-7=B), `PairAnotherTagSheet`, `BottomSheetHost` selector, `MainScreen` integration with derived `pairAnotherState`. testTag values for both sheets per Automation-Friendly Code Rules.
+- §6 Hilt graph: change `bindMoveOnBindUseCase` from `MoveOnBindUseCase.NoOp` to `MoveOnBindUseCaseImpl`; add `@Binds @Singleton bindMoveOnBindConfirmer`.
+- §7 Tests: 5 new test files (`MoveOnBindUseCaseTest` ~8 cases, `TwoTagUseCaseTest` ~5 cases, `RepairConfirmViewModelTest` ~4 cases, `MainViewModelTwoTagTest` ~8 cases, +2 regression cases on existing `CreateAndPairUseCaseTest`); 4 new test fakes (`FakeMoveOnBindConfirmer`, `FakeTwoTagUseCase`, `FakeMoveOnBindUseCase`, test-only `MoveOnBindNoOp`); update existing `FakeCreateAndPairUseCase` + `MainViewModelTest` to drop `MoveOnBindUseCase.NoOp()` references and to relax assertions touching the form-clear-on-WrittenAndPaired path (now defers into PromptingPairAnother).
+- §8 Documentation: `aidlc-docs/construction/u6b-move-on-bind-two-tag/code/u6b-summary.md`.
+- §9 Verification: `compileDebugKotlin`, `testDebugUnitTest` (~268..272 / ~268..272 target), `assembleDebug`, U6 milestone install gate on moto g stylus 2025 / Android 16 with manual ACs covering S-5.1 / S-5.2 / S-6.1..6.4.
+- §10 Brownfield invariants: no `*_modified.kt` artefacts; `MoveOnBindUseCase.NoOp` removed from production source; no IDE noise.
+- §11 Close-out commit per `unit-of-work.md` §2.1 + `[[feedback-aidlc-unit-close-out-commit]]` (single commit, HEREDOC, no push).
+- §12 Story traceability matrix mapping S-5.1 / S-5.2 / S-6.1..6.4 → plan sections.
+
+`aidlc-docs/aidlc-state.md` Current Stage flipped to "U6b — FD APPROVED + Code Gen Part 1 (Planning) AUTHORED 2026-05-26"; U6b row updated.
+**Status**: Code Generation Part 1 plan authored. Awaiting explicit user approval of the plan before Code Gen Part 2 executes the checkboxes in order. Per `code-generation.md` Step 7, Part 2 must NOT begin until the user explicitly approves.
+**Context**: No app-source changes in this session beyond what was committed at `bb5dc93` (U6a close-out). Files touched in this session: 1 FD plan + 4 FD artefacts + 1 code-gen plan + state.md + audit.md. Working tree dirty against `origin/v2` post these doc-only writes; close-out commit at U6b DoD #6 will bundle them with the Code Gen Part 2 output.
+
+---
+
+## U6b — Code Gen Part 2 PAUSED + Parked Note: NDEF MIME-type regression
+**Timestamp**: 2026-05-26T00:00:00Z
+**User Input**: "pause this step and take note of few bugs or other requirement i thought of"
+**AI Response**: Paused U6b Code Gen Part 2 per user direction. Plan at `aidlc-docs/construction/plans/u6b-move-on-bind-two-tag-code-generation-plan.md` left untouched; no app source modified. Will collect parked carry items in `aidlc-state.md` "Current Status → Parked notes" without amending requirements / FD / plan / Δ matrix until user picks the routing for each item.
+**Context**: Standardized 2-option Code Generation gate held at "Awaiting approval"; pause is neither approval nor a request-changes — it's a hold to collect notes first.
+
+---
+
+## U6b — Code Gen Part 2 PAUSED + Parked Note: NDEF MIME-type regression
+**Timestamp**: 2026-05-26T00:00:00Z
+**User Input**: "Tag format is complete wrong app is not recognizing, why you had to reinevent the wheel when v1 had what to write. https://snapmakeru1-extended-firmware.pages.dev/rfid_support"
+**AI Response**: Diagnosed: not a JSON-shape issue. Diff vs v1 + Snapmaker U1 RFID spec confirms the regression is the **NDEF MIME type byte**. v1 (`main:app/src/main/java/com/spoolpainter/app/hardware/nfc/NfcManager.kt#writeTag`) wrote `application/json` per the public Snapmaker spec at `https://snapmakeru1-extended-firmware.pages.dev/rfid_support` ("NDEF with JSON (MIME type: application/json)"). v2 (`NfcRepository.kt:263-272` `encodePayloadRecords`, constant at line 290 `MIME_OPENSPOOL = "application/vnd.openspool+json"`) writes a vendor MIME the firmware filters out. Reads still work because the classifier (`NfcRepository.kt:243-248`) accepts both `MIME_OPENSPOOL` and `MIME_JSON`. Asked user to pick routing: (1) U6b-Δ-3 + plan §13, (2) hotfix-on-top-of-U6a, (3) park-only. User picked **(3)**. Recorded the bug — root cause, fix surface, file:line citations — under `aidlc-state.md` "Current Status → Parked notes". No requirements / FD / plan / code / tests touched. Routing decision deferred until the full carry list is collected.
+**Context**: U6b Code Gen Part 2 still PAUSED. Working tree unchanged from the start of this session except for `aidlc-state.md` + `audit.md` doc-only edits.
+
+---
+
+## U6b — Parked Note #2: Orphan-filament + add-spool path
+**Timestamp**: 2026-05-26T00:00:00Z
+**User Input**: "here is wjat i though of let say i already have filament in my record but no spool and want to add new spool for it, what will happen with currents etup"
+**AI Response**: Walked the code path. Today: main-screen dropdown lists spools only; orphan filaments (zero spools) are unreachable from UI. Save & Write with `selectedSpoolId == null` always routes to create-flow. `CreateAndPairUseCase.kt:98-114` → `SpoolmanRepository.createSpoolForNewFilament` (line 187) → `resolveOrCreateFilament` (line 300-340) match key: vendor ignoreCase+trim ✅, material ignoreCase ✅, colorHex strict ❌, variant strict null vs "" ❌, name not part of match ✅. Three outcomes: lucky-match adds a spool under the existing filament; any mismatch creates a duplicate filament under same vendor; temps aren't part of match so on-tag payload can drift from filament record on a lucky-match. Confirmed user's hunch — vendor reuse is fine via `resolveOrCreateVendor` (line 285-298, ignoreCase + trim).
+
+## U6b — Parked Note #2 (cont.): User confirms add to carry list
+**Timestamp**: 2026-05-26T00:00:00Z
+**User Input**: "yes lets add this to create new one, do we reuse old vendors though right? that is easy to match"
+**AI Response**: Confirmed vendor-reuse is correct (ignoreCase + trim, line 290). Filament composite key is the gap. Parked as carry item #2 in `aidlc-state.md` "Current Status → Parked notes". Two-layer fix surface recorded: (a) UX — surface orphan filaments in picker, two design options (sectioned dropdown vs separate Browse picker), real fix; (b) matcher hardening — normalise colorHex (strip `#`, uppercase), treat null/`""` variant as equal, trim — cheap safety net even before UX lands. Routing TBD: real fix likely **U8** scope (Material/Brand catalogue / picker UX); matcher hardening could land as U6b-Δ or a hotfix. Decision deferred until carry list is fully collected.
+**Context**: U6b Code Gen Part 2 still PAUSED. No app source / plan / FD / requirements / Δ files touched. Working tree changes this session: `aidlc-state.md` + `audit.md` only.
+
+---
+
+## U6b — Carry-over note #3: Color-hex v1 fix audit
+**Timestamp**: 2026-05-26T00:00:00Z
+**User Input**: "also for color, i remember i had to fix soemthing v1 where colors were not mapping properly either to printer or spoolma, i am expecyng that fix is carroed over"
+**AI Response**: Walked v1 git history (commit `8d637e9` "Add pull-to-refresh, spool refresh, and nullable colorHex support") and v2 source. Confirmed v1 fix is carried verbatim:
+- `FormMapping.canonicaliseColorHex` (lines 109-113) — `removePrefix("#") → takeLast(6) if longer → uppercase()`. Used on Spoolman read (line 32) AND OpenSpool tag read (line 90).
+- `FilamentSpool.fromSpoolman` (lines 58-62) — same chain.
+- `ColorPicker` UI (`ColorPicker.kt:99-103`) — filters to `0-9 A-F`, uppercased, max 6 chars.
+- `parseColor` (`ColorPicker.kt:170`) — case-insensitive via `toInt(16)`.
+- `OpenSpoolPayloadCodec.toJson` (line 56) — receives form-canonicalised value, writes `"FF0000"` (no `#`), matches v1.
+- `CreateFilamentRequest.color_hex` write path — same canonicalised value.
+- `FormState.colorHex: String?` + `OpenSpoolPayload.colorHex: String?` — nullable end-to-end (no-color option preserved).
+**Asymmetric gap** = exactly Bug #2 (carry item #2 above): `SpoolmanRepository.resolveOrCreateFilament:314` strict equality on raw `f.color_hex` vs canonicalised `req.colorHex`. v1 had no `resolveOrCreateFilament` at all (v1 only read existing filaments), so this is net-new code in v2 that didn't carry the v1 chain. Δ-4's shared `ColorHexCodec.canonicalise` (extracted from `FormMapping`) closes the asymmetry — both sides will canonicalise identically.
+
+---
+
+## U6b — User authorises direct application of both deltas (no approval gate)
+**Timestamp**: 2026-05-26T00:00:00Z
+**User Input**: "so add these two bugs as extra in aidlc and that filament abd feild fetaure as new reuirement etc. ask whatever question you want and then add to all docs no approval required"
+**AI Response**: Asked four clarifying questions (bug routing / unit scope / UX pattern / first-cut fields). User's answers (recorded by AskUserQuestion tool, 2026-05-26):
+- **Bug routing** = "Both as U6b-Δ (Recommended)" → register as U6b-Δ-3 (NDEF MIME) + U6b-Δ-4 (matcher); ride along with U6b's existing install gate.
+- **Unit scope for new requirement** = "Extend U8 (Recommended)" → broaden U8 from "Material/Brand catalogue" to "Material/Brand catalogue + Filament metadata UX"; keeps the unit graph at U1..U10.
+- **UX pattern** = user's free-text override: *"i want 3, i am thinking something that will expand in existing UI so default UI looks clean on start and user can choose to expand"* → option 3 was "Inline expander + sectioned dropdown" — user wants the inline expander pattern explicitly: collapsed by default, opt-in expand. Sectioned dropdown for orphan filaments (the FR-13 path) coexists.
+- **Must-have fields** = "1 and 3" → option 1 (filament: empty spool weight + price + full weight) **and** option 3 (filament: diameter + density overrides). Spool-scope `location` + `comment` deferred (option 2 not picked).
+
+Applied directly to docs under user authorisation:
+- Created `aidlc-docs/inception/requirements/requirements-delta-tag-mime-and-matcher-bugs.md` — 5-section delta covering Bug #1 + Bug #2 with normative behaviour, fix surfaces, test plans, U6 install-gate additions, and approval gate noting user-authorised skip.
+- Created `aidlc-docs/inception/requirements/requirements-delta-orphan-filament-and-extra-fields.md` — 8-section delta introducing FR-13 (orphan-filament picker) + FR-14 (inline "More details ▾" expander) + FR-15 (filament metadata PATCH path); new stories S-8.5 + S-8.6; full ACs; wire-format diff for `CreateFilamentRequest` + new `PatchFilamentBody` + extended `SpoolmanFilament` model; UX-decision table noting the user's option-3 inline-expander pick; trace summary; approval gate noting user-authorised skip.
+- Extended `aidlc-docs/construction/plans/u6b-move-on-bind-two-tag-code-generation-plan.md` with §13 (U6b-Δ-3 NDEF MIME write fix — single-line code change in `NfcRepository.encodePayloadRecords`, test updates, mandatory U6 install-gate Snapmaker U1 verify), §14 (U6b-Δ-4 matcher fix — new `domain/primitives/ColorHexCodec.kt` shared helper, `canonVariant` helper, rewritten match predicate with the user-friendly null/blank/case handling, six new test cases, mandatory U6 install-gate identical-form double-tap verify), §15 (brownfield invariants for both), §16 (story traceability for both). Test count target lifted: 244 → ~275..280 (was ~268..272).
+- Broadened `aidlc-docs/inception/application-design/unit-of-work.md` §3-U8 in-place: original "Pickers + Custom Entries" scope retained verbatim; added scope sections for U8-Δ-1 (orphan-filament picker), U8-Δ-2 (inline expander), U8-Δ-3 (filament metadata PATCH path); added components, public interfaces, entry/exit criteria additions, S-8.5 + S-8.6 story IDs, and added test cases. Test count target marked TBD-at-U8-open.
+- `aidlc-docs/aidlc-state.md` Current Stage updated to note both deltas approved + applied; per-unit Δ matrix bumped to include U6b-Δ-1..4 + U8-Δ-1..3; carry-items section rewritten to mark all four items resolved (with routing + plan section refs); authorisation note recorded.
+**Status**: U6b Code Gen Part 2 still PAUSED. **All doc changes are append-only / additive** — no app source touched, no FD artefact touched, no `aidlc-state.md` Stage Progress checkbox changed (U6b row stays `[ ]` until Part 2 ships). Working tree dirty against `origin/v2` post these doc-only writes; close-out commit at U6b DoD #6 will bundle them with the Code Gen Part 2 output.
+**Context**: Standardised 2-option requirements approval gate explicitly skipped under user direction "no approval required". Recorded both in this audit entry and in each delta's §-Approval-Gate.
+
+---
+
+## U6b — Code Generation Part 2 approved + executed
+**Timestamp**: 2026-05-26T00:00:00Z
+**User Input**: "AIDL continue, go part 2 of u6 b, fiull appoval"
+**AI Response**: Approval gate satisfied per `code-generation.md` Step 7 ("Continue to Next Stage"). Executed plan `aidlc-docs/construction/plans/u6b-move-on-bind-two-tag-code-generation-plan.md` end-to-end (§1..§16). Net code change: 18 new files + 18 modified files. Net test change: +35 tests (244 → 279).
+- §2 Domain entities: `MoveOnBindUseCase.Outcome` rewritten (Proceed / Moved / Declined / Failed / AmbiguousOwnership), `NoOp` deleted; new `MoveOnBindConfirmer` interface + `RepairConfirmRequest`; new `TwoTagUseCase` + `TwoTagInput` + `TwoTagResult` family; `ActiveFlow` extended with `PromptingPairAnother` / `WritingSecondTag` / `AwaitingRepairConfirmation`; `RepairConfirmUiState` placeholder replaced with full state shape; new `PairAnotherTagUiState`.
+- §3 Use-cases: `MoveOnBindUseCaseImpl` (full implementation), `MoveOnBindConfirmerImpl` (`@Singleton`, `CompletableDeferred`-based confirm/await round-trip), `TwoTagUseCase.invoke` body + `derivePayload` helper; `CreateAndPairUseCase` reordered to call `moveOnBind.invoke` BEFORE the append; `SpoolmanRepository.getFilament(id)` helper + corresponding `SpoolmanApi` `@GET("api/v1/filament/{id}")` endpoint.
+- §4 ViewModels: `MainViewModel` ctor extended (`twoTag`, `confirmer`); new `init` collector for `confirmer.pendingRequest` (drives `AwaitingRepairConfirmation` transitions); `applyWriteResult(WrittenAndPaired)` now transitions to `PromptingPairAnother`; new `onPairAnotherTagAccepted` / `onPairAnotherTagDismissed` / `onRepairResult` / `applyTwoTagResult`; `RepairConfirmViewModel` placeholder replaced with real `uiState` (combines `confirmer.pendingRequest` with display-name derivation).
+- §5 Compose UI: new `RepairConfirmSheet` ("Re-pair this tag…" / Cancel + Move it), new `PairAnotherTagSheet` ("Pair another tag…" / Done + Pair another), new `BottomSheetHost` selector composable; `MainScreen` injects `RepairConfirmViewModel` via `hiltViewModel`, derives `pairAnotherState` from `state.activeFlow`, wires four callbacks.
+- §6 Hilt graph: `RepositoryModule.RepositoryBindingsModule` rebinds `MoveOnBindUseCase` to `MoveOnBindUseCaseImpl`; new `@Binds @Singleton` for `MoveOnBindConfirmer` → `MoveOnBindConfirmerImpl`.
+- §7 Tests: 5 new test files (`MoveOnBindUseCaseTest` 8 cases, `TwoTagUseCaseTest` 5 cases, `RepairConfirmViewModelTest` 4 cases, `MainViewModelTwoTagTest` 9 cases, `ResolveOrCreateFilamentTest` 6 cases for §14); 4 new test fakes (`MoveOnBindNoOp`, `FakeMoveOnBindUseCase`, `FakeMoveOnBindConfirmer`, `FakeTwoTagUseCase`); modifications to `FakeCreateAndPairUseCase`, `FakeSpoolmanRepository` (new setters + `getFilament` override), `FakeSpoolmanApi` (new `getFilament` route), `FakeNfcAdapterWrapper` (`lastWrittenRecords` exposed for §13.2 MIME assertion); `MainViewModelTest` ctor args extended + `WrittenAndPaired` assertions relaxed per plan §7.7.2; `CreateAndPairUseCaseTest` 2 regression cases for move-on-bind branches.
+- §13 (U6b-Δ-3): `NfcRepository.encodePayloadRecords` write MIME flipped to `application/json` (read-side dual-accept preserved); new write-MIME assertion in `NfcRepositoryWriteVerifyTest`; `NfcRepositoryStandaloneVerifyTest` happy-path readback updated to use `jsonMimeRecords` since encoded write is now json.
+- §14 (U6b-Δ-4): new `domain/primitives/ColorHexCodec.kt`; `FormMapping.canonicaliseColorHex` delegates to it; `SpoolmanRepository.resolveOrCreateFilament` rewritten with `ColorHexCodec.canonicalise(req.colorHex)` + `canonVariant` helper + null/blank-equivalent + case-insensitive variant equality; 6 new matcher test cases.
+- §9 Verification: `compileDebugKotlin` ✅; `testDebugUnitTest` ✅ **279 / 279**; `assembleDebug` ✅ 35.5 MB APK (+1.5 MB vs U6a — flagged for U10).
+- §10 Brownfield invariants: no `*_modified` / `*_new` / `*.bak` files; `MoveOnBindUseCase.NoOp` removed from production source (test-only `MoveOnBindNoOp` retained); no production callers of `MoveOnBindUseCase.NoOp`.
+- §15 Brownfield invariants for §13/§14: 0 write-path references to `application/vnd.openspool+json`; 0 raw `(f.color_hex ?: "")` equality call-sites in `SpoolmanRepository`; `ColorHexCodec.canonicalise` is the only colour-hex canonicalisation path.
+**Status**: Code Gen Part 2 standardised completion message satisfied. U6b code-side DoD complete. **U6 milestone install gate (manual + Snapmaker U1 round-trip)** still pending — required to mark the unit's install gate green. `unit-of-work.md` §2.1 close-out commit pending (DoD #6).
+**Context**: Per-unit gate decisions for U6b: Functional Design EXECUTED + APPROVED; NFR Requirements / NFR Design / Infrastructure Design SKIP per `execution-plan.md`; Code Generation Part 1 + Part 2 approved. `aidlc-state.md` Stage Progress checkbox flipped to `[x]`.
+
+---

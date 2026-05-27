@@ -18,9 +18,11 @@ import com.spoolpainter.app.domain.usecases.CreateAndPairResult
 import com.spoolpainter.app.domain.usecases.ReadAndPairUseCase
 import com.spoolpainter.app.hardware.nfc.TagBuffer
 import com.spoolpainter.app.support.FakeCreateAndPairUseCase
+import com.spoolpainter.app.support.FakeMoveOnBindConfirmer
 import com.spoolpainter.app.support.FakeNfcRepository
 import com.spoolpainter.app.support.FakeSettingsRepository
 import com.spoolpainter.app.support.FakeSpoolmanRepository
+import com.spoolpainter.app.support.FakeTwoTagUseCase
 import com.spoolpainter.app.ui.common.UiEffect
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -44,6 +46,8 @@ class MainViewModelTest {
     private val spoolman = FakeSpoolmanRepository()
     private val settings = FakeSettingsRepository()
     private val createAndPair = FakeCreateAndPairUseCase(nfc = nfc, spoolman = spoolman)
+    private val twoTag = FakeTwoTagUseCase(nfc = nfc, spoolman = spoolman)
+    private val confirmer = FakeMoveOnBindConfirmer()
 
     private val sampleUid = CardUid("0A1B2C3D")
     private val openSpoolPayload = OpenSpoolPayload(
@@ -73,6 +77,8 @@ class MainViewModelTest {
         settings = settings,
         readAndPair = ReadAndPairUseCase(nfc, spoolman),
         createAndPair = createAndPair,
+        twoTag = twoTag,
+        confirmer = confirmer,
     )
 
     private fun primeFormForWrite(vm: MainViewModel) {
@@ -380,12 +386,14 @@ class MainViewModelTest {
             assertEquals("Paired and written", (emission as UiEffect.ShowSnackbar).message)
             cancelAndIgnoreRemainingEvents()
         }
-        assertEquals(ActiveFlow.Idle, vm.state.value.activeFlow)
-        // Form stays populated so the user can write the same payload to
-        // another tag. cardUid reflects the just-written UID (display only —
-        // expectedUid enforcement is gone, so the next Save & Write accepts
-        // whichever tag is tapped). The just-paired spool stays selected so
-        // the dropdown reflects what we wrote.
+        // U6b: first-pair success transitions to PromptingPairAnother so the
+        // bottom sheet asks "Pair another tag with this spool?". Form is
+        // intentionally NOT cleared here — that happens on dismiss / Done.
+        assertTrue(
+            "got ${vm.state.value.activeFlow}",
+            vm.state.value.activeFlow is ActiveFlow.PromptingPairAnother,
+        )
+        assertEquals(42, (vm.state.value.activeFlow as ActiveFlow.PromptingPairAnother).spoolId)
         assertNotNull(vm.state.value.form.material)
         assertEquals("FF0000", vm.state.value.form.colorHex)
         assertEquals(sampleUid, vm.state.value.form.cardUid)
@@ -413,6 +421,8 @@ class MainViewModelTest {
         // Newly-minted spool stays selected so dropdown reflects what landed.
         assertEquals(99, vm.state.value.form.selectedSpoolId)
         assertEquals(99, vm.state.value.spoolman.selectedSpoolId)
+        // U6b: PromptingPairAnother is now active — see test above.
+        assertTrue(vm.state.value.activeFlow is ActiveFlow.PromptingPairAnother)
     }
 
     @Test
@@ -478,17 +488,15 @@ class MainViewModelTest {
             spoolId = 1, uid = sampleUid, isNewSpool = true,
         )
         vm.onWriteTapped()
-        // Now activeFlow is back to Idle (sync result). Do the inverse: trigger Read while Writing.
-        // The simpler invariant is VM-9: when activeFlow != Idle, onReadTapped is a no-op.
-        // Mimic that mid-write state by manipulating the flag and asserting onReadTapped early-returns.
-        nfc.setBufferedTap(null) // ensure no immediate result if it slipped through
-        // Force a non-Idle activeFlow:
-        vm.onWriteTapped() // canWrite is now false (form reset) → no-op.
-        // Verify VM-9 directly:
+        // U6b: after a successful write, activeFlow is PromptingPairAnother
+        // (not Idle). onReadTapped guards against non-Idle activeFlow, so the
+        // call is a no-op and the prompt stays up.
         nfc.setBufferedTap(NfcResult.Success(sampleUid, TagClassification.Blank))
         spoolman.nextFindSpoolsByCardUidResult = SpoolmanOutcome.Success(emptyList())
         vm.onReadTapped()
-        // Read still completes because activeFlow was Idle when called.
-        assertEquals(ActiveFlow.Idle, vm.state.value.activeFlow)
+        assertTrue(
+            "got ${vm.state.value.activeFlow}",
+            vm.state.value.activeFlow is ActiveFlow.PromptingPairAnother,
+        )
     }
 }

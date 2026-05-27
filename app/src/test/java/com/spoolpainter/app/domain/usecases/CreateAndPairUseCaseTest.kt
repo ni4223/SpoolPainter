@@ -9,8 +9,10 @@ import com.spoolpainter.app.domain.models.TempRanges
 import com.spoolpainter.app.domain.primitives.CardUid
 import com.spoolpainter.app.domain.primitives.NfcResult
 import com.spoolpainter.app.domain.primitives.TagClassification
+import com.spoolpainter.app.support.FakeMoveOnBindUseCase
 import com.spoolpainter.app.support.FakeNfcRepository
 import com.spoolpainter.app.support.FakeSpoolmanRepository
+import com.spoolpainter.app.support.MoveOnBindNoOp
 import com.spoolpainter.app.ui.screens.main.FormState
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
@@ -23,7 +25,7 @@ class CreateAndPairUseCaseTest {
 
     private val nfc = FakeNfcRepository()
     private val spoolman = FakeSpoolmanRepository()
-    private val moveOnBind = MoveOnBindUseCase.NoOp()
+    private val moveOnBind = MoveOnBindNoOp
     private val useCase = CreateAndPairUseCase(nfc, spoolman, moveOnBind)
 
     private val sampleUid = CardUid("AABBCCDD")
@@ -189,5 +191,34 @@ class CreateAndPairUseCaseTest {
 
         assertTrue("got $result", result is CreateAndPairResult.SpoolmanFailed)
         assertEquals(0, nfc.armCalls)
+    }
+
+    @Test
+    fun `move_on_bind declined returnsCancelledNoAppend`() = runTest {
+        val moveOnBind = FakeMoveOnBindUseCase().apply {
+            nextOutcome = MoveOnBindUseCase.Outcome.Declined
+        }
+        val useCase = CreateAndPairUseCase(nfc, spoolman, moveOnBind)
+        stageSingleTapSuccess()
+
+        val result = useCase.invoke(input(baseForm.copy(selectedSpoolId = 42)))
+
+        assertTrue("got $result", result is CreateAndPairResult.Cancelled)
+        assertEquals(0, spoolman.appendCalls)
+        assertEquals(1, moveOnBind.invokeCalls)
+    }
+
+    @Test
+    fun `move_on_bind failed returnsSpoolmanFailedNoAppend`() = runTest {
+        val moveOnBind = FakeMoveOnBindUseCase().apply {
+            nextOutcome = MoveOnBindUseCase.Outcome.Failed("simulated", partiallyModifiedSpoolId = null)
+        }
+        val useCase = CreateAndPairUseCase(nfc, spoolman, moveOnBind)
+        stageSingleTapSuccess()
+
+        val result = useCase.invoke(input(baseForm.copy(selectedSpoolId = 42)))
+
+        assertTrue("got $result", result is CreateAndPairResult.SpoolmanFailed)
+        assertEquals(0, spoolman.appendCalls)
     }
 }
