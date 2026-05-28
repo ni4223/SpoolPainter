@@ -22,7 +22,7 @@ internal class FakeNfcAdapterWrapper : NfcAdapterWrapper(adapter = null, dispatc
         private set
 
     private val defaultRead: RawTagRead =
-        RawTagRead(uid = CardUid("00"), records = null)
+        RawTagRead(uid = CardUid("00"), records = null, techList = listOf("android.nfc.tech.NdefFormatable"))
 
     override fun isAvailable(): Boolean = available
 
@@ -52,7 +52,10 @@ internal class FakeNfcAdapterWrapper : NfcAdapterWrapper(adapter = null, dispatc
     override suspend fun readRecords(tag: Tag): List<NdefRecordView>? = nextReadback()
 
     fun simulateRead(uid: CardUid, records: List<NdefRecordView>?) {
-        nextRead = { RawTagRead(uid, records) }
+        // Tests use this for both blank-formattable and OpenSpool tags.
+        // techList: NdefFormatable so a null records => Blank (formattable),
+        // and a non-null records doesn't depend on techList.
+        nextRead = { RawTagRead(uid, records, listOf("android.nfc.tech.NdefFormatable")) }
     }
 
     fun simulateReadThrow(throwable: Throwable) {

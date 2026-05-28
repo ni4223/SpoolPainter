@@ -17,6 +17,13 @@ data class MainUiState(
     val banner: BannerState = BannerState.Hidden,
     val activeFlow: ActiveFlow = ActiveFlow.Idle,
     val ambiguity: AmbiguityState? = null,
+    val observedTagKind: ObservedTagKind = ObservedTagKind.None,
+    /** UID captured alongside observedTagKind. Sticky across dropdown
+     *  selection / form reset; only cleared when the chip is dismissed or a
+     *  non-vendor tag is observed afterward. Vendor Save dispatch uses this
+     *  instead of form.cardUid (which the dropdown selection can overwrite). */
+    val observedTagUid: CardUid? = null,
+    val writeMode: WriteMode = WriteMode.Spoolman,
 )
 
 data class FormState(
@@ -59,6 +66,7 @@ data class SpoolmanState(
     val spools: List<SpoolmanSpool> = emptyList(),
     val selectedSpoolId: Int? = null,
     val urlConfigured: Boolean = false,
+    val reachable: Boolean = true,
 )
 
 sealed interface BannerState {
@@ -77,6 +85,8 @@ sealed interface ActiveFlow {
         val currentOwners: List<SpoolmanSpool>,
         val targetSpoolId: Int,
     ) : ActiveFlow
+    data object WritingRaw : ActiveFlow
+    data object PairingVendorUidOnly : ActiveFlow
 }
 
 data class AmbiguityState(

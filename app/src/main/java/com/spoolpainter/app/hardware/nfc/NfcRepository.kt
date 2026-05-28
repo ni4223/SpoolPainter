@@ -247,7 +247,26 @@ open class NfcRepository internal constructor(
     }
 
     private fun classify(raw: RawTagRead): TagClassification {
-        val records = raw.records ?: return TagClassification.Blank
+        val records = raw.records
+        if (records == null) {
+            // No NDEF readable. Distinguish a truly blank-but-formattable tag
+            // (which the user can still write to) from a non-NDEF vendor tag.
+            //
+            // MifareClassic chips are factory-encrypted by vendors (Bambu,
+            // Creality, etc.); Android still reports NdefFormatable in their
+            // techList but the sectors are locked. Treat any MifareClassic
+            // tag with no NDEF data as a vendor tag.
+            val isMifareClassic = raw.techList.contains("android.nfc.tech.MifareClassic")
+            val isFormattable = raw.techList.contains("android.nfc.tech.NdefFormatable")
+            val isNdef = raw.techList.contains("android.nfc.tech.Ndef")
+            return when {
+                isMifareClassic ->
+                    TagClassification.Vendor("non-NDEF tag (MifareClassic)")
+                isFormattable || isNdef -> TagClassification.Blank
+                else ->
+                    TagClassification.Vendor("non-NDEF tag (${raw.techList.joinToString().ifEmpty { "unknown tech" }})")
+            }
+        }
         if (records.isEmpty()) return TagClassification.Vendor("non-OpenSpool NDEF")
         val mimeRecord = records.firstOrNull { record ->
             record.tnf == NdefRecordView.TNF_MIME_MEDIA && run {

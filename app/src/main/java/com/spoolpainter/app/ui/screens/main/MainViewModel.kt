@@ -15,11 +15,17 @@ import com.spoolpainter.app.domain.usecases.CreateAndPairInput
 import com.spoolpainter.app.domain.usecases.CreateAndPairResult
 import com.spoolpainter.app.domain.usecases.CreateAndPairUseCase
 import com.spoolpainter.app.domain.usecases.MoveOnBindConfirmer
+import com.spoolpainter.app.domain.usecases.RawWriteInput
+import com.spoolpainter.app.domain.usecases.RawWriteResult
+import com.spoolpainter.app.domain.usecases.RawWriteUseCase
 import com.spoolpainter.app.domain.usecases.ReadAndPairResult
 import com.spoolpainter.app.domain.usecases.ReadAndPairUseCase
 import com.spoolpainter.app.domain.usecases.TwoTagInput
 import com.spoolpainter.app.domain.usecases.TwoTagResult
 import com.spoolpainter.app.domain.usecases.TwoTagUseCase
+import com.spoolpainter.app.domain.usecases.VendorUidOnlyPairInput
+import com.spoolpainter.app.domain.usecases.VendorUidOnlyPairResult
+import com.spoolpainter.app.domain.usecases.VendorUidOnlyPairUseCase
 import com.spoolpainter.app.hardware.nfc.NfcRepository
 import com.spoolpainter.app.ui.common.UiEffect
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -49,6 +55,8 @@ class MainViewModel @Inject constructor(
     private val createAndPair: CreateAndPairUseCase,
     private val twoTag: TwoTagUseCase,
     private val confirmer: MoveOnBindConfirmer,
+    private val rawWrite: RawWriteUseCase,
+    private val vendorUidOnlyPair: VendorUidOnlyPairUseCase,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(MainUiState())
@@ -127,6 +135,74 @@ class MainViewModel @Inject constructor(
                     _state.update { it.copy(spoolman = it.spoolman.copy(urlConfigured = value)) }
                 }
         }
+        // WriteMode is derived from settings.url. No connectivity check — a
+        // transient unreachable Spoolman should not silently flip the app
+        // into raw-write mode.
+        viewModelScope.launch {
+            settings.settings
+                .map { it.url.isNotBlank() }
+                .distinctUntilChanged()
+                .collect { configured ->
+                    val mode = if (configured) WriteMode.Spoolman else WriteMode.RawNoUrl
+                    _state.update { it.copy(writeMode = mode) }
+                }
+        }
+        // Offline banner + reachable flag: only when URL is configured AND
+        // Spoolman is currently unreachable. Hidden when URL is blank (no
+        // Spoolman in play, no banner needed) or when Spoolman is reachable.
+        viewModelScope.launch {
+            combine(
+                settings.settings.map { it.url.isNotBlank() }.distinctUntilChanged(),
+                spoolman.connectivity,
+            ) { urlConfigured, conn ->
+                val isUnreachable = conn is com.spoolpainter.app.data.remote.spoolman.ConnectivityState.Unreachable
+                val banner = if (urlConfigured && isUnreachable) {
+                    BannerState.Offline(
+                        (conn as com.spoolpainter.app.data.remote.spoolman.ConnectivityState.Unreachable).reason,
+                    )
+                } else {
+                    BannerState.Hidden
+                }
+                banner to !isUnreachable
+            }.distinctUntilChanged().collect { (banner, reachable) ->
+                _state.update {
+                    it.copy(
+                        banner = banner,
+                        spoolman = it.spoolman.copy(reachable = reachable),
+                    )
+                }
+            }
+        }
+        // ObservedTagKind: collected from BOTH lastSeenTag (passive ambient
+        // taps when Idle) AND nfc.state.Success (when a Read armed the buffer
+        // and consumed it before the collector could observe). MutableStateFlow
+        // conflation drops intermediate values when handleTag writes the
+        // buffer + clears it without a suspend point in between, so we can't
+        // rely on lastSeenTag alone to deliver the Vendor classification on
+        // an armed-Read path. nfc.state.Success carries the classification
+        // verbatim and is observable.
+        viewModelScope.launch {
+            nfc.lastSeenTag.collect { tag ->
+                val kind = mapClassification(tag?.classification)
+                if (kind != null) {
+                    _state.update {
+                        it.copy(observedTagKind = kind, observedTagUid = tag?.uid)
+                    }
+                }
+            }
+        }
+        viewModelScope.launch {
+            nfc.state.collect { value ->
+                if (value is com.spoolpainter.app.domain.primitives.NfcResult.Success) {
+                    val kind = mapClassification(value.classification)
+                    if (kind != null) {
+                        _state.update {
+                            it.copy(observedTagKind = kind, observedTagUid = value.uid)
+                        }
+                    }
+                }
+            }
+        }
         // Move-on-bind confirmation prompt: when a use-case asks the confirmer
         // for user input, surface the prompt as an ActiveFlow transition so the
         // bottom-sheet host renders. When the request resolves (null), restore
@@ -182,9 +258,39 @@ class MainViewModel @Inject constructor(
 
     fun onWriteTapped() {
         if (!canWrite.value) return
+        val state = _state.value
+        val form = state.form
+        val mode = state.writeMode
+        val tagKind = state.observedTagKind
+
+        // U7 dispatch:
+        //   1. Vendor tag + no Spoolman → refuse with a snackbar; form preserved.
+        //   2. Vendor tag + Spoolman    → vendor UID-only pair (no NDEF write).
+        //   3. RawNoUrl                 → raw write (no Spoolman calls).
+        //   4. Otherwise                → standard create-and-pair.
+
+        when {
+            tagKind == ObservedTagKind.Vendor && mode == WriteMode.RawNoUrl -> {
+                _effects.trySend(
+                    UiEffect.ShowSnackbar(
+                        "Configure Spoolman in Settings to save this tag.",
+                    ),
+                )
+                return
+            }
+            tagKind == ObservedTagKind.Vendor -> {
+                launchVendorUidOnlyPair(form, state.observedTagUid)
+                return
+            }
+            mode == WriteMode.RawNoUrl -> {
+                launchRawWrite(form)
+                return
+            }
+        }
+
+        // Standard create-and-pair (existing U6a path).
         _state.update { it.copy(activeFlow = ActiveFlow.WritingForPair) }
         writeJob = viewModelScope.launch {
-            val form = _state.value.form
             val materialName = resolveMaterialName(form.material, _customMaterial.value)
             val brandName = resolveBrandName(form.brand, _customBrand.value)
             val variantPart = form.variant?.trim().orEmpty()
@@ -212,6 +318,53 @@ class MainViewModel @Inject constructor(
         }
     }
 
+    private fun launchRawWrite(form: FormState) {
+        _state.update { it.copy(activeFlow = ActiveFlow.WritingRaw) }
+        writeJob = viewModelScope.launch {
+            val materialName = resolveMaterialName(form.material, _customMaterial.value)
+            val brandName = resolveBrandName(form.brand, _customBrand.value)
+            val input = RawWriteInput(
+                form = form,
+                resolvedMaterialName = materialName.takeIf { it.isNotBlank() },
+                newFilamentVendor = brandName.ifBlank { "Unknown" },
+            )
+            val result = withTimeoutOrNull(writeTimeoutMs) {
+                rawWrite.invoke(input)
+            } ?: RawWriteResult.Cancelled("timeout")
+            applyRawWriteResult(result)
+        }
+    }
+
+    private fun launchVendorUidOnlyPair(form: FormState, observedUid: com.spoolpainter.app.domain.primitives.CardUid?) {
+        val observed = observedUid ?: form.cardUid
+        if (observed == null) {
+            _effects.trySend(UiEffect.ShowSnackbar("Tap the vendor tag again to capture its UID."))
+            return
+        }
+        _state.update { it.copy(activeFlow = ActiveFlow.PairingVendorUidOnly) }
+        writeJob = viewModelScope.launch {
+            val materialName = resolveMaterialName(form.material, _customMaterial.value)
+            val brandName = resolveBrandName(form.brand, _customBrand.value)
+            val variantPart = form.variant?.trim().orEmpty()
+            val derivedName = listOfNotNull(
+                brandName.takeIf { it.isNotBlank() },
+                materialName.takeIf { it.isNotBlank() },
+                variantPart.takeIf { it.isNotBlank() },
+            ).joinToString(" ").ifBlank { materialName }
+            val input = VendorUidOnlyPairInput(
+                form = form,
+                newFilamentName = derivedName,
+                newFilamentVendor = brandName.ifBlank { "Generic" },
+                resolvedMaterialName = materialName.takeIf { it.isNotBlank() },
+                observedUid = observed,
+            )
+            val result = withTimeoutOrNull(writeTimeoutMs) {
+                vendorUidOnlyPair.invoke(input)
+            } ?: VendorUidOnlyPairResult.Cancelled("timeout")
+            applyVendorUidOnlyPairResult(result)
+        }
+    }
+
     fun onSpoolSelected(spool: SpoolmanSpool?) {
         android.util.Log.d("SpoolmanRepo", "onSpoolSelected: spool.id=${spool?.id}")
         if (spool == null) {
@@ -220,6 +373,8 @@ class MainViewModel @Inject constructor(
                     form = FormState(rawWriteMode = current.form.rawWriteMode),
                     spoolman = current.spoolman.copy(selectedSpoolId = null),
                     ambiguity = null,
+                    observedTagKind = ObservedTagKind.None,
+                    observedTagUid = null,
                 )
             }
             _customMaterial.value = ""
@@ -296,6 +451,13 @@ class MainViewModel @Inject constructor(
         _effects.trySend(UiEffect.Navigate("settings"))
     }
 
+    private fun mapClassification(c: TagClassification?): ObservedTagKind? = when (c) {
+        is TagClassification.Blank -> ObservedTagKind.Blank
+        is TagClassification.OpenSpool -> ObservedTagKind.OpenSpool
+        is TagClassification.Vendor -> ObservedTagKind.Vendor
+        else -> null
+    }
+
     private fun resolveMaterialName(material: Material?, custom: String): String {
         return if (material?.name == "Other" && custom.isNotBlank()) custom
         else material?.name ?: ""
@@ -344,6 +506,9 @@ class MainViewModel @Inject constructor(
                         spoolman = current.spoolman.copy(selectedSpoolId = null),
                         ambiguity = null,
                         activeFlow = ActiveFlow.Idle,
+                        // Tag carried OpenSpool data, not vendor-encoded.
+                        observedTagKind = ObservedTagKind.OpenSpool,
+                        observedTagUid = result.uid,
                     )
                 }
                 _customMaterial.value = ""
@@ -475,8 +640,56 @@ class MainViewModel @Inject constructor(
                 _effects.trySend(UiEffect.ShowSnackbar("Both tags paired"))
             }
             is TwoTagResult.VendorTagRejected -> {
-                _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
-                _effects.trySend(UiEffect.ShowSnackbar("Vendor tag — write blocked"))
+                // Second tag is a vendor tag — re-route to the vendor
+                // UID-only pair flow so we link its UID without writing NDEF.
+                // Goes straight to Idle on success (no PromptingPairAnother
+                // — we don't want to recursively prompt-pair-another forever).
+                val state = _state.value
+                val targetSpoolId = state.form.selectedSpoolId
+                if (targetSpoolId == null) {
+                    _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
+                    _effects.trySend(UiEffect.ShowSnackbar("Vendor tag — pick a spool first."))
+                } else {
+                    _state.update {
+                        it.copy(
+                            activeFlow = ActiveFlow.PairingVendorUidOnly,
+                            observedTagKind = ObservedTagKind.Vendor,
+                            observedTagUid = result.uid,
+                        )
+                    }
+                    viewModelScope.launch {
+                        val materialName = resolveMaterialName(state.form.material, _customMaterial.value)
+                        val brandName = resolveBrandName(state.form.brand, _customBrand.value)
+                        val variantPart = state.form.variant?.trim().orEmpty()
+                        val derivedName = listOfNotNull(
+                            brandName.takeIf { it.isNotBlank() },
+                            materialName.takeIf { it.isNotBlank() },
+                            variantPart.takeIf { it.isNotBlank() },
+                        ).joinToString(" ").ifBlank { materialName }
+                        val input = VendorUidOnlyPairInput(
+                            form = state.form,
+                            newFilamentName = derivedName,
+                            newFilamentVendor = brandName.ifBlank { "Generic" },
+                            resolvedMaterialName = materialName.takeIf { it.isNotBlank() },
+                            observedUid = result.uid,
+                        )
+                        val r = withTimeoutOrNull(writeTimeoutMs) {
+                            vendorUidOnlyPair.invoke(input)
+                        } ?: VendorUidOnlyPairResult.Cancelled("timeout")
+                        when (r) {
+                            is VendorUidOnlyPairResult.Success.UidPaired -> {
+                                _state.update {
+                                    it.copy(
+                                        activeFlow = ActiveFlow.Idle,
+                                        observedTagKind = ObservedTagKind.None,
+                                        observedTagUid = null,
+                                    )
+                                }
+                            }
+                            else -> applyVendorUidOnlyPairResult(r)
+                        }
+                    }
+                }
             }
             is TwoTagResult.VerifyFailed -> {
                 _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
@@ -505,6 +718,84 @@ class MainViewModel @Inject constructor(
                 // Cancel). Emit only for genuine timeouts / unknown reasons.
                 if (!result.reason.startsWith("repair declined", ignoreCase = true)) {
                     _effects.trySend(UiEffect.ShowSnackbar("Second-tag pairing cancelled (${result.reason})"))
+                }
+            }
+        }
+    }
+
+    private fun applyRawWriteResult(result: RawWriteResult) {
+        when (result) {
+            is RawWriteResult.Success.Written -> {
+                _state.update {
+                    it.copy(
+                        form = it.form.copy(cardUid = result.uid),
+                        activeFlow = ActiveFlow.Idle,
+                    )
+                }
+                _effects.trySend(UiEffect.ShowSnackbar("Tag written"))
+            }
+            is RawWriteResult.VendorTagRejected -> {
+                _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
+                _effects.trySend(UiEffect.ShowSnackbar("Vendor tag — content unreadable"))
+            }
+            is RawWriteResult.VerifyFailed -> {
+                _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
+                _effects.trySend(UiEffect.ShowSnackbar("Verify failed. Tap Write to retry."))
+            }
+            is RawWriteResult.NfcFailed -> {
+                _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
+                _effects.trySend(UiEffect.ShowSnackbar("Tag write failed: ${result.reason}"))
+            }
+            is RawWriteResult.Cancelled -> {
+                _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
+                viewModelScope.launch { nfc.disarm() }
+                _effects.trySend(UiEffect.ShowSnackbar("No tag tapped — try again"))
+            }
+        }
+    }
+
+    private fun applyVendorUidOnlyPairResult(result: VendorUidOnlyPairResult) {
+        when (result) {
+            is VendorUidOnlyPairResult.Success.UidPaired -> {
+                // Symmetric with create-and-pair: PairAnotherTagSheet fires so
+                // the user can pair another tag (vendor or blank) with the
+                // same spool. observedTagKind cleared so the second-tag flow
+                // routes through the right path based on what's tapped next.
+                _state.update { current ->
+                    current.copy(
+                        form = current.form.copy(
+                            cardUid = result.uid,
+                            selectedSpoolId = result.spoolId,
+                        ),
+                        spoolman = current.spoolman.copy(selectedSpoolId = result.spoolId),
+                        observedTagKind = ObservedTagKind.None,
+                        observedTagUid = null,
+                        activeFlow = ActiveFlow.PromptingPairAnother(spoolId = result.spoolId),
+                    )
+                }
+            }
+            is VendorUidOnlyPairResult.SpoolmanFailed -> {
+                _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
+                _effects.trySend(UiEffect.ShowSnackbar(humanReadable(result.outcome)))
+            }
+            is VendorUidOnlyPairResult.MoveOnBindPartial -> {
+                _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
+                _effects.trySend(
+                    UiEffect.ShowSnackbar(
+                        "Couldn't finish moving the tag. Spool #${result.partiallyModifiedSpoolId} already released the tag; please re-add it in Spoolman if needed.",
+                    ),
+                )
+            }
+            is VendorUidOnlyPairResult.Cancelled -> {
+                _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
+                // Suppress on explicit user decline (RepairConfirmSheet Cancel)
+                // — same UI-12 logic as create-and-pair.
+                if (!result.reason.startsWith("repair declined", ignoreCase = true) &&
+                    result.reason != "timeout"
+                ) {
+                    _effects.trySend(UiEffect.ShowSnackbar("Cancelled (${result.reason})"))
+                } else if (result.reason == "timeout") {
+                    _effects.trySend(UiEffect.ShowSnackbar("No tag tapped — try again"))
                 }
             }
         }

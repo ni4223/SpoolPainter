@@ -128,13 +128,17 @@ class ReadAndPairUseCaseTest {
     }
 
     @Test
-    fun `Spoolman NetworkError other cause returns SpoolmanFailed`() = runTest {
+    fun `Spoolman NetworkError falls through to BlankForm so user is not blocked`() = runTest {
+        // Per U7: any Spoolman NetworkError (URL not configured OR server
+        // unreachable) falls through to the 0-match branch so the tag's own
+        // OpenSpool payload (or a blank form) prefills. The user gets their
+        // data; a separate banner already surfaces the connectivity issue.
         nfc.setBufferedTap(NfcResult.Success(sampleUid, TagClassification.Blank))
         spoolman.nextFindSpoolsByCardUidResult =
             SpoolmanOutcome.NetworkError(IOException("offline"))
 
         val result = useCase.invoke()
-        assertTrue("got $result", result is ReadAndPairResult.SpoolmanFailed)
+        assertTrue("got $result", result is ReadAndPairResult.Success.BlankForm)
     }
 
     @Test
@@ -185,7 +189,11 @@ class ReadAndPairUseCaseTest {
     }
 
     @Test
-    fun `zero uid matches with payload spool_id NetworkError returns SpoolmanFailed`() = runTest {
+    fun `zero uid matches with payload spool_id NetworkError falls back to PrefillFromTag`() = runTest {
+        // Per U7: when getSpool's NetworkError fires (URL not configured OR
+        // server unreachable), the OpenSpool payload on the tag is enough to
+        // prefill the form. Falling through avoids erroring the user out
+        // when the tag carries everything we need.
         val payloadWithSpoolId = openSpoolPayload.copy(spoolId = "7")
         nfc.setBufferedTap(NfcResult.Success(sampleUid, TagClassification.OpenSpool(payloadWithSpoolId)))
         spoolman.nextFindSpoolsByCardUidResult = SpoolmanOutcome.Success(emptyList())
@@ -193,7 +201,7 @@ class ReadAndPairUseCaseTest {
 
         val result = useCase.invoke()
 
-        assertTrue("got $result", result is ReadAndPairResult.SpoolmanFailed)
+        assertTrue("got $result", result is ReadAndPairResult.Success.PrefillFromTag)
     }
 
     @Test

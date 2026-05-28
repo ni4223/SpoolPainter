@@ -2,7 +2,6 @@ package com.spoolpainter.app.domain.usecases
 
 import com.spoolpainter.app.data.remote.spoolman.SpoolmanOutcome
 import com.spoolpainter.app.data.remote.spoolman.SpoolmanRepository
-import com.spoolpainter.app.data.remote.spoolman.UrlNotConfiguredException
 import com.spoolpainter.app.domain.models.SpoolmanSpool
 import com.spoolpainter.app.domain.primitives.CardUid
 import com.spoolpainter.app.domain.primitives.NfcIntent
@@ -48,12 +47,11 @@ class ReadAndPairUseCase @Inject constructor(
     ): ReadAndPairResult = when (outcome) {
         is SpoolmanOutcome.Success -> branchOnMatches(uid, classification, outcome.data)
         is SpoolmanOutcome.NetworkError -> {
-            // BR-U5-RP-7 — URL-not-configured falls through to the 0-match branch.
-            if (outcome.cause is UrlNotConfiguredException) {
-                branchOnMatches(uid, classification, emptyList())
-            } else {
-                ReadAndPairResult.SpoolmanFailed(uid, classification, outcome)
-            }
+            // No Spoolman lookup (URL not configured OR server unreachable):
+            // fall through to the 0-match branch so the tag's own OpenSpool
+            // payload (or a blank form) prefills. The user gets their data;
+            // a separate banner already surfaces the connectivity issue.
+            branchOnMatches(uid, classification, emptyList())
         }
         is SpoolmanOutcome.HttpError,
         is SpoolmanOutcome.ParseError -> ReadAndPairResult.SpoolmanFailed(uid, classification, outcome)
@@ -87,7 +85,12 @@ class ReadAndPairUseCase @Inject constructor(
             } else {
                 ReadAndPairResult.SpoolmanFailed(uid, classification, outcome)
             }
-            is SpoolmanOutcome.NetworkError,
+            is SpoolmanOutcome.NetworkError -> {
+                // No Spoolman (URL not configured OR server unreachable): the
+                // tag carries everything we need to populate the form. Prefer
+                // showing the user their data over an error snackbar.
+                ReadAndPairResult.Success.PrefillFromTag(uid, classification.payload)
+            }
             is SpoolmanOutcome.ParseError -> ReadAndPairResult.SpoolmanFailed(uid, classification, outcome)
         }
     }

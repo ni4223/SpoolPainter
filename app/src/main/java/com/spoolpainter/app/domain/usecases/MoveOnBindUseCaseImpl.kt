@@ -51,12 +51,18 @@ class MoveOnBindUseCaseImpl @Inject constructor(
                 )
             }
         }
-        when (val apd = spoolman.appendCardUidToSpool(targetSpoolId, uid)) {
-            is SpoolmanOutcome.Success -> Unit
-            else -> return MoveOnBindUseCase.Outcome.Failed(
-                reason = humanReadable(apd),
-                partiallyModifiedSpoolIds = moved.toList(),
-            )
+        // Sentinel target id (negative) means the caller will append to the
+        // real new spool itself once it's been created. Used by
+        // VendorUidOnlyPairUseCase's new-spool path where the target doesn't
+        // exist yet at precheck time.
+        if (targetSpoolId >= 0) {
+            when (val apd = spoolman.appendCardUidToSpool(targetSpoolId, uid)) {
+                is SpoolmanOutcome.Success -> Unit
+                else -> return MoveOnBindUseCase.Outcome.Failed(
+                    reason = humanReadable(apd),
+                    partiallyModifiedSpoolIds = moved.toList(),
+                )
+            }
         }
         return MoveOnBindUseCase.Outcome.Moved(fromSpoolIds = moved.toList())
     }

@@ -108,11 +108,19 @@ fun MainScreen(
             )
             ReadingHint(state.activeFlow, state.nfc)
             WritingHint(state.activeFlow, state.nfc)
-            SpoolmanDropdown(
-                spools = state.spoolman.spools,
-                selectedId = state.spoolman.selectedSpoolId,
-                enabled = state.spoolman.urlConfigured && state.activeFlow == ActiveFlow.Idle,
-                onSelect = viewModel::onSpoolSelected,
+            if (state.spoolman.urlConfigured) {
+                SpoolmanDropdown(
+                    spools = state.spoolman.spools,
+                    selectedId = state.spoolman.selectedSpoolId,
+                    enabled = state.activeFlow == ActiveFlow.Idle && state.spoolman.reachable,
+                    onSelect = viewModel::onSpoolSelected,
+                )
+            }
+            VendorTagHint(
+                observed = state.observedTagKind,
+                hasUid = state.observedTagUid != null,
+                urlConfigured = state.spoolman.urlConfigured,
+                alreadyLinked = state.spoolman.selectedSpoolId != null,
             )
             AmbiguityBlock(state.ambiguity)
             FilamentForm(
@@ -133,7 +141,14 @@ fun MainScreen(
                     }
                 },
                 onSave = viewModel::onWriteTapped,
+                saveButtonLabel = when {
+                    state.observedTagKind == ObservedTagKind.Vendor &&
+                        state.writeMode == WriteMode.Spoolman -> "Save & Map"
+                    state.writeMode == WriteMode.RawNoUrl -> "Write to NFC"
+                    else -> "Save & Write"
+                },
             )
+            WritingHint(state.activeFlow, state.nfc)
             InstructionFooter(state.activeFlow)
         }
     }
@@ -212,14 +227,18 @@ private fun ReadingHint(activeFlow: ActiveFlow, nfc: NfcResult) {
 
 @Composable
 private fun WritingHint(activeFlow: ActiveFlow, nfc: NfcResult) {
-    val isWriting = activeFlow == ActiveFlow.WritingForPair ||
-        activeFlow is ActiveFlow.WritingSecondTag
-    val showHint = isWriting &&
-        (nfc is NfcResult.Idle || nfc is NfcResult.Writing || nfc is NfcResult.Verifying)
-    if (!showHint) return
-    val label = when (nfc) {
-        is NfcResult.Verifying -> "Verifying tag…"
-        else -> "Tap a tag to write…"
+    val label = when {
+        activeFlow is ActiveFlow.WritingSecondTag &&
+            (nfc is NfcResult.Idle || nfc is NfcResult.Writing) ->
+            "Tap second tag to write…"
+        activeFlow == ActiveFlow.WritingForPair &&
+            (nfc is NfcResult.Idle || nfc is NfcResult.Writing) ->
+            "Tap a tag to write…"
+        (activeFlow == ActiveFlow.WritingForPair ||
+            activeFlow is ActiveFlow.WritingSecondTag) &&
+            nfc is NfcResult.Verifying -> "Verifying tag…"
+        activeFlow == ActiveFlow.PairingVendorUidOnly -> "Linking tag to spool…"
+        else -> return
     }
     Text(
         text = label,
@@ -341,5 +360,46 @@ private fun ReadFab(isReading: Boolean, onClick: () -> Unit) {
         modifier = Modifier.testTag("main-read-fab"),
     ) {
         Text(if (isReading) "Reading…" else "Read tag")
+    }
+}
+
+/**
+ * Card rendered when the most recent tag observed is vendor-classified
+ * (factory-encoded — we can't read its contents, but we can still link its
+ * UID to a Spoolman spool per FR-4.9). Save & Write on this state routes
+ * through [VendorUidOnlyPairUseCase] (no NDEF write).
+ */
+@Composable
+private fun VendorTagHint(
+    observed: ObservedTagKind,
+    hasUid: Boolean,
+    urlConfigured: Boolean,
+    alreadyLinked: Boolean,
+) {
+    if (observed != ObservedTagKind.Vendor || !hasUid) return
+    Card(
+        modifier = Modifier.fillMaxWidth().testTag("main-vendor-tag-hint"),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+            contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        ),
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(
+                text = "Vendor tag",
+                style = MaterialTheme.typography.titleSmall,
+            )
+            val body = when {
+                alreadyLinked -> null
+                urlConfigured -> "Content can't be read. Pick a spool from the dropdown or fill the form, then tap Save & Write to link this tag."
+                else -> "Content can't be read. Configure Spoolman in Settings to link this tag to a spool."
+            }
+            if (body != null) {
+                Text(text = body, style = MaterialTheme.typography.bodySmall)
+            }
+        }
     }
 }

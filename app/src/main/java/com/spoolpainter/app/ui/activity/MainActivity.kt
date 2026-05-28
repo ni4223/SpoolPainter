@@ -62,7 +62,8 @@ class MainActivity : ComponentActivity() {
     private fun tryDispatchNfcIntent(intent: Intent) {
         when (intent.action) {
             NfcAdapter.ACTION_NDEF_DISCOVERED,
-            NfcAdapter.ACTION_TAG_DISCOVERED -> {
+            NfcAdapter.ACTION_TAG_DISCOVERED,
+            NfcAdapter.ACTION_TECH_DISCOVERED -> {
                 val tag = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     intent.getParcelableExtra(NfcAdapter.EXTRA_TAG, Tag::class.java)
                 } else {

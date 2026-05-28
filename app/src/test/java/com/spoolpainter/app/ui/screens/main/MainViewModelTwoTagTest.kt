@@ -17,10 +17,13 @@ import com.spoolpainter.app.domain.usecases.TwoTagResult
 import com.spoolpainter.app.hardware.nfc.TagBuffer
 import com.spoolpainter.app.support.FakeCreateAndPairUseCase
 import com.spoolpainter.app.support.FakeMoveOnBindConfirmer
+import com.spoolpainter.app.support.FakeMoveOnBindUseCase
 import com.spoolpainter.app.support.FakeNfcRepository
+import com.spoolpainter.app.support.FakeRawWriteUseCase
 import com.spoolpainter.app.support.FakeSettingsRepository
 import com.spoolpainter.app.support.FakeSpoolmanRepository
 import com.spoolpainter.app.support.FakeTwoTagUseCase
+import com.spoolpainter.app.support.FakeVendorUidOnlyPairUseCase
 import com.spoolpainter.app.ui.common.UiEffect
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -46,6 +49,9 @@ class MainViewModelTwoTagTest {
     private val createAndPair = FakeCreateAndPairUseCase(nfc = nfc, spoolman = spoolman)
     private val twoTag = FakeTwoTagUseCase(nfc = nfc, spoolman = spoolman)
     private val confirmer = FakeMoveOnBindConfirmer()
+    private val moveOnBind = FakeMoveOnBindUseCase()
+    private val rawWrite = FakeRawWriteUseCase(nfc = nfc)
+    private val vendorUidOnlyPair = FakeVendorUidOnlyPairUseCase(spoolman = spoolman, moveOnBind = moveOnBind)
 
     private val sampleUid = CardUid("AABBCCDD")
     private val sampleVendor = SpoolmanVendor(id = 1, name = "Bambu")
@@ -65,9 +71,12 @@ class MainViewModelTwoTagTest {
         createAndPair = createAndPair,
         twoTag = twoTag,
         confirmer = confirmer,
+        rawWrite = rawWrite,
+        vendorUidOnlyPair = vendorUidOnlyPair,
     )
 
     private fun primeFormForWrite(vm: MainViewModel) {
+        settings.pushSettings(com.spoolpainter.app.data.local.Settings(url = "http://10.0.0.5:8000"))
         vm.onMaterialPicked(Material("PLA", 190, 220, 55, 65))
         vm.onBrandPicked(Brand("Bambu"))
         vm.onColorHexChanged("FF0000")
@@ -155,20 +164,24 @@ class MainViewModelTwoTagTest {
     }
 
     @Test
-    fun `applyTwoTagResult VendorTagRejected emits blocked snackbar does not clear form`() = runTest {
+    fun `applyTwoTagResult VendorTagRejected reroutes to vendor pair flow`() = runTest {
+        // Per U7: when the second tag is vendor-classified, instead of
+        // surfacing a snackbar we re-route through the vendor UID-only pair
+        // flow against the same spool. Form preserved; transitions through
+        // PairingVendorUidOnly back to Idle.
         val vm = newVm()
         stagePromptingPairAnother(vm)
         twoTag.nextResult = TwoTagResult.VendorTagRejected(CardUid("11223344"))
+        vendorUidOnlyPair.nextResult = com.spoolpainter.app.domain.usecases.VendorUidOnlyPairResult.Success.UidPaired(
+            spoolId = 42, uid = CardUid("11223344"), isNewSpool = false,
+        )
 
-        vm.effects.test {
-            vm.onPairAnotherTagAccepted()
-            val emission = awaitItem() as UiEffect.ShowSnackbar
-            assertTrue(emission.message.contains("Vendor tag"))
-            cancelAndIgnoreRemainingEvents()
-        }
+        vm.onPairAnotherTagAccepted()
+
         assertEquals(ActiveFlow.Idle, vm.state.value.activeFlow)
-        // Form preserved.
         assertNotNull(vm.state.value.form.material)
+        // Vendor use-case was invoked once.
+        assertEquals(1, vendorUidOnlyPair.invokeCalls)
     }
 
     @Test

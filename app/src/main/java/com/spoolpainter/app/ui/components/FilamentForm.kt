@@ -53,6 +53,7 @@ fun FilamentForm(
     onChange: (FormChange) -> Unit,
     onSave: () -> Unit,
     modifier: Modifier = Modifier,
+    saveButtonLabel: String = "Save & Write",
 ) {
     Column(
         modifier = modifier
@@ -109,7 +110,7 @@ fun FilamentForm(
                 ),
             ) {
                 Text(
-                    text = "Save & Write",
+                    text = saveButtonLabel,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onPrimary,

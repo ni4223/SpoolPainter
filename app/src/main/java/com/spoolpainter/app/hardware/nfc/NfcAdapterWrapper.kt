@@ -46,7 +46,7 @@ open class NfcAdapterWrapper @Inject constructor(
     open suspend fun read(tag: Tag): RawTagRead = withContext(dispatcher) {
         val uid = CardUid.fromBytes(tag.id)
         val records = readRecordsBlocking(tag)
-        RawTagRead(uid, records)
+        RawTagRead(uid, records, tag.techList?.toList().orEmpty())
     }
 
     open suspend fun writeRecords(tag: Tag, records: List<NdefRecordView>) = withContext(dispatcher) {

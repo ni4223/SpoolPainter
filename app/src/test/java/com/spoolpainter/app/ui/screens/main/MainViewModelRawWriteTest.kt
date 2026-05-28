@@ -1,0 +1,170 @@
+package com.spoolpainter.app.ui.screens.main
+
+import com.spoolpainter.app.data.local.Settings
+import com.spoolpainter.app.domain.models.Brand
+import com.spoolpainter.app.domain.models.Material
+import com.spoolpainter.app.domain.models.TempRanges
+import com.spoolpainter.app.domain.primitives.CardUid
+import com.spoolpainter.app.domain.primitives.TagClassification
+import com.spoolpainter.app.domain.usecases.ReadAndPairUseCase
+import com.spoolpainter.app.domain.usecases.RawWriteResult
+import com.spoolpainter.app.hardware.nfc.TagBuffer
+import com.spoolpainter.app.support.FakeCreateAndPairUseCase
+import com.spoolpainter.app.support.FakeMoveOnBindConfirmer
+import com.spoolpainter.app.support.FakeMoveOnBindUseCase
+import com.spoolpainter.app.support.FakeNfcRepository
+import com.spoolpainter.app.support.FakeRawWriteUseCase
+import com.spoolpainter.app.support.FakeSettingsRepository
+import com.spoolpainter.app.support.FakeSpoolmanRepository
+import com.spoolpainter.app.support.FakeTwoTagUseCase
+import com.spoolpainter.app.support.FakeVendorUidOnlyPairUseCase
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Test
+
+@OptIn(ExperimentalCoroutinesApi::class)
+class MainViewModelRawWriteTest {
+
+    private val testDispatcher = UnconfinedTestDispatcher()
+    private val nfc = FakeNfcRepository()
+    private val spoolman = FakeSpoolmanRepository()
+    private val settings = FakeSettingsRepository()
+    private val createAndPair = FakeCreateAndPairUseCase(nfc = nfc, spoolman = spoolman)
+    private val twoTag = FakeTwoTagUseCase(nfc = nfc, spoolman = spoolman)
+    private val confirmer = FakeMoveOnBindConfirmer()
+    private val moveOnBind = FakeMoveOnBindUseCase()
+    private val rawWrite = FakeRawWriteUseCase(nfc = nfc)
+    private val vendorUidOnlyPair = FakeVendorUidOnlyPairUseCase(spoolman, moveOnBind)
+
+    private val sampleUid = CardUid("AABBCCDD")
+
+    private fun newVm(): MainViewModel = MainViewModel(
+        nfc = nfc,
+        spoolman = spoolman,
+        settings = settings,
+        readAndPair = ReadAndPairUseCase(nfc, spoolman),
+        createAndPair = createAndPair,
+        twoTag = twoTag,
+        confirmer = confirmer,
+        rawWrite = rawWrite,
+        vendorUidOnlyPair = vendorUidOnlyPair,
+    )
+
+    private fun primeFormForWrite(vm: MainViewModel) {
+        vm.onMaterialPicked(Material("PLA", 190, 220, 55, 65))
+        vm.onBrandPicked(Brand("Bambu"))
+        vm.onColorHexChanged("FF0000")
+        vm.onTempRangesChanged(
+            TempRanges(extruderMin = 200, extruderMax = 220, bedMin = 60, bedMax = 60),
+        )
+        nfc.pushLastSeenTag(TagBuffer(sampleUid, TagClassification.Blank, capturedAtEpochMs = 0L))
+    }
+
+    @Before
+    fun setUp() {
+        Dispatchers.setMain(testDispatcher)
+    }
+
+    @After
+    fun tearDown() {
+        Dispatchers.resetMain()
+    }
+
+    @Test
+    fun `writeMode is RawNoUrl when settings url is blank`() = runTest {
+        settings.pushSettings(Settings(url = ""))
+        val vm = newVm()
+        // Allow init flows to settle.
+        assertEquals(WriteMode.RawNoUrl, vm.state.value.writeMode)
+    }
+
+    @Test
+    fun `writeMode is Spoolman when url configured and connectivity unknown`() = runTest {
+        settings.pushSettings(Settings(url = "http://10.0.0.5:8000"))
+        val vm = newVm()
+        // ConnectivityState.Unknown by default → not Unreachable → Spoolman mode.
+        assertEquals(WriteMode.Spoolman, vm.state.value.writeMode)
+    }
+
+    @Test
+    fun `onWriteTapped with RawNoUrl routes to rawWrite`() = runTest {
+        settings.pushSettings(Settings(url = ""))
+        val vm = newVm()
+        primeFormForWrite(vm)
+        rawWrite.nextResult = RawWriteResult.Success.Written(sampleUid)
+
+        vm.onWriteTapped()
+
+        assertEquals(1, rawWrite.invokeCalls)
+        assertEquals(0, createAndPair.invokeCalls)
+    }
+
+    @Test
+    fun `applyRawWriteResult Success transitions to Idle and emits snackbar`() = runTest {
+        settings.pushSettings(Settings(url = ""))
+        val vm = newVm()
+        primeFormForWrite(vm)
+        rawWrite.nextResult = RawWriteResult.Success.Written(sampleUid)
+
+        vm.onWriteTapped()
+
+        assertEquals(ActiveFlow.Idle, vm.state.value.activeFlow)
+        assertEquals(sampleUid, vm.state.value.form.cardUid)
+    }
+
+    @Test
+    fun `applyRawWriteResult VendorTagRejected emits unreadable snackbar`() = runTest {
+        settings.pushSettings(Settings(url = ""))
+        val vm = newVm()
+        primeFormForWrite(vm)
+        rawWrite.nextResult = RawWriteResult.VendorTagRejected(sampleUid)
+
+        vm.onWriteTapped()
+
+        assertEquals(ActiveFlow.Idle, vm.state.value.activeFlow)
+    }
+
+    @Test
+    fun `vendor tag plus no Spoolman url short-circuits with snackbar`() = runTest {
+        settings.pushSettings(Settings(url = ""))
+        val vm = newVm()
+        primeFormForWrite(vm)
+        // Override the blank tag staging with a vendor tag.
+        nfc.pushLastSeenTag(
+            TagBuffer(sampleUid, TagClassification.Vendor("non-NDEF"), capturedAtEpochMs = 0L),
+        )
+
+        vm.onWriteTapped()
+
+        // Refused — neither use-case invoked.
+        assertEquals(0, rawWrite.invokeCalls)
+        assertEquals(0, vendorUidOnlyPair.invokeCalls)
+        assertTrue(vm.state.value.activeFlow == ActiveFlow.Idle)
+    }
+
+    @Test
+    fun `vendor tag plus Spoolman routes to vendorUidOnlyPair`() = runTest {
+        settings.pushSettings(Settings(url = "http://10.0.0.5:8000"))
+        val vm = newVm()
+        primeFormForWrite(vm)
+        nfc.pushLastSeenTag(
+            TagBuffer(sampleUid, TagClassification.Vendor("non-NDEF"), capturedAtEpochMs = 0L),
+        )
+        vendorUidOnlyPair.nextResult =
+            com.spoolpainter.app.domain.usecases.VendorUidOnlyPairResult.Cancelled("noop")
+
+        vm.onWriteTapped()
+
+        assertEquals(1, vendorUidOnlyPair.invokeCalls)
+        assertEquals(0, rawWrite.invokeCalls)
+        assertEquals(0, createAndPair.invokeCalls)
+    }
+}

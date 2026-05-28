@@ -19,10 +19,13 @@ import com.spoolpainter.app.domain.usecases.ReadAndPairUseCase
 import com.spoolpainter.app.hardware.nfc.TagBuffer
 import com.spoolpainter.app.support.FakeCreateAndPairUseCase
 import com.spoolpainter.app.support.FakeMoveOnBindConfirmer
+import com.spoolpainter.app.support.FakeMoveOnBindUseCase
 import com.spoolpainter.app.support.FakeNfcRepository
+import com.spoolpainter.app.support.FakeRawWriteUseCase
 import com.spoolpainter.app.support.FakeSettingsRepository
 import com.spoolpainter.app.support.FakeSpoolmanRepository
 import com.spoolpainter.app.support.FakeTwoTagUseCase
+import com.spoolpainter.app.support.FakeVendorUidOnlyPairUseCase
 import com.spoolpainter.app.ui.common.UiEffect
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -48,6 +51,9 @@ class MainViewModelTest {
     private val createAndPair = FakeCreateAndPairUseCase(nfc = nfc, spoolman = spoolman)
     private val twoTag = FakeTwoTagUseCase(nfc = nfc, spoolman = spoolman)
     private val confirmer = FakeMoveOnBindConfirmer()
+    private val moveOnBind = FakeMoveOnBindUseCase()
+    private val rawWrite = FakeRawWriteUseCase(nfc = nfc)
+    private val vendorUidOnlyPair = FakeVendorUidOnlyPairUseCase(spoolman = spoolman, moveOnBind = moveOnBind)
 
     private val sampleUid = CardUid("0A1B2C3D")
     private val openSpoolPayload = OpenSpoolPayload(
@@ -79,9 +85,14 @@ class MainViewModelTest {
         createAndPair = createAndPair,
         twoTag = twoTag,
         confirmer = confirmer,
+        rawWrite = rawWrite,
+        vendorUidOnlyPair = vendorUidOnlyPair,
     )
 
     private fun primeFormForWrite(vm: MainViewModel) {
+        // Settings URL must be non-blank for WriteMode.Spoolman; otherwise
+        // onWriteTapped() routes to rawWrite (U7 dispatch).
+        settings.pushSettings(Settings(url = "http://10.0.0.5:8000"))
         vm.onMaterialPicked(Material("PLA", 190, 220, 55, 65))
         vm.onBrandPicked(Brand("Bambu"))
         vm.onColorHexChanged("FF0000")
