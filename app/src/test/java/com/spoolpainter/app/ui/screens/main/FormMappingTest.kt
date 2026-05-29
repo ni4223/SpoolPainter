@@ -55,7 +55,7 @@ class FormMappingTest {
     }
 
     @Test
-    fun `fromSpoolman with unknown material falls back to temp + 20`() {
+    fun `fromSpoolman with unknown material synthesises Material from filament temps + density`() {
         val spool = SpoolmanSpool(
             id = 1,
             filament = SpoolmanFilament(
@@ -63,10 +63,15 @@ class FormMappingTest {
                 material = "Carbonite",
                 settings_extruder_temp = 300,
                 settings_bed_temp = 80,
+                density = 1.42f,
             ),
         )
         val form = FormMapping.fromSpoolman(spool, uid, rawWriteMode = false)
-        assertNull(form.material)
+        // Custom material name (not in preset list) is preserved so the
+        // picker displays it instead of falling back to blank.
+        assertNotNull(form.material)
+        assertEquals("Carbonite", form.material?.name)
+        assertEquals(1.42f, form.material?.density)
         assertEquals(300, form.tempRanges.extruderMin)
         assertEquals(320, form.tempRanges.extruderMax)
         assertEquals(80, form.tempRanges.bedMin)
@@ -181,12 +186,13 @@ class FormMappingTest {
     }
 
     @Test
-    fun `blankForm resets fields and preserves cardUid and rawWriteMode`() {
+    fun `blankForm resets to defaults and preserves cardUid and rawWriteMode`() {
         val form = FormMapping.blankForm(uid, rawWriteMode = true)
         assertEquals(uid, form.cardUid)
-        assertNull(form.material)
-        assertNull(form.brand)
-        assertNull(form.colorHex)
+        // Form defaults: PLA / Generic / White. Variant stays null.
+        assertEquals("PLA", form.material?.name)
+        assertEquals("Generic", form.brand?.name)
+        assertEquals("FFFFFF", form.colorHex)
         assertNull(form.variant)
         assertEquals(true, form.rawWriteMode)
     }

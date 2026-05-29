@@ -1,9 +1,10 @@
 package com.spoolpainter.app.ui.screens.main
 
-import com.spoolpainter.app.data.local.MaterialDatabase
+import com.spoolpainter.app.data.local.presets.MaterialPresetSource
 import com.spoolpainter.app.domain.models.Brand
 import com.spoolpainter.app.domain.models.Material
 import com.spoolpainter.app.domain.models.OpenSpoolPayload
+import com.spoolpainter.app.domain.models.SpoolmanFilament
 import com.spoolpainter.app.domain.models.SpoolmanSpool
 import com.spoolpainter.app.domain.models.TempRanges
 import com.spoolpainter.app.domain.primitives.CardUid
@@ -19,7 +20,12 @@ internal object FormMapping {
         uidSource: SpoolmanUidSource = SpoolmanUidSource.PreserveCurrent,
     ): FormState {
         val materialName = spool.filament.material ?: "Unknown"
-        val materialData = MaterialDatabase.getMaterial(materialName)
+        // Fall back to a synthesised Material for custom names that aren't
+        // in the preset list (e.g. "PA-CF" the user typed via Other). Without
+        // this the picker shows blank when re-selecting the same spool, even
+        // though Spoolman has the material string.
+        val materialData = MaterialPresetSource.lookup(materialName)
+            ?: synthesiseMaterialFromSpool(materialName, spool.filament)
         val tempRanges = deriveSpoolmanTemps(materialData, spool)
         val resolvedUid = when (uidSource) {
             SpoolmanUidSource.PreserveCurrent -> currentUid
@@ -40,7 +46,19 @@ internal object FormMapping {
             variant = decodeExtraVariant(spool.filament.extra?.get("variant")),
             tempRanges = tempRanges,
             selectedSpoolId = spool.id,
+            // Selecting a spool implies its parent filament is also "selected"
+            // for write routing — show the filament chip + carry spool metadata
+            // through to the expander.
+            selectedFilamentId = spool.filament.id,
             rawWriteMode = rawWriteMode,
+            // Spool metadata pulled from the parent filament record (Spoolman
+            // stores these on the filament, not the spool). Null = field is
+            // unset on Spoolman; expander shows blank.
+            densityGPerCm3 = spool.filament.density,
+            diameterMm = spool.filament.diameter,
+            fullSpoolWeightG = spool.filament.weight,
+            emptySpoolWeightG = spool.filament.spool_weight,
+            priceMajor = spool.filament.price,
         )
     }
 
@@ -72,7 +90,7 @@ internal object FormMapping {
         payload: OpenSpoolPayload,
         rawWriteMode: Boolean,
     ): FormState {
-        val baseMaterial = MaterialDatabase.getMaterial(payload.type)
+        val baseMaterial = MaterialPresetSource.lookup(payload.type)
         val parsedExtruderMin = payload.minTemp.toIntOrNull()
         val parsedExtruderMax = payload.maxTemp.toIntOrNull()
         val parsedBedMin = payload.bedMinTemp?.toIntOrNull()
@@ -98,6 +116,48 @@ internal object FormMapping {
             ),
             selectedSpoolId = null,
             rawWriteMode = rawWriteMode,
+        )
+    }
+
+    /**
+     * U8-Δ-1 — prefill the form from a Spoolman filament selected via the
+     * hidden "Filament ▾" expander. Material/vendor/color/temps + the five
+     * "More details" override fields are seeded from the filament; variant
+     * comes from `extra.variant`. selectedFilamentId is set; selectedSpoolId
+     * is cleared (mutex per Q-U8-7=A).
+     */
+    fun fromFilament(filament: SpoolmanFilament, rawWriteMode: Boolean): FormState {
+        val materialName = filament.material ?: "Unknown"
+        val materialData = MaterialPresetSource.lookup(materialName)
+            ?: filament.settings_extruder_temp?.let { extMin ->
+                Material(
+                    name = materialName,
+                    defaultMinTemp = extMin,
+                    defaultMaxTemp = extMin + 20,
+                    defaultBedMinTemp = filament.settings_bed_temp ?: 0,
+                    defaultBedMaxTemp = (filament.settings_bed_temp ?: 0) + 10,
+                    density = filament.density,
+                )
+            }
+        return FormState(
+            material = materialData,
+            brand = Brand(filament.vendor?.name ?: "Unknown"),
+            colorHex = canonicaliseColorHex(filament.color_hex),
+            variant = decodeExtraVariant(filament.extra?.get("variant")),
+            tempRanges = TempRanges(
+                extruderMin = filament.settings_extruder_temp,
+                extruderMax = materialData?.defaultMaxTemp,
+                bedMin = filament.settings_bed_temp,
+                bedMax = materialData?.defaultBedMaxTemp,
+            ),
+            selectedSpoolId = null,
+            selectedFilamentId = filament.id,
+            rawWriteMode = rawWriteMode,
+            densityGPerCm3 = filament.density,
+            diameterMm = filament.diameter,
+            fullSpoolWeightG = filament.weight,
+            emptySpoolWeightG = filament.spool_weight,
+            priceMajor = filament.price,
         )
     }
 
@@ -159,4 +219,22 @@ internal object FormMapping {
             defaultBedMaxTemp = bedMax ?: bedMin?.plus(10) ?: 0,
         )
     }
+
+    /**
+     * Synthesise a Material for a name that isn't in the preset list — e.g. a
+     * custom "PA-CF" the user typed via Other on a previous Save. Pulls temps
+     * + density off the Spoolman filament record so the form shows the user's
+     * actual values when they re-pick the spool.
+     */
+    private fun synthesiseMaterialFromSpool(
+        name: String,
+        filament: com.spoolpainter.app.domain.models.SpoolmanFilament,
+    ): Material = Material(
+        name = name,
+        defaultMinTemp = filament.settings_extruder_temp ?: 200,
+        defaultMaxTemp = filament.settings_extruder_temp?.plus(20) ?: 220,
+        defaultBedMinTemp = filament.settings_bed_temp ?: 50,
+        defaultBedMaxTemp = filament.settings_bed_temp?.plus(10) ?: 70,
+        density = filament.density,
+    )
 }

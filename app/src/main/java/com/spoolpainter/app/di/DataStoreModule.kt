@@ -13,7 +13,6 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
 
-// CustomMaterials / CustomBrands DataStores will be added in U8 per components.md §2.6.
 @Module
 @InstallIn(SingletonComponent::class)
 object DataStoreModule {

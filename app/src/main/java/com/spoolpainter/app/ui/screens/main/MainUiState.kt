@@ -1,5 +1,6 @@
 package com.spoolpainter.app.ui.screens.main
 
+import com.spoolpainter.app.data.remote.spoolman.ExpanderOverrides
 import com.spoolpainter.app.domain.models.Brand
 import com.spoolpainter.app.domain.models.Material
 import com.spoolpainter.app.domain.models.SpoolmanSpool
@@ -28,13 +29,36 @@ data class MainUiState(
 
 data class FormState(
     val cardUid: CardUid? = null,
-    val material: Material? = null,
-    val brand: Brand? = null,
-    val colorHex: String? = null,
+    val material: Material? = DEFAULT_MATERIAL,
+    val brand: Brand? = DEFAULT_BRAND,
+    val colorHex: String? = DEFAULT_COLOR_HEX,
     val variant: String? = null,
-    val tempRanges: TempRanges = TempRanges(),
+    val tempRanges: TempRanges = DEFAULT_TEMP_RANGES,
     val selectedSpoolId: Int? = null,
     val rawWriteMode: Boolean = false,
+
+    // U8-Δ-1 — filament picker selection (mutex with selectedSpoolId).
+    val selectedFilamentId: Int? = null,
+    val filamentSectionExpanded: Boolean = false,
+
+    // U8-Δ-2 — Spool metadata expander state + five overrides. Prefilled with
+    // the same defaults the call site would send to Spoolman so the user
+    // sees exactly what will be persisted; clearing a field reverts to the
+    // call-site default at write time.
+    val moreDetailsExpanded: Boolean = false,
+    val emptySpoolWeightG: Float? = null,
+    val priceMajor: Float? = null,
+    val fullSpoolWeightG: Float? = DEFAULT_FILAMENT_WEIGHT_G,
+    val diameterMm: Float? = DEFAULT_DIAMETER_MM,
+    val densityGPerCm3: Float? = DEFAULT_PLA_DENSITY,
+)
+
+fun FormState.toExpanderOverrides(): ExpanderOverrides = ExpanderOverrides(
+    density = densityGPerCm3,
+    diameter = diameterMm,
+    weight = fullSpoolWeightG,
+    spoolWeight = emptySpoolWeightG,
+    price = priceMajor,
 )
 
 /**
@@ -61,6 +85,31 @@ val FormState.canSubmit: Boolean
     }
 
 private val HEX6_REGEX = Regex("^[0-9A-Fa-f]{6}$")
+
+// Form defaults — fresh form starts with sensible picks the user can override.
+private val DEFAULT_MATERIAL: Material = Material(
+    name = "PLA",
+    defaultMinTemp = 190,
+    defaultMaxTemp = 220,
+    defaultBedMinTemp = 40,
+    defaultBedMaxTemp = 65,
+    density = 1.24f,
+)
+private val DEFAULT_BRAND: Brand = Brand("Generic")
+private const val DEFAULT_COLOR_HEX: String = "FFFFFF"
+private val DEFAULT_TEMP_RANGES: TempRanges = TempRanges(
+    extruderMin = 190,
+    extruderMax = 220,
+    bedMin = 40,
+    bedMax = 65,
+)
+// Spool-metadata defaults match MaterialPresetSource.Companion constants —
+// Spoolman requires density/diameter/weight > 0 on filament create, and PLA
+// density 1.24 g/cm³ is the universal consumer baseline. Empty-spool weight
+// + price stay null because they vary too much to default sensibly.
+private const val DEFAULT_FILAMENT_WEIGHT_G: Float = 1000f
+private const val DEFAULT_DIAMETER_MM: Float = 1.75f
+private const val DEFAULT_PLA_DENSITY: Float = 1.24f
 
 data class SpoolmanState(
     val spools: List<SpoolmanSpool> = emptyList(),

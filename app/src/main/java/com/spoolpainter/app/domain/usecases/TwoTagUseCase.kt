@@ -50,7 +50,7 @@ open class TwoTagUseCase @Inject constructor(
         val (tappedUid, classification) = when (outcome) {
             is NfcResult.Success ->
                 if (outcome.uid.hex.isEmpty()) {
-                    return TwoTagResult.NfcFailed(null, "zero-length UID — non-NFC-A tag?")
+                    return TwoTagResult.NfcFailed(null, "zero-length UID, non-NFC-A tag?")
                 } else {
                     outcome.uid to outcome.classification
                 }
@@ -79,7 +79,7 @@ open class TwoTagUseCase @Inject constructor(
             is MoveOnBindUseCase.Outcome.Proceed,
             is MoveOnBindUseCase.Outcome.Moved -> Unit
             is MoveOnBindUseCase.Outcome.Declined ->
-                return TwoTagResult.Cancelled("repair declined — UID still on the originally-paired spool")
+                return TwoTagResult.Cancelled("repair declined, UID still on the originally-paired spool")
             is MoveOnBindUseCase.Outcome.Failed -> {
                 val partial = mob.partiallyModifiedSpoolIds.firstOrNull()
                 return if (partial != null) {

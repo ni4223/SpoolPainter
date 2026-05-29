@@ -1189,3 +1189,123 @@ Applied directly to docs under user authorisation:
 **Context**: Per-unit loop, Functional Design Step 6 (artefact generation) per `construction/functional-design.md`. Standardised 2-option completion message will follow this entry.
 
 ---
+
+## SESSION RESUME — U8 opened
+**Timestamp**: 2026-05-28T00:00:00Z
+**User Input**: "AIDLC continue" (and follow-up "Open U8 — Functional Design Part 1" via AskUserQuestion).
+**AI Response**: Welcomed back; surfaced state from `aidlc-state.md` (U7 DONE, commit `665b362`, working tree clean, branch `v2` 1 commit ahead of origin). Confirmed next per `unit-of-work.md` §U8 = U8 (Pickers + Custom Entries + Filament Metadata UX) with U8-Δ-1/Δ-2/Δ-3 deltas folded in. Listed open UI followups (UI-01, UI-02, UI-05, UI-07) as carry-overs to U9/U10 (not blocking U8). Offered four next-step options; user picked "Open U8 — Functional Design Part 1".
+**Status**: U8 opened.
+**Context**: Session continuity per `common/session-continuity.md`. Logged before any U8 stage transitions.
+
+---
+
+## U8 — Per-unit gate assessment + Functional Design Part 1 (planning)
+**Timestamp**: 2026-05-28T00:00:00Z
+**User Input**: (continuation of "Open U8 — Functional Design Part 1" from prior turn).
+**AI Response**: Per-unit gate assessment recorded — Functional Design EXECUTE; NFR Requirements / NFR Design / Infrastructure Design SKIP (no new perf/security concerns; pure Android client per `execution-plan.md`). Authored `aidlc-docs/construction/plans/u8-pickers-and-filament-metadata-functional-design-plan.md` (single doc; ~480 lines). Plan structure mirrors U7's reframable shape: §1 Unit Context (scope + cross-unit consumers + deferrals); §2.1 Domain entities (presets + Proto schema + Material model touch-up + FormState extensions + MainUiState.orphanFilaments + SpoolmanFilament extensions + CreateFilamentRequest/PatchFilamentBody + MaterialBrandRepository surface + repository impl seam + CreateAndPairUseCase impact); §2.2 ViewModel handlers; §2.3 Compose UI (`MoreDetailsExpander`, sectioned `SpoolmanDropdown`, two add-custom sheets, picker swap); §2.4 ViewModel test plan (8 test classes, ~40 net-new cases); §2.5 verification commands + U10 manual checklist (no U8 install gate per Q-T2=B); §2.6 out-of-scope guards; §3 stage-gate FD artefact list; §4 questions block (Q-U8-1..Q-U8-20 with `[Answer]: ____` tags + ⭐ recommendations); §5 test count target ~340 / 340. Existing code seams confirmed against `MaterialDatabase`, `BrandDatabase`, `SpoolmanFilament`, `CreateFilamentRequest`, `SpoolmanRepository.filaments`/`spools` cache, `BottomSheetHost`, U1-placeholder VMs, `DataStoreModule.kt:16` U8-marker, `MainViewModel.onCustomMaterialChanged` (inline path, distinct from add-custom sheet path). Notable plan-level proposals worth user attention: **(1) Q-U8-2** — split inline "Other → typed" (one-shot) from "➕ Add custom" footer (persistent sheet) as two distinct UX surfaces; **(2) Q-U8-9** — relax components.md §2.4 "Spoolman wins" precedence to "presets first, case-insensitive dedup" for stability across URL changes; **(3) Q-U8-12** — separate `createSpoolForExistingFilament` method (vs. shorthand inside `createSpoolForNewFilament`); **(4) Q-U8-13** — repository-level PATCH idempotency (vs. VM-side diff); **(5) Q-U8-16** — archived spools don't count toward "filament has spools" (orphan UX symmetric with dropdown's archive filter).
+**Status**: U8 Functional Design Part 1 (plan) AUTHORED. Awaiting `[Answer]:` tags on Q-U8-1..20.
+**Context**: Per-unit loop, Functional Design Step 4 (store plan) per `construction/functional-design.md`. Plan-level checkboxes per "MANDATORY: Plan-Level Checkbox Enforcement" in `core-workflow.md`.
+
+---
+
+## U8 — UI design REFRAMED mid-Q&A; orphan concept dropped
+**Timestamp**: 2026-05-28T00:00:00Z
+**User Input**: Across multiple turns: (a) "imagine case where you want to add new spool for filament you own, how will you do it if you can pick filament" → user found that orphan-only picker missed the deliberate-2nd-spool case; (b) "i know diff between spool and filament, i mean what i said" → confirming dual-purpose picker; (c) "no, filament has to live next to spool, maybe we do 2" then "i dont want to make UI too busy, filament stay hidden" then "no why cant i have two hiddne?" → settled on TWO independent hidden expanders; (d) "whats wrong with you, spool visble, then filament hidden with expandable, other stuff then more detailed hidden menu" → final layout locked. (e) Subsequent: "before i confirm this, write me few points on what app will do at the end" → user wanted feature summary; "simpler points, no u stuff" → user wanted user-facing summary not unit-internal language.
+**AI Response**: Reframed U8 FD plan: (1) added §1.4 reframe note explaining drop of orphan/non-orphan distinction; (2) replaced sectioned `SpoolmanDropdown` design with two collapsed-by-default expanders ("Filament ▾" + "More details ▾"), independent (Q-U8-18 repurposed); (3) dropped `MainUiState.orphanFilaments` entirely; (4) `FormState` gains `filamentSectionExpanded: Boolean` alongside existing `moreDetailsExpanded`; (5) Q-U8-16 / Q-U8-19 marked REMOVED-by-reframe; (6) U10 manual-checklist updated with "filament with 0 spools" + "filament with 1+ spools deliberate-2nd-spool add" + "both expanders independent" scenarios; (7) test plan adjusted — `MainViewModelOrphanFilamentTest` → `MainViewModelFilamentPickerTest`. Two side-discussions resolved: (a) Q-U8-5 weight defaults — confirmed Option 1 (strictly filament-scope, PATCH-on-change), defaults table locked at density per-material / diameter 1.75mm / fullSpoolWeight 1000g / emptySpoolWeight null / price null; (b) Q-U8-10 / Q-U8-11 input rules — verified v1.7 source (`MaterialSelector.kt:75-77` + `BrandSelector.kt:78-81`); v1 parity locked: material name UPPERCASE 8 chars alnum + `-` `+`; brand name TitleCase 10 chars alnum + space + `.` + `-`; dedup-distinctBy invariant added to `MaterialBrandRepositoryTest`. v1's `MaterialSelector.kt:74` "Max 5 chars" comment is stale — code uses 8; we honour the code.
+**Status**: Plan ready for FD Part 2 generation.
+**Context**: Per-unit loop, Functional Design Step 5 (analyse answers + clarify ambiguities) per `construction/functional-design.md`. Plan-level reframe captured durably so Code Generation Part 1 reads from the locked design, not the original (now-stale) framing.
+
+---
+
+## U8 — Q-U8-1..20 ANSWER LEDGER + carve-outs
+**Timestamp**: 2026-05-28T00:00:00Z
+**User Input**: User filled `[Answer]:` tags inline in the plan doc plus replied "ok" / "done" to confirm.
+**AI Response**: Final ledger:
+| Q | Answer | Note |
+|---|---|---|
+| Q-U8-1 | A | `@Singleton class` for `MaterialPresetSource` / `BrandPresetSource` |
+| Q-U8-2 | B | Drop "Other" preset; "➕ Add custom" footer opens sheet |
+| Q-U8-3 | A | Full payload in `CustomMaterial` proto (name + temps + optional density) |
+| Q-U8-4 | A | Keep `created_at_epoch_ms` |
+| Q-U8-5 | A + carve-out | `Material.density: Float?`; defaults table also covers `diameter` + `weight` (1.75 mm / 1000 g constants on `MaterialPresetSource.Companion`); `emptySpoolWeight` + `price` default to null |
+| Q-U8-6 | A | `selectedFilamentId` on `FormState` |
+| Q-U8-7 | A | Mutex enforced in VM setters |
+| Q-U8-8 | A | Spoolman PATCH convention; v2.0 only sends non-null |
+| Q-U8-9 | C | Brand merge: case-insensitive dedup, presets first |
+| Q-U8-10 | A + carve-out | Material merge: case-insensitive dedup, presets first; v1-parity input rules (UPPERCASE, ≤8 chars) |
+| Q-U8-11 | B + carve-out | Persist anyway; sheet UI does pre-validation; `distinctBy` invariant guarantees no duplicates in dropdown |
+| Q-U8-12 | A | New `createSpoolForExistingFilament` method |
+| Q-U8-13 | A | Repository-level PATCH idempotency (cache-checked) |
+| Q-U8-14 | A | Extend `CreateAndPairUseCase` with `selectedFilamentId` carrier |
+| Q-U8-15 | A | Auto-select after add-custom confirm |
+| Q-U8-16 | N/A | REMOVED by §1.4 reframe |
+| Q-U8-17 | B | Material `Icons.Default.ExpandMore` / `ExpandLess` icons |
+| Q-U8-18 | A | Two expanders independent (repurposed question post-reframe) |
+| Q-U8-19 | N/A | REMOVED by §1.4 reframe |
+| Q-U8-20 | A | "➕ Add custom" footer in picker |
+
+Carve-outs:
+- **Defaults table** (locked from Q-U8-5 discussion 2026-05-28): density per-material map (PLA 1.24, ABS 1.04, PETG 1.27, TPU 1.20, ASA 1.07, PC 1.20, Nylon 1.14, PVA 1.19, HIPS 1.04); fallback 1.24 for unknown materials; diameter 1.75 mm; full-spool weight 1000 g; empty-spool weight null (no global default — varies wildly by brand); price null. User direction: "I want certain defaults [for] everything that is in additional fields or no value if that's an option, but user can edit it." Approach 1 selected (strictly filament-scope, PATCH on change).
+- **v1 input rules** (locked from Q-U8-10 carve-out 2026-05-28): material UPPERCASE + alnum + `-` + `+` + ≤8 chars; brand TitleCase + alnum + space + `.` + `-` + ≤10 chars. Verified against `main` branch v1.7 source. Comment in v1's `MaterialSelector.kt:74` says "Max 5" but `.take(8)` — code wins; we lock 8.
+- **Dedup distinctBy invariant** (locked from Q-U8-11 carve-out 2026-05-28): `materials.distinctBy { it.name.uppercase() }.size == materials.size`; `brands.distinctBy { it.lowercase() }.size == brands.size`. Asserted in `MaterialBrandRepositoryTest`. Test count: `MaterialBrandRepositoryTest` 8 → 10; total U8 net new ~41 → ~43; running total target 300 + ~43 ≈ 343.
+**Status**: All Q-U8-* + carve-outs LOCKED. Plan §2.1.11a (defaults) + §2.1.11b (input rules) + §2.1.11c (dedup invariant) appended.
+**Context**: Per-unit loop, Functional Design Step 5 complete; ready for Step 6 (artefact generation).
+
+---
+
+## U8 — Functional Design Part 2 (artefacts) generated
+**Timestamp**: 2026-05-28T00:00:00Z
+**User Input**: "ok" (approval to apply carve-outs and proceed to FD Part 2 artefact generation).
+**AI Response**: Generated four FD artefacts under `aidlc-docs/construction/u8-pickers-and-filament-metadata/functional-design/`:
+- `domain-entities.md` (~9KB) — net-new types: `MaterialPresetSource` (with `DEFAULT_DIAMETER_MM` / `DEFAULT_FULL_SPOOL_WEIGHT_G` / `PLA_DENSITY_FALLBACK` constants), `BrandPresetSource`, Proto schemas (`CustomMaterials` / `CustomBrands`), `MaterialBrandLocalStore`, `MaterialBrandRepository` (with merge invariants), `Material.density: Float?` extension, `FormState` extensions (5 overrides + 2 expander flags + `selectedFilamentId`), `SpoolmanFilament` extensions, `CreateFilamentRequest` + `PatchFilamentBody`, `SpoolmanApi.patchFilament`, `SpoolmanRepository.patchFilament` + `createSpoolForExistingFilament`, `CreateAndPairUseCase` extension. Removed: `MaterialDatabase` / `BrandDatabase` (objects), `MainUiState.orphanFilaments` (proposed but dropped per §1.4), "Other" preset entries, inline `densityFor` map. Defaults table + input rules captured in §1.13 + §1.14.
+- `business-rules.md` — BR-U8-1..23 covering: §1 FR-13 reframe (filament picker = ALL filaments, not orphan-only; two independent expanders); §2 FR-8 (preset sources Hilt-bound; "Other" → footer; brand/material merge precedence; write semantics; auto-select; v1-parity input rules); §3 FR-14 (More details expander + defaults); §4 FR-15 (PATCH idempotency + ordering + partial-state handling); §5 FR-13 selection mutex + write routing; §6 AC matrix S-8.1..S-8.6; §7 reframe deltas vs original orphan-filament delta.
+- `business-logic-model.md` — five mermaid sequence/flow diagrams: (1) filament-pick happy path covering both 0-spool and 1+-spool filaments (PATCH idempotency check + create-spool); (2) PATCH idempotency — pick filament don't change anything → zero PATCH HTTP calls; (3) add-custom-material auto-select round-trip; (4) brand merge precedence with worked example (presets/Spoolman/userStore collision); (5) default-fallback computation flowchart at the call site. Plus state-machine summary (`AddingCustomMaterial` / `AddingCustomBrand` new ActiveFlow variants; no new states for filament picker / More details expander since both are pure form-state).
+- `frontend-components.md` — form layout ASCII; new components (`FilamentSectionExpander`, `FilamentPicker`, `MoreDetailsExpander`, `AddCustomMaterialSheet`, `AddCustomBrandSheet`); modified components (`MaterialPicker` / `BrandPicker` data-source swap + footer; `FilamentForm` host; `BottomSheetHost` two new branches; `AddCustomMaterialViewModel` / `AddCustomBrandViewModel` placeholder replacement); form gating matrix; visual state matrix; snackbar palette additions; a11y notes.
+**Status**: U8 Functional Design Part 2 EXECUTED. Awaiting user approval at the FD stage gate before opening Code Generation Part 1.
+**Context**: Per-unit loop, Functional Design Step 6 (artefact generation) per `construction/functional-design.md`. Standardised 2-option completion message follows.
+
+---
+
+## SESSION RESUME — U8 Functional Design APPROVED + Code Gen Part 1 plan authored
+**Timestamp**: 2026-05-28T00:00:00Z
+**User Input**: "aidlc continue" → "Continue to Next Stage" (FD gate) → "Inline outline (U7 style)" → "JSON DataStore (match v2 Settings)" → "do proper doc, audit md is not right place".
+**AI Response**: U8 FD stage gate approved. Pre-plan FD delta locked: `CustomMaterials` / `CustomBrands` switch from proto3 → kotlinx-serialization JSON DataStore (matches existing `Settings` DataStore at `data/local/SettingsSerializer.kt:10-28`); zero new build infra. FD `domain-entities.md` §1.3 / §1.4 / §3 updated in-place to reflect JSON shape. Initially delivered Code Gen Part 1 as inline outline (carrying U7 "no massive doc" preference); user pushed back — proper plan doc is the right home, not audit.md. Authored `aidlc-docs/construction/plans/u8-pickers-and-filament-metadata-code-generation-plan.md` with 13 numbered sections covering build deps, domain entities (16 sub-sections), repository wiring, ViewModel changes, Compose UI, tests (8 classes / 43 cases / running total 343), FormMapping, docs, verification, U10 manual checklist hand-off, brownfield invariants, net file impact (13 created / 15 modified / 2 deleted / 6 new test files).
+**Status**: Code Gen Part 1 plan AUTHORED. Awaiting user approval at the standardised 2-option gate before opening Part 2.
+**Approval prompt logged**: 2026-05-28T00:00:00Z — "U8 Code Generation Part 1 plan — approve and proceed to Part 2?"
+**Context**: Per-unit loop, Code Generation Part 1 Steps 1–9 per `construction/code-generation.md`. Plan doc is the source of truth for Part 2 checkbox tracking.
+
+---
+
+## U8 — Code Generation Part 2 EXECUTED
+**Timestamp**: 2026-05-28T00:00:00Z
+**User Input**: "go" (approval to execute Part 2).
+**AI Response**: Executed plan end-to-end across 9 task buckets. Per-section tracking via `TaskCreate`/`TaskUpdate`. Outcomes: §2.1-2.4 added `Material.density: Float?` + created `MaterialPresetSource` (with companion-object static `lookup`/`densityFor` accessors for non-DI callers `FormMapping`/`FilamentSpool`) + `BrandPresetSource`; deleted legacy `MaterialDatabase.kt`/`BrandDatabase.kt`; migrated callers in-place. §2.5-2.9 created JSON DataStore stack: `CustomEntries.kt` (4 `@Serializable` data classes), two serialisers mirroring `SettingsSerializer.kt:10-28`, `MaterialBrandLocalStore`, two new `@Provides` methods in `DataStoreModule.kt`. §2.10 created `open class MaterialBrandRepository` with case-insensitive `distinctBy` merge + presets-first ordering. §2.11-2.14 extended `SpoolmanFilament` with 5 Float? fields; `CreateFilamentRequest` with spool_weight/price; new `PatchFilamentBody` + `ExpanderOverrides`; `SpoolmanApi.patchFilament` PATCH endpoint; `SpoolmanRepository.patchFilament` (cache-checked sparse-diff idempotency per Q-U8-13=A) + `createSpoolForExistingFilament` (Q-U8-12=A); retired inline `densityFor` map (now reads from `MaterialPresetSource`). §2.15-2.16 extended `FormState` with 8 new fields (selectedFilamentId + 2 expander booleans + 5 Float? overrides); `ActiveFlow` with AddingCustomMaterial/Brand variants; `CreateAndPairUseCase.resolveSpool` branches on selectedFilamentId. §3+§4 wired 12 new `MainViewModel` handlers (filament select with mutex prefill, expander toggles, 5 numeric Float? parsers, add-custom open/dismiss/confirmed with auto-select per Q-U8-15=A); replaced placeholder `AddCustomMaterialViewModel`/`AddCustomBrandViewModel` with real form state + v1-parity input filtering; added `FormMapping.fromFilament`. §5 created Compose UI: `FilamentSectionExpander` + `FilamentPicker` (lists ALL filaments alphabetically), `MoreDetailsExpander` (5 numeric fields with suffix labels), `AddCustomMaterialSheet` + `AddCustomBrandSheet` (`ModalBottomSheet`), wired into `BottomSheetHost` (2 new branches), `MaterialPicker`/`BrandPicker` got "➕ Add custom" footer rows, `FilamentForm` got new `FormChange` events (12 total) + slot insertion between TempPanel and Save button, `MainScreen` wired filaments flow + new VM handlers. §6 authored 8 test classes / 43 cases: `MaterialBrandRepositoryTest` (10 — including 2 distinctBy invariant cases), `SpoolmanRepositoryPatchFilamentTest` (6), `SpoolmanRepositoryCreateForExistingFilamentTest` (5), `MainViewModelFilamentPickerTest` (7), `MainViewModelMoreDetailsExpanderTest` (6), `AddCustomMaterialViewModelTest` (4), `AddCustomBrandViewModelTest` (3), `CreateAndPairUseCaseTest` extension (2). New `FakeMaterialBrandRepository` test stand-in (subclasses real class with mockk-relaxed collaborators + real `TestScope`). Existing 3 MainViewModel test ctors extended; existing 300 tests pass unchanged. §9 verification: `compileDebugKotlin` ✅, `testDebugUnitTest` ✅ **343 / 343 (0 failures)**, `assembleDebug` ✅ 34 MB APK (no growth vs U7). Mid-execution pivots captured in `u8-summary.md` "FD delta applied during code-gen" section: (a) compose icons `ExpandMore`/`ExpandLess` not on classpath → substituted with core `KeyboardArrowDown`/`KeyboardArrowUp` (preserves Q-U8-17=B "Material icon" intent); (b) added static `companion object { lookup(); densityFor() }` on `MaterialPresetSource` for non-DI callers (`FormMapping`/`FilamentSpool`).
+**Status**: Code Gen Part 2 complete. Awaiting stage-gate approval before close-out commit (DoD #6 per `unit-of-work.md` §2.1).
+**Context**: Per-unit loop, Code Generation Part 2 Steps 10-16 per `construction/code-generation.md`. Standardised 2-option completion message follows.
+
+---
+
+## U8 — install-time UX iteration + close-out
+**Timestamp**: 2026-05-29T00:00:00Z
+**User Input**: "all good, close it" (preceded by ~25 distinct UX iteration messages spanning expander layout, label wording, dropdown styling, form defaults, color picker behaviour, em-dash punctuation cleanup, custom-material persistence rework, write-flow ordering).
+**AI Response**: Closed out U8 with material UX iteration applied directly during install-time testing rather than as a deferred polish patch. Highlights:
+- **Layout reframe**: Filament expander placed ABOVE form fields (per direct user quote in §1.4), not between TempPanel + MoreDetails as ASCII diagram had drawn.
+- **Form defaults**: Material PLA, Brand Generic, Color White (FFFFFF), filament weight 1000 g, diameter 1.75 mm, density 1.24 g/cm³ pre-filled. Density tracks Material picks (PLA 1.24 / ABS 1.04 / PETG 1.27 / etc.).
+- **Custom-entry flow simplified — moved from modal sheets to inline "Other" path**: dropped `AddCustomMaterialSheet` / `AddCustomBrandSheet` + their VMs entirely; restored "Other" preset entry → reveals existing inline TextField on the form (v1 behaviour, dormant since U6a). Typed names auto-persist to Spoolman on Save & Write — no separate DataStore custom store, no modal sheet UX. ActiveFlow's `AddingCustomMaterial` / `AddingCustomBrand` variants removed; BottomSheetHost branches removed; "➕ Add custom" footer rows removed from pickers; `MainViewModel.onOpenAddCustomMaterialSheet` / `onAddCustomMaterialConfirmed` (and Brand counterparts) removed (~50 LOC handler code gone).
+- **Persistence layer dropped**: `MaterialBrandLocalStore` + `userdata/` package + DataStore providers removed. `MaterialBrandRepository` now derives `materials` and `brands` directly from Spoolman (`spoolman.filaments.material` + `spoolman.vendors`); `refreshAfterWrite` hook on every Spoolman mutation keeps caches fresh.
+- **Color picker**: restored v1 behaviour — "No Color" + named-color shortcuts + "Color Wheel" modal dialog (HSV ring + brightness slider + hex input + Cancel/Done). "No Color" entry later removed per direction (every spool has a colour). "Color Wheel" entry sectioned with italic + divider for visual hierarchy.
+- **Dropdowns visually unified**: all 4 (Spool, Material, Brand, Filament) use `ExposedDropdownMenu` with `Modifier.clip(RoundedCornerShape(20.dp))`, matching v1 styling. Spool + Filament both got 40dp X clear button (24dp icon, full onSurface tint) — symmetric "X clears form to defaults" semantics. X tap forces dropdown closed (was popping it open on top of clear).
+- **Spool↔filament linking carried**: `FormMapping.fromSpoolman` now sets `selectedFilamentId = spool.filament.id` + carries 5 metadata fields from parent filament record. Custom material names (typed via Other) survive re-pick via new `synthesiseMaterialFromSpool` helper.
+- **Filament metadata expander**: renamed from "More details" → "Optional fields" → "Spool metadata" → final "Filament metadata" (since all 5 fields live on the Spoolman filament record, not the spool). Weight labels: "Filament weight" + "Spool weight" with Spoolman-verbatim supporting text on the two weight fields.
+- **Em-dash → period punctuation cleanup** across all user-facing snackbars / banner / NFC error reasons.
+- **Classifier hardened**: tags with non-OpenSpool NDEF / malformed JSON / empty records → now classified as `Blank` (overwritable), not `Vendor`. The chip's own write-protection is the only software gate. Removed the `if (classification is Vendor)` pre-block in `runWriteThenVerify` + `runStandaloneVerify`.
+- **Write flow reordered for orphan-spool prevention** (user-discovered bug: app crashed mid-write → tag truncated → next attempt looked like vendor tag). `CreateAndPairUseCase` now: (1) resolveSpool, (2) arm Write + capture observed UID from any tap outcome (Success/Verify/Failed), (3) commit UID to Spoolman BEFORE deciding final result (best-effort move-on-bind + appendCardUidToSpool runs even on Verify/Failed write outcomes), (4) translate write outcome. Result: interrupted writes don't leave orphan spools — Spoolman gets the UID link regardless of tag-byte success.
+- **NfcAdapterWrapper.writeRecords**: falls through to `NdefFormatable.get(tag)` when `Ndef.get(tag)` returns null, only throws `NonNdefTagException` when both fail.
+- **UI-13 logged** in `aidlc-docs/ui-followups.md` for the next-stage feature: when user picks an existing spool, edits filament-metadata fields, and hits Save → diff against prefill snapshot + PATCH the parent filament + confirmation dialog. Spool↔filament linking stays as-is per direction.
+
+**Verification on close-out**: `compileDebugKotlin` ✅; `testDebugUnitTest` ✅ **332 / 332** (down from 343 after persistence-layer removal — 11 tests deleted/N/A: 8 sheet/VM tests + 3 DataStore-related cases); `assembleDebug` ✅ 34 MB APK (no growth vs U7 baseline); ~12 `installDebug` rounds on moto g stylus 2025 / Android 16 with on-device verification across the 25 iteration messages. Per Q-T2=B no formal install gate — manual verification covered organically. UI-13 follow-up parked for next stage.
+
+**Status**: U8 DONE. Ready for close-out commit per `unit-of-work.md` §2.1 DoD #6.
+**Context**: Per-unit loop close-out. Single bundled commit; no push (per [[feedback-aidlc-unit-close-out-commit]]); no IDE noise (`.idea/*` already gitignored).
+
+---

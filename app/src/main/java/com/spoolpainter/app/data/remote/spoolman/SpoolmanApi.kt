@@ -42,6 +42,12 @@ interface SpoolmanApi {
     @POST("api/v1/filament")
     suspend fun createFilament(@Body body: CreateFilamentRequest): Response<SpoolmanFilament>
 
+    @PATCH("api/v1/filament/{id}")
+    suspend fun patchFilament(
+        @Path("id") filamentId: Int,
+        @Body body: PatchFilamentBody,
+    ): Response<SpoolmanFilament>
+
     @POST("api/v1/spool")
     suspend fun createSpool(@Body body: CreateSpoolRequest): Response<SpoolmanSpool>
 

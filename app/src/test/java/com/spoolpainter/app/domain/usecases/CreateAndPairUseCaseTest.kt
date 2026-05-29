@@ -221,4 +221,39 @@ class CreateAndPairUseCaseTest {
         assertTrue("got $result", result is CreateAndPairResult.SpoolmanFailed)
         assertEquals(0, spoolman.appendCalls)
     }
+
+    @Test
+    fun `selectedFilamentId path — happy invokes createSpoolForExistingFilament not resolveOrCreate`() = runTest {
+        val newSpool = sampleSpool.copy(id = 77)
+        spoolman.nextCreateSpoolForExistingFilamentResult = SpoolmanOutcome.Success(newSpool)
+        spoolman.nextAppendCardUidResult = SpoolmanOutcome.Success(newSpool)
+        stageSingleTapSuccess()
+
+        val result = useCase.invoke(input(baseForm.copy(selectedFilamentId = 7)))
+
+        assertTrue("got $result", result is CreateAndPairResult.Success.WrittenAndPaired)
+        assertEquals(77, (result as CreateAndPairResult.Success.WrittenAndPaired).spoolId)
+        assertEquals(true, result.isNewSpool)
+        assertEquals(1, spoolman.createSpoolForExistingFilamentCalls)
+        assertEquals(0, spoolman.createSpoolCalls) // resolveOrCreate path NOT taken
+        assertEquals(7, spoolman.lastCreateForExisting?.first)
+    }
+
+    @Test
+    fun `selectedFilamentId path — expander overrides forwarded to createSpoolForExistingFilament`() = runTest {
+        val newSpool = sampleSpool.copy(id = 88)
+        spoolman.nextCreateSpoolForExistingFilamentResult = SpoolmanOutcome.Success(newSpool)
+        spoolman.nextAppendCardUidResult = SpoolmanOutcome.Success(newSpool)
+        stageSingleTapSuccess()
+
+        val formWithOverrides = baseForm.copy(
+            selectedFilamentId = 7,
+            fullSpoolWeightG = 750f,
+            priceMajor = 19.99f,
+        )
+        useCase.invoke(input(formWithOverrides))
+
+        assertEquals(750f, spoolman.lastCreateForExisting?.second?.weight)
+        assertEquals(19.99f, spoolman.lastCreateForExisting?.second?.price)
+    }
 }

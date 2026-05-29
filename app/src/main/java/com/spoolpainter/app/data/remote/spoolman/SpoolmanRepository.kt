@@ -4,6 +4,7 @@ import com.google.gson.Gson
 import com.google.gson.JsonParseException
 import com.google.gson.JsonSyntaxException
 import com.spoolpainter.app.data.local.SettingsRepository
+import com.spoolpainter.app.data.local.presets.MaterialPresetSource
 import com.spoolpainter.app.di.AppScope
 import com.spoolpainter.app.di.IoDispatcher
 import com.spoolpainter.app.domain.models.SpoolmanFilament
@@ -15,6 +16,7 @@ import com.spoolpainter.app.domain.primitives.ExtraCardUidsCodec
 import com.spoolpainter.app.domain.usecases.NewFilamentRequest
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -107,6 +109,88 @@ open class SpoolmanRepository @Inject constructor(
         return performHttp("getFilament") { api.getFilament(filamentId) }
     }
 
+    /**
+     * Idempotent PATCH (Q-U8-13=A): reads the cache, builds a sparse body
+     * containing only fields whose stored value differs from the requested
+     * value. If nothing differs, returns Success(currentFilament) without an
+     * HTTP call. On Success, swaps the new filament into the cache.
+     */
+    open suspend fun patchFilament(
+        filamentId: Int,
+        body: PatchFilamentBody,
+    ): SpoolmanOutcome<SpoolmanFilament> {
+        val api = cachedApi ?: return urlNotConfigured()
+        val current = _filaments.value.find { it.id == filamentId }
+        val sparse = if (current == null) body else sparseDiff(current, body)
+        if (current != null && sparse.isEmpty()) {
+            return SpoolmanOutcome.Success(current)
+        }
+        return performHttp("patchFilament") { api.patchFilament(filamentId, sparse) }
+            .also { o ->
+                if (o is SpoolmanOutcome.Success) {
+                    replaceFilamentInCache(o.data)
+                    refreshAfterWrite()
+                }
+            }
+    }
+
+    /**
+     * Existing-filament path (Q-U8-12=A). Skips the matcher / no-filament POST.
+     *   1. Fresh getFilament (defensive — cache may be stale).
+     *   2. If overrides differ from stored → patchFilament (idempotency-skipped if equal).
+     *   3. createSpool (filament_id) — caller appends UID via appendCardUidToSpool.
+     */
+    open suspend fun createSpoolForExistingFilament(
+        filamentId: Int,
+        expanderOverrides: ExpanderOverrides,
+    ): SpoolmanOutcome<SpoolmanSpool> {
+        val api = cachedApi ?: return urlNotConfigured()
+        return performHttp("getFilament") { api.getFilament(filamentId) }
+            .flatMap { filament -> applyOverridesIfNeeded(filament, expanderOverrides) }
+            .flatMap { filament -> createSpoolStep(api, filament) }
+            .also { outcome ->
+                if (outcome is SpoolmanOutcome.Success) {
+                    prependSpool(outcome.data)
+                    refreshAfterWrite()
+                }
+            }
+    }
+
+    private suspend fun applyOverridesIfNeeded(
+        filament: SpoolmanFilament,
+        overrides: ExpanderOverrides,
+    ): SpoolmanOutcome<SpoolmanFilament> {
+        val body = PatchFilamentBody(
+            density = overrides.density,
+            diameter = overrides.diameter,
+            weight = overrides.weight,
+            spool_weight = overrides.spoolWeight,
+            price = overrides.price,
+        )
+        if (body.isEmpty()) return SpoolmanOutcome.Success(filament)
+        return patchFilament(filament.id, body)
+    }
+
+    private fun sparseDiff(
+        current: SpoolmanFilament,
+        body: PatchFilamentBody,
+    ): PatchFilamentBody = PatchFilamentBody(
+        name = body.name?.takeIf { it != current.name },
+        settings_extruder_temp = body.settings_extruder_temp?.takeIf { it != current.settings_extruder_temp },
+        settings_bed_temp = body.settings_bed_temp?.takeIf { it != current.settings_bed_temp },
+        density = body.density?.takeIf { it != current.density },
+        diameter = body.diameter?.takeIf { it != current.diameter },
+        weight = body.weight?.takeIf { it != current.weight },
+        spool_weight = body.spool_weight?.takeIf { it != current.spool_weight },
+        price = body.price?.takeIf { it != current.price },
+        extra = body.extra?.takeIf { it != current.extra },
+    )
+
+    private fun PatchFilamentBody.isEmpty(): Boolean =
+        name == null && settings_extruder_temp == null && settings_bed_temp == null &&
+            density == null && diameter == null && weight == null &&
+            spool_weight == null && price == null && extra == null
+
     open suspend fun appendCardUidToSpool(spoolId: Int, uid: CardUid): SpoolmanOutcome<SpoolmanSpool> {
         if (uid.hex.isEmpty()) return invalidArg("uid is empty")
         val api = cachedApi ?: return urlNotConfigured()
@@ -123,7 +207,10 @@ open class SpoolmanRepository @Inject constructor(
                     performHttp("patchSpool") {
                         api.patchSpool(spoolId, SpoolPatchBody(extra = newExtra))
                     }.also { o ->
-                        if (o is SpoolmanOutcome.Success) replaceSpoolInCache(o.data)
+                        if (o is SpoolmanOutcome.Success) {
+                            replaceSpoolInCache(o.data)
+                            refreshAfterWrite()
+                        }
                     }
                 }
             }
@@ -146,7 +233,10 @@ open class SpoolmanRepository @Inject constructor(
                     performHttp("patchSpool") {
                         api.patchSpool(spoolId, SpoolPatchBody(extra = newExtra))
                     }.also { o ->
-                        if (o is SpoolmanOutcome.Success) replaceSpoolInCache(o.data)
+                        if (o is SpoolmanOutcome.Success) {
+                            replaceSpoolInCache(o.data)
+                            refreshAfterWrite()
+                        }
                     }
                 }
             }
@@ -190,6 +280,16 @@ open class SpoolmanRepository @Inject constructor(
      * keeps spool-creation honest: it never lies about a UID it doesn't yet
      * know about.
      */
+    /**
+     * Fire-and-forget refresh after a successful Spoolman mutation. Keeps
+     * vendors/filaments/spools caches fresh so derived flows (e.g.
+     * MaterialBrandRepository.brands/materials) reflect any side effects
+     * the server made — without coupling write success to refresh success.
+     */
+    private fun refreshAfterWrite() {
+        scope.launch { runCatching { refresh() } }
+    }
+
     open suspend fun createSpoolForNewFilament(req: NewFilamentRequest): SpoolmanOutcome<SpoolmanSpool> {
         val vendorName = req.vendorName.trim().takeIf { it.isNotEmpty() }
             ?: return invalidArg("vendorName is empty")
@@ -200,7 +300,12 @@ open class SpoolmanRepository @Inject constructor(
         return resolveOrCreateVendor(api, vendorName)
             .flatMap { vendor -> resolveOrCreateFilament(api, vendor, materialName, req) }
             .flatMap { filament -> createSpoolStep(api, filament) }
-            .also { outcome -> if (outcome is SpoolmanOutcome.Success) prependSpool(outcome.data) }
+            .also { outcome ->
+                if (outcome is SpoolmanOutcome.Success) {
+                    prependSpool(outcome.data)
+                    refreshAfterWrite()
+                }
+            }
     }
 
     /**
@@ -355,9 +460,14 @@ open class SpoolmanRepository @Inject constructor(
                                 color_hex = req.colorHex,
                                 settings_extruder_temp = req.tempRanges.extruderMin,
                                 settings_bed_temp = req.tempRanges.bedMin,
-                                density = densityFor(materialName),
-                                diameter = DEFAULT_DIAMETER_MM,
-                                weight = DEFAULT_WEIGHT_G,
+                                density = req.expanderOverrides.density
+                                    ?: MaterialPresetSource.densityFor(materialName),
+                                diameter = req.expanderOverrides.diameter
+                                    ?: MaterialPresetSource.DEFAULT_DIAMETER_MM,
+                                weight = req.expanderOverrides.weight
+                                    ?: MaterialPresetSource.DEFAULT_FULL_SPOOL_WEIGHT_G,
+                                spool_weight = req.expanderOverrides.spoolWeight,
+                                price = req.expanderOverrides.price,
                                 extra = extras,
                             ),
                         )
@@ -448,6 +558,10 @@ open class SpoolmanRepository @Inject constructor(
         _filaments.value = listOf(filament) + _filaments.value.filter { it.id != filament.id }
     }
 
+    private fun replaceFilamentInCache(filament: SpoolmanFilament) {
+        _filaments.value = _filaments.value.map { if (it.id == filament.id) filament else it }
+    }
+
     /**
      * Trims a variant string and treats blank as null. Used in the filament
      * matcher so `null`, `""`, and `"  "` all collapse to the same bucket.
@@ -471,30 +585,6 @@ open class SpoolmanRepository @Inject constructor(
 
     private companion object {
         val GSON = Gson()
-
-        // 3D-printing consumer standard. Bambu, Prusa, etc. all ship 1.75 mm.
-        // Spoolman requires diameter > 0; user can edit in Spoolman UI later.
-        const val DEFAULT_DIAMETER_MM: Float = 1.75f
-
-        // 1 kg net weight — typical consumer spool. User can correct in
-        // Spoolman web UI for partial / 750 g / 5 kg / etc. Surfacing in the
-        // app form is U8/U9 scope.
-        const val DEFAULT_WEIGHT_G: Float = 1000f
-
-        // g/cm³ averages by material. Required by Spoolman (gt=0). Sourced
-        // from filament-vendor datasheets — close enough for spool tracking.
-        fun densityFor(materialName: String): Float = when (materialName.uppercase()) {
-            "PLA" -> 1.24f
-            "ABS" -> 1.04f
-            "PETG", "PET" -> 1.27f
-            "TPU" -> 1.20f
-            "ASA" -> 1.07f
-            "PC" -> 1.20f
-            "NYLON", "PA" -> 1.14f
-            "PVA" -> 1.19f
-            "HIPS" -> 1.04f
-            else -> 1.24f
-        }
     }
 }
 

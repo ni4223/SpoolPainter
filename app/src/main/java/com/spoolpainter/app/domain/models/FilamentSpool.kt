@@ -1,6 +1,6 @@
 package com.spoolpainter.app.domain.models
 
-import com.spoolpainter.app.data.local.MaterialDatabase
+import com.spoolpainter.app.data.local.presets.MaterialPresetSource
 
 data class FilamentSpool(
     val id: Int? = null,
@@ -25,7 +25,7 @@ data class FilamentSpool(
     companion object {
         fun fromSpoolman(spool: SpoolmanSpool): FilamentSpool {
             val material = spool.filament.material ?: "Unknown"
-            val materialData = MaterialDatabase.getMaterial(material)
+            val materialData = MaterialPresetSource.lookup(material)
             val extruderTemp = spool.filament.settings_extruder_temp
             val bedTemp = spool.filament.settings_bed_temp
             

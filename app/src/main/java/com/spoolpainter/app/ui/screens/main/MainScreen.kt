@@ -5,13 +5,15 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -21,11 +23,13 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -34,6 +38,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -58,6 +63,9 @@ fun MainScreen(
     val customMaterial by viewModel.customMaterial.collectAsStateWithLifecycle()
     val customBrand by viewModel.customBrand.collectAsStateWithLifecycle()
     val canWrite by viewModel.canWrite.collectAsStateWithLifecycle()
+    val filaments by viewModel.filaments.collectAsStateWithLifecycle()
+    val materials by viewModel.materials.collectAsStateWithLifecycle()
+    val brands by viewModel.brands.collectAsStateWithLifecycle()
     val repairConfirmState by repairConfirmViewModel.uiState.collectAsStateWithLifecycle()
     val pairAnotherState by remember(state.activeFlow) {
         derivedStateOf {
@@ -129,6 +137,9 @@ fun MainScreen(
                 customBrand = customBrand,
                 enabled = state.activeFlow == ActiveFlow.Idle,
                 canSave = canWrite,
+                filaments = filaments,
+                materials = materials,
+                brands = brands,
                 onChange = { change ->
                     when (change) {
                         is FormChange.MaterialPicked -> viewModel.onMaterialPicked(change.value)
@@ -138,6 +149,14 @@ fun MainScreen(
                         is FormChange.ColorHex -> viewModel.onColorHexChanged(change.value)
                         is FormChange.Variant -> viewModel.onVariantChanged(change.value)
                         is FormChange.TempRangesChanged -> viewModel.onTempRangesChanged(change.value)
+                        is FormChange.FilamentSelected -> viewModel.onFilamentSelected(change.value)
+                        is FormChange.FilamentSectionToggled -> viewModel.onFilamentSectionToggled()
+                        is FormChange.MoreDetailsToggled -> viewModel.onMoreDetailsToggled()
+                        is FormChange.EmptySpoolWeightChanged -> viewModel.onEmptySpoolWeightChanged(change.value)
+                        is FormChange.PriceChanged -> viewModel.onPriceChanged(change.value)
+                        is FormChange.FullSpoolWeightChanged -> viewModel.onFullSpoolWeightChanged(change.value)
+                        is FormChange.DiameterChanged -> viewModel.onDiameterChanged(change.value)
+                        is FormChange.DensityChanged -> viewModel.onDensityChanged(change.value)
                     }
                 },
                 onSave = viewModel::onWriteTapped,
@@ -203,7 +222,7 @@ private fun BannerSlot(banner: BannerState) {
                 ),
             ) {
                 Text(
-                    text = "Spoolman unreachable" + (banner.lastError?.let { " — $it" } ?: ""),
+                    text = "Spoolman unreachable" + (banner.lastError?.let { ": $it" } ?: ""),
                     modifier = Modifier.padding(12.dp),
                     style = MaterialTheme.typography.bodyMedium,
                 )
@@ -282,8 +301,35 @@ internal fun SpoolmanDropdown(
             readOnly = true,
             enabled = enabled,
             label = { Text("Spool") },
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            trailingIcon = {
+                if (selected != null && enabled) {
+                    IconButton(
+                        onClick = {
+                            expanded = false
+                            onSelect(null)
+                        },
+                        modifier = Modifier
+                            .size(40.dp)
+                            .testTag("main-spoolman-dropdown-clear"),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Clear,
+                            contentDescription = "Clear spool selection",
+                            modifier = Modifier.size(24.dp),
+                            tint = MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
+                } else {
+                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
+                }
+            },
             modifier = Modifier.fillMaxWidth().menuAnchor(),
+            textStyle = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+            ),
+            shape = RoundedCornerShape(20.dp),
         )
         if (enabled) {
             // ExposedDropdownMenu (not bare DropdownMenu) auto-scrolls past
@@ -293,14 +339,8 @@ internal fun SpoolmanDropdown(
             ExposedDropdownMenu(
                 expanded = expanded,
                 onDismissRequest = { expanded = false },
+                modifier = Modifier.clip(RoundedCornerShape(20.dp)),
             ) {
-                DropdownMenuItem(
-                    text = { Text("Clear selection") },
-                    onClick = {
-                        onSelect(null)
-                        expanded = false
-                    },
-                )
                 visibleSpools.forEach { spool ->
                     DropdownMenuItem(
                         text = { Text(spoolDisplayName(spool)) },

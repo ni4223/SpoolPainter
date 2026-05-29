@@ -5,5 +5,6 @@ data class Material(
     val defaultMinTemp: Int,
     val defaultMaxTemp: Int,
     val defaultBedMinTemp: Int,
-    val defaultBedMaxTemp: Int
+    val defaultBedMaxTemp: Int,
+    val density: Float? = null,
 )

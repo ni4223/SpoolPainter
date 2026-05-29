@@ -2,12 +2,14 @@ package com.spoolpainter.app.ui.screens.main
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.spoolpainter.app.data.local.MaterialBrandRepository
 import com.spoolpainter.app.data.local.SettingsRepository
 import com.spoolpainter.app.data.remote.spoolman.SpoolmanOutcome
 import com.spoolpainter.app.data.remote.spoolman.SpoolmanRepository
 import com.spoolpainter.app.data.remote.spoolman.UrlNotConfiguredException
 import com.spoolpainter.app.domain.models.Brand
 import com.spoolpainter.app.domain.models.Material
+import com.spoolpainter.app.domain.models.SpoolmanFilament
 import com.spoolpainter.app.domain.models.SpoolmanSpool
 import com.spoolpainter.app.domain.models.TempRanges
 import com.spoolpainter.app.domain.primitives.TagClassification
@@ -51,6 +53,7 @@ class MainViewModel @Inject constructor(
     private val nfc: NfcRepository,
     spoolman: SpoolmanRepository,
     settings: SettingsRepository,
+    private val materialBrandRepo: MaterialBrandRepository,
     private val readAndPair: ReadAndPairUseCase,
     private val createAndPair: CreateAndPairUseCase,
     private val twoTag: TwoTagUseCase,
@@ -58,6 +61,15 @@ class MainViewModel @Inject constructor(
     private val rawWrite: RawWriteUseCase,
     private val vendorUidOnlyPair: VendorUidOnlyPairUseCase,
 ) : ViewModel() {
+
+    /** All filaments from Spoolman. Filament picker reads from this. */
+    val filaments: StateFlow<List<SpoolmanFilament>> = spoolman.filaments
+
+    /** Merged preset + user-added materials (case-insensitive dedup, presets first). */
+    val materials: StateFlow<List<Material>> = materialBrandRepo.materials
+
+    /** Merged preset + Spoolman-vendor + user-added brands (case-insensitive dedup, presets first). */
+    val brands: StateFlow<List<String>> = materialBrandRepo.brands
 
     private val _state = MutableStateFlow(MainUiState())
     val state: StateFlow<MainUiState> = _state.asStateFlow()
@@ -249,7 +261,7 @@ class MainViewModel @Inject constructor(
             if (result == null) {
                 nfc.disarm()
                 _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
-                _effects.trySend(UiEffect.ShowSnackbar("No tag tapped — try again"))
+                _effects.trySend(UiEffect.ShowSnackbar("No tag tapped. Try again."))
             } else {
                 applyResult(result)
             }
@@ -398,12 +410,89 @@ class MainViewModel @Inject constructor(
         _customBrand.value = ""
     }
 
+    /**
+     * U8-Δ-1 — pick a filament from the hidden "Filament ▾" expander. Mutex
+     * with selectedSpoolId (Q-U8-7=A): on non-null pick, prefill the form
+     * from the filament's metadata (material/vendor/color/temps + 5 expander
+     * fields) and clear selectedSpoolId. Toggle states are preserved.
+     */
+    fun onFilamentSelected(filament: SpoolmanFilament?) {
+        if (filament == null) {
+            // X clears the form back to defaults — the filament-prefilled
+            // values are orphaned once the link is removed. Expander toggle
+            // states are preserved so the user stays on the section they
+            // were just looking at (would be jarring for the section to
+            // collapse out from under them).
+            _state.update { current ->
+                current.copy(
+                    form = FormState(
+                        rawWriteMode = current.form.rawWriteMode,
+                        filamentSectionExpanded = current.form.filamentSectionExpanded,
+                        moreDetailsExpanded = current.form.moreDetailsExpanded,
+                    ),
+                    spoolman = current.spoolman.copy(selectedSpoolId = null),
+                    ambiguity = null,
+                    observedTagKind = ObservedTagKind.None,
+                    observedTagUid = null,
+                )
+            }
+            _customMaterial.value = ""
+            _customBrand.value = ""
+            return
+        }
+        _state.update { current ->
+            val prefilled = FormMapping.fromFilament(filament, current.form.rawWriteMode).copy(
+                cardUid = current.form.cardUid,
+                filamentSectionExpanded = current.form.filamentSectionExpanded,
+                moreDetailsExpanded = current.form.moreDetailsExpanded,
+            )
+            current.copy(
+                form = prefilled,
+                spoolman = current.spoolman.copy(selectedSpoolId = null),
+                ambiguity = null,
+            )
+        }
+        _customMaterial.value = ""
+        _customBrand.value = ""
+    }
+
+    fun onFilamentSectionToggled() {
+        _state.update { it.copy(form = it.form.copy(filamentSectionExpanded = !it.form.filamentSectionExpanded)) }
+    }
+
+    fun onMoreDetailsToggled() {
+        _state.update { it.copy(form = it.form.copy(moreDetailsExpanded = !it.form.moreDetailsExpanded)) }
+    }
+
+    fun onEmptySpoolWeightChanged(s: String) = updateFloatField(s) { form, v -> form.copy(emptySpoolWeightG = v) }
+    fun onPriceChanged(s: String) = updateFloatField(s) { form, v -> form.copy(priceMajor = v) }
+    fun onFullSpoolWeightChanged(s: String) = updateFloatField(s) { form, v -> form.copy(fullSpoolWeightG = v) }
+    fun onDiameterChanged(s: String) = updateFloatField(s) { form, v -> form.copy(diameterMm = v) }
+    fun onDensityChanged(s: String) = updateFloatField(s) { form, v -> form.copy(densityGPerCm3 = v) }
+
+    /**
+     * Empty string -> null override; non-numeric -> keep prior value (no
+     * surprise reset). Valid decimal -> Float.
+     */
+    private inline fun updateFloatField(input: String, set: (FormState, Float?) -> FormState) {
+        if (input.isEmpty()) {
+            _state.update { it.copy(form = set(it.form, null)) }
+            return
+        }
+        val parsed = input.toFloatOrNull() ?: return
+        _state.update { it.copy(form = set(it.form, parsed)) }
+    }
+
+
     fun onMaterialPicked(value: Material?) {
         _state.update { it.copy(form = it.form.copy(material = value)) }
         if (value?.name != "Other") {
             _customMaterial.value = ""
         }
-        // When picking a known material, also seed the temperature defaults.
+        // When picking a known material, also seed the temperature defaults
+        // and the per-material density override (PLA 1.24 / ABS 1.04 / etc.).
+        // If the preset has no density (e.g., "Other"), keep whatever the
+        // user has already typed so we don't clobber a manual entry.
         if (value != null && value.name != "Other") {
             _state.update {
                 it.copy(
@@ -414,6 +503,7 @@ class MainViewModel @Inject constructor(
                             bedMin = value.defaultBedMinTemp,
                             bedMax = value.defaultBedMaxTemp,
                         ),
+                        densityGPerCm3 = value.density ?: it.form.densityGPerCm3,
                     ),
                 )
             }
@@ -586,7 +676,7 @@ class MainViewModel @Inject constructor(
             is CreateAndPairResult.NfcFailed -> {
                 _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
                 val msg = if (result.reason.contains("vendor-tag", ignoreCase = true)) {
-                    "Vendor tag — write blocked"
+                    "Vendor tag. Write blocked."
                 } else {
                     "NFC error: ${result.reason}"
                 }
@@ -600,7 +690,7 @@ class MainViewModel @Inject constructor(
                 // misleading. Only show the snackbar for the genuine timeout
                 // / no-tap path.
                 if (!result.reason.startsWith("repair declined", ignoreCase = true)) {
-                    _effects.trySend(UiEffect.ShowSnackbar("No tag tapped — try again"))
+                    _effects.trySend(UiEffect.ShowSnackbar("No tag tapped. Try again."))
                 }
             }
         }
@@ -648,7 +738,7 @@ class MainViewModel @Inject constructor(
                 val targetSpoolId = state.form.selectedSpoolId
                 if (targetSpoolId == null) {
                     _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
-                    _effects.trySend(UiEffect.ShowSnackbar("Vendor tag — pick a spool first."))
+                    _effects.trySend(UiEffect.ShowSnackbar("Vendor tag. Pick a spool first."))
                 } else {
                     _state.update {
                         it.copy(
@@ -703,7 +793,7 @@ class MainViewModel @Inject constructor(
                 _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
                 _effects.trySend(
                     UiEffect.ShowSnackbar(
-                        "Partial state in Spoolman — UID was removed from spool " +
+                        "Partial state in Spoolman. UID was removed from spool " +
                             "#${result.partiallyModifiedSpoolId}; restore manually if needed",
                     ),
                 )
@@ -736,7 +826,7 @@ class MainViewModel @Inject constructor(
             }
             is RawWriteResult.VendorTagRejected -> {
                 _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
-                _effects.trySend(UiEffect.ShowSnackbar("Vendor tag — content unreadable"))
+                _effects.trySend(UiEffect.ShowSnackbar("Vendor tag. Content unreadable."))
             }
             is RawWriteResult.VerifyFailed -> {
                 _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
@@ -749,7 +839,7 @@ class MainViewModel @Inject constructor(
             is RawWriteResult.Cancelled -> {
                 _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
                 viewModelScope.launch { nfc.disarm() }
-                _effects.trySend(UiEffect.ShowSnackbar("No tag tapped — try again"))
+                _effects.trySend(UiEffect.ShowSnackbar("No tag tapped. Try again."))
             }
         }
     }
@@ -795,7 +885,7 @@ class MainViewModel @Inject constructor(
                 ) {
                     _effects.trySend(UiEffect.ShowSnackbar("Cancelled (${result.reason})"))
                 } else if (result.reason == "timeout") {
-                    _effects.trySend(UiEffect.ShowSnackbar("No tag tapped — try again"))
+                    _effects.trySend(UiEffect.ShowSnackbar("No tag tapped. Try again."))
                 }
             }
         }

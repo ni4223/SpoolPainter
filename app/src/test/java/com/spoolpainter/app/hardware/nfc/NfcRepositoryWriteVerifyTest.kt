@@ -39,30 +39,39 @@ class NfcRepositoryWriteVerifyTest {
     }
 
     @Test
-    fun `write rejects vendor-classified tag with vendor-tag protected error`() = runTest {
+    fun `write proceeds on text_plain tag (no software vendor block)`() = runTest {
+        // Old behaviour: software classifier rejected non-OpenSpool NDEF as
+        // "vendor". New behaviour: classifier returns Blank, write proceeds.
+        // The chip's own write protection is the only gate — we do NOT
+        // pre-block at the software layer (that misclassified our own
+        // partial writes as vendor and blocked legitimate rewrites).
         val wrapper = FakeNfcAdapterWrapper()
-        wrapper.simulateRead(sampleUid(), textPlainRecords("vendor-marker"))
+        wrapper.simulateRead(sampleUid(), textPlainRecords("not openspool"))
+        wrapper.simulateReadbackEchoesWritten()
         val repo = newRepository(wrapper = wrapper)
 
         repo.arm(NfcIntent.Write(samplePayload()))
         repo.handleTag(makeTag())
 
-        val err = repo.state.value as NfcResult.Error
-        assertTrue("reason: ${err.reason}", err.reason.startsWith("vendor-tag protected (FR-4.7)"))
-        assertEquals(0, wrapper.writeCallCount)
+        val state = repo.state.value as NfcResult.Success
+        assertEquals(TagClassification.OpenSpool(samplePayload()), state.classification)
+        assertEquals(1, wrapper.writeCallCount)
     }
 
     @Test
-    fun `write rejects vendor-classified malformed-OpenSpool tag`() = runTest {
+    fun `write proceeds on malformed-OpenSpool tag (recover from prior partial write)`() = runTest {
+        // A tag whose OpenSpool JSON didn't parse is most often our own
+        // write that got interrupted. Allow re-writing instead of blocking.
         val wrapper = FakeNfcAdapterWrapper()
         wrapper.simulateRead(sampleUid(), malformedOpenSpoolRecords("{bad"))
+        wrapper.simulateReadbackEchoesWritten()
         val repo = newRepository(wrapper = wrapper)
 
         repo.arm(NfcIntent.Write(samplePayload()))
         repo.handleTag(makeTag())
 
-        val err = repo.state.value as NfcResult.Error
-        assertTrue(err.reason.startsWith("vendor-tag protected (FR-4.7)"))
+        val state = repo.state.value as NfcResult.Success
+        assertEquals(1, wrapper.writeCallCount)
     }
 
     @Test

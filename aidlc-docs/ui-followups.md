@@ -303,6 +303,60 @@ of the phone and try again."
 
 ---
 
+## UI-13 — Update existing filament metadata when user edits prefilled fields
+
+**State**: open
+**Found in**: U8 install-time UX feedback, 2026-05-28.
+**Routing**: new unit (post-U10) or fold into U10 release polish.
+
+Today, when the user picks a spool from the dropdown:
+- Form prefills from Spoolman, including the 5 spool-metadata fields
+  (density / diameter / weight / spool weight / price) pulled from the
+  parent filament record.
+- If the user edits any of those fields and hits Save & Write, the edits
+  are silently ignored — the existing-spool path only appends UID, never
+  PATCHes the filament.
+
+User direction (2026-05-28): *"if user have entered data in spoolman we
+fill it, and when they change anything and click save again, we update
+it (let add update feature for next stage)"*.
+
+**Scope clarification (2026-05-28)**: spool↔filament linking stays as-is
+(no change to which filament a spool belongs to via this flow). Updates
+target only the metadata fields stored on the parent filament:
+- Spool-metadata expander: density, diameter, weight, spool weight, price
+- Temperature ranges: extruder min/max, bed min/max
+- Color hex
+- Variant (extra.variant)
+
+Material name + brand/vendor are NOT touched in this stage — those
+reshape filament identity and need their own UX (likely "create new
+filament instead?" branching).
+
+**Fix scope** (next stage):
+1. Snapshot the prefilled spool-metadata values when the spool is picked
+   (e.g. `MainUiState.SpoolmanState.prefilledMetadata: ExpanderOverrides?`).
+2. On Save & Write with `selectedSpoolId != null`, diff the form's current
+   metadata against that snapshot.
+3. If anything changed → confirmation dialog: *"Update [filament name] in
+   Spoolman? This affects all spools sharing this filament."* Yes →
+   `SpoolmanRepository.patchFilament(filamentId, sparseDiff)` before the
+   tag write. No → proceed with append-only (current behaviour).
+4. Mention "shared across all spools of this filament" because Spoolman
+   stores these on the filament, not the spool — users may not realise.
+
+**Files**:
+- `MainUiState.kt` — add prefilled-metadata snapshot
+- `MainViewModel.onSpoolSelected` — capture snapshot
+- `MainViewModel.onWriteTapped` — diff + dispatch
+- New confirmation sheet (mirror `RepairConfirmSheet` shape)
+- `CreateAndPairUseCase` — accept optional pre-write filament PATCH payload
+
+Note: `SpoolmanRepository.patchFilament` is already implemented (U8 §2.14)
+and idempotency-checked, so the repository layer is ready.
+
+---
+
 ## UI-03 — "Paired and written" snackbar covered by PairAnotherTagSheet
 
 **State**: fixed (this session)

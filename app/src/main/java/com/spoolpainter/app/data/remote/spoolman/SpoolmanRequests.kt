@@ -11,15 +11,46 @@ data class CreateFilamentRequest(
     val color_hex: String,
     val settings_extruder_temp: Int?,
     val settings_bed_temp: Int?,
-    // Spoolman requires both, gt=0. Not surfaced in v1 UI; defaults are
-    // material-derived (density) + universal consumer standard (diameter).
+    // Spoolman requires density / diameter / weight (gt=0). Defaults computed
+    // at call site from material map + per-form expander overrides.
     val density: Float,
     val diameter: Float,
-    // Net weight of a full spool in grams. Defaulted at the call site so a
-    // fresh pairing yields a sensible "remaining weight" without UI input.
     val weight: Float,
+    // Optional expander overrides (Q-U8-8=A: null fields omitted by Gson).
+    val spool_weight: Float? = null,
+    val price: Float? = null,
     val extra: Map<String, String>? = null,
 )
+
+data class PatchFilamentBody(
+    val name: String? = null,
+    val settings_extruder_temp: Int? = null,
+    val settings_bed_temp: Int? = null,
+    val density: Float? = null,
+    val diameter: Float? = null,
+    val weight: Float? = null,
+    val spool_weight: Float? = null,
+    val price: Float? = null,
+    val extra: Map<String, String>? = null,
+)
+
+/**
+ * Five expander fields routed from the form to either
+ * [CreateFilamentRequest] (new-filament path) or [PatchFilamentBody]
+ * (existing-filament path). Null = "no override; use stored value or
+ * call-site default."
+ */
+data class ExpanderOverrides(
+    val density: Float? = null,
+    val diameter: Float? = null,
+    val weight: Float? = null,
+    val spoolWeight: Float? = null,
+    val price: Float? = null,
+) {
+    companion object {
+        val EMPTY = ExpanderOverrides()
+    }
+}
 
 data class CreateSpoolRequest(
     val filament_id: Int,

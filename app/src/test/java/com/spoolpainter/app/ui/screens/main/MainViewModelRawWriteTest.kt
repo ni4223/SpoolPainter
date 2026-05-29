@@ -46,10 +46,13 @@ class MainViewModelRawWriteTest {
 
     private val sampleUid = CardUid("AABBCCDD")
 
+    private val materialBrandRepo = com.spoolpainter.app.data.local.FakeMaterialBrandRepository()
+
     private fun newVm(): MainViewModel = MainViewModel(
         nfc = nfc,
         spoolman = spoolman,
         settings = settings,
+        materialBrandRepo = materialBrandRepo,
         readAndPair = ReadAndPairUseCase(nfc, spoolman),
         createAndPair = createAndPair,
         twoTag = twoTag,

@@ -52,16 +52,19 @@ class NfcRepositoryStandaloneVerifyTest {
     }
 
     @Test
-    fun `arm Verify against vendor-classified tag returns vendor-protected error`() = runTest {
+    fun `arm Verify against text_plain tag returns verify-mismatch (no vendor block)`() = runTest {
+        // Old behaviour: software classifier flagged non-OpenSpool NDEF as
+        // "vendor" and short-circuited verify. New behaviour: classifier
+        // returns Blank, verify runs and reports content mismatch.
         val wrapper = FakeNfcAdapterWrapper()
-        wrapper.simulateRead(sampleUid(), textPlainRecords("vendor"))
+        wrapper.simulateRead(sampleUid(), textPlainRecords("not openspool"))
         val repo = newRepository(wrapper = wrapper)
 
         repo.arm(NfcIntent.Verify(samplePayload()))
         repo.handleTag(makeTag())
 
         val state = repo.state.value as NfcResult.Error
-        assertTrue(state.reason.startsWith("vendor-tag protected (FR-4.7)"))
+        assertEquals("verify mismatch", state.reason)
     }
 
     @Test

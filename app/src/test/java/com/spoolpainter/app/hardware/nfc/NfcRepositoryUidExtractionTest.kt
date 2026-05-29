@@ -25,7 +25,7 @@ class NfcRepositoryUidExtractionTest {
         repo.handleTag(makeTag())
 
         val err = repo.state.value as NfcResult.Error
-        assertEquals("zero-length UID — non-NFC-A tag?", err.reason)
+        assertEquals("zero-length UID, non-NFC-A tag?", err.reason)
         assertTrue(err.cause is IllegalStateException)
     }
 

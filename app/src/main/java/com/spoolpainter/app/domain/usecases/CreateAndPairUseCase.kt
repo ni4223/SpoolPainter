@@ -8,6 +8,7 @@ import com.spoolpainter.app.domain.primitives.NfcIntent
 import com.spoolpainter.app.domain.primitives.NfcResult
 import com.spoolpainter.app.hardware.nfc.NfcRepository
 import com.spoolpainter.app.ui.screens.main.FormState
+import com.spoolpainter.app.ui.screens.main.toExpanderOverrides
 import kotlinx.coroutines.flow.first
 import javax.inject.Inject
 
@@ -59,50 +60,70 @@ open class CreateAndPairUseCase @Inject constructor(
         //    a stray tap is recoverable.
         val payload = makePayload(snapshot, spoolId = spoolId)
         val writeResult = armWriteAndAwait(payload)
-        val tappedUid = when (writeResult) {
+
+        // The UID we observed during the tap, regardless of write outcome.
+        // For Verify/Failed paths this lets us still commit the spool↔UID
+        // link to Spoolman so the user's pairing is preserved even when the
+        // tag bytes are messy (interrupted write, verify mismatch, etc.).
+        val observedUid: CardUid? = when (writeResult) {
             is WriteResult.Success -> writeResult.uid
-            is WriteResult.Verify -> return CreateAndPairResult.VerifyFailed(
+            is WriteResult.Verify -> writeResult.uid
+            is WriteResult.Failed -> writeResult.uid
+        }
+
+        // 3. Best-effort: commit UID to Spoolman BEFORE deciding the final
+        //    outcome. Skip if no UID was seen (tap never landed) or if a
+        //    move-on-bind decline aborts the flow.
+        if (observedUid != null && observedUid.hex.isNotEmpty()) {
+            // Move-on-bind precheck (S-5.1 / S-5.2): runs BEFORE the append
+            // so a UID currently owned by another spool is moved (or the
+            // user declines) atomically. Multi-source conflicts (UID on 2+
+            // spools) are swept in one confirmation.
+            when (val mob = moveOnBind.invoke(observedUid, spoolId)) {
+                is MoveOnBindUseCase.Outcome.Proceed,
+                is MoveOnBindUseCase.Outcome.Moved -> Unit
+                is MoveOnBindUseCase.Outcome.Declined ->
+                    return CreateAndPairResult.Cancelled(
+                        "repair declined, UID still on the originally-paired spool",
+                    )
+                is MoveOnBindUseCase.Outcome.Failed ->
+                    return CreateAndPairResult.SpoolmanFailed(
+                        observedUid,
+                        SpoolmanOutcome.ParseError(IllegalStateException(mob.reason)),
+                    )
+            }
+            // PATCH the spool to record the UID we just tapped. Idempotent.
+            // We do this even on Verify/Failed write outcomes so the user
+            // doesn't end up with an orphan spool when a write dies mid-
+            // tag. If the append itself fails, fall through to the write
+            // outcome — the user can retry.
+            when (val append = spoolman.appendCardUidToSpool(spoolId, observedUid)) {
+                is SpoolmanOutcome.Success -> Unit
+                else -> if (writeResult is WriteResult.Success) {
+                    return CreateAndPairResult.SpoolmanFailed(observedUid, append)
+                }
+            }
+        }
+
+        // 4. Translate the write outcome into the final result. Spoolman is
+        //    already up to date (or we tried) at this point.
+        return when (writeResult) {
+            is WriteResult.Success -> CreateAndPairResult.Success.WrittenAndPaired(
+                spoolId = spoolId,
+                uid = writeResult.uid,
+                isNewSpool = isNewSpool,
+            )
+            is WriteResult.Verify -> CreateAndPairResult.VerifyFailed(
                 spoolId = spoolId,
                 uid = writeResult.uid,
                 isNewSpool = isNewSpool,
                 cause = writeResult.reason,
             )
-            is WriteResult.Failed -> return CreateAndPairResult.NfcFailed(
-                snapshot.form.cardUid,
+            is WriteResult.Failed -> CreateAndPairResult.NfcFailed(
+                writeResult.uid ?: snapshot.form.cardUid,
                 writeResult.reason,
             )
         }
-
-        // 3. Move-on-bind precheck (S-5.1 / S-5.2): runs BEFORE the append so
-        //    a UID currently owned by another spool is moved (or the user
-        //    declines) atomically. Multi-source conflicts (UID on 2+ spools)
-        //    are swept in one confirmation — the same flow handles both
-        //    single- and multi-source cases.
-        when (val mob = moveOnBind.invoke(tappedUid, spoolId)) {
-            is MoveOnBindUseCase.Outcome.Proceed,
-            is MoveOnBindUseCase.Outcome.Moved -> Unit
-            is MoveOnBindUseCase.Outcome.Declined ->
-                return CreateAndPairResult.Cancelled(
-                    "repair declined — UID still on the originally-paired spool",
-                )
-            is MoveOnBindUseCase.Outcome.Failed ->
-                return CreateAndPairResult.SpoolmanFailed(
-                    tappedUid,
-                    SpoolmanOutcome.ParseError(IllegalStateException(mob.reason)),
-                )
-        }
-
-        // 4. PATCH the spool to record the UID we just tapped. Idempotent.
-        when (val append = spoolman.appendCardUidToSpool(spoolId, tappedUid)) {
-            is SpoolmanOutcome.Success -> Unit
-            else -> return CreateAndPairResult.SpoolmanFailed(tappedUid, append)
-        }
-
-        return CreateAndPairResult.Success.WrittenAndPaired(
-            spoolId = spoolId,
-            uid = tappedUid,
-            isNewSpool = isNewSpool,
-        )
     }
 
     private sealed interface ResolvedSpool {
@@ -115,7 +136,15 @@ open class CreateAndPairUseCase @Inject constructor(
         val targetId = snapshot.form.selectedSpoolId
         if (targetId != null) return ResolvedSpool.Existing(targetId)
 
-        val createOutcome = spoolman.createSpoolForNewFilament(newFilamentRequest(snapshot))
+        val filamentId = snapshot.form.selectedFilamentId
+        val createOutcome = if (filamentId != null) {
+            spoolman.createSpoolForExistingFilament(
+                filamentId,
+                snapshot.form.toExpanderOverrides(),
+            )
+        } else {
+            spoolman.createSpoolForNewFilament(newFilamentRequest(snapshot))
+        }
         val newSpool = (createOutcome as? SpoolmanOutcome.Success)?.data
             ?: return ResolvedSpool.Failed(
                 CreateAndPairResult.SpoolmanFailed(snapshot.form.cardUid ?: CardUid(""), createOutcome),
@@ -132,7 +161,7 @@ open class CreateAndPairUseCase @Inject constructor(
     private sealed interface WriteResult {
         data class Success(val uid: CardUid) : WriteResult
         data class Verify(val uid: CardUid, val reason: String) : WriteResult
-        data class Failed(val reason: String) : WriteResult
+        data class Failed(val uid: CardUid?, val reason: String) : WriteResult
     }
 
     /**
@@ -147,7 +176,7 @@ open class CreateAndPairUseCase @Inject constructor(
         return when (outcome) {
             is NfcResult.Success ->
                 if (outcome.uid.hex.isEmpty()) {
-                    WriteResult.Failed("zero-length UID — non-NFC-A tag?")
+                    WriteResult.Failed(null, "zero-length UID, non-NFC-A tag?")
                 } else {
                     WriteResult.Success(outcome.uid)
                 }
@@ -159,9 +188,13 @@ open class CreateAndPairUseCase @Inject constructor(
                     val uid = nfc.lastSeenTag.value?.uid ?: CardUid("")
                     WriteResult.Verify(uid, outcome.reason)
                 } else {
-                    WriteResult.Failed(outcome.reason)
+                    // Tag may have been seen (UID captured in lastSeenTag)
+                    // even when the NDEF write threw — surface it so the
+                    // caller can still commit the spool↔UID link to Spoolman.
+                    val uid = nfc.lastSeenTag.value?.uid?.takeIf { it.hex.isNotEmpty() }
+                    WriteResult.Failed(uid, outcome.reason)
                 }
-            else -> WriteResult.Failed("unexpected write state: $outcome")
+            else -> WriteResult.Failed(null, "unexpected write state: $outcome")
         }
     }
 

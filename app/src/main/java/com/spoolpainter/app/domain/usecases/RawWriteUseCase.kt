@@ -44,7 +44,7 @@ open class RawWriteUseCase @Inject constructor(
         return when (val outcome = awaitTerminalNfc()) {
             is NfcResult.Success ->
                 if (outcome.uid.hex.isEmpty()) {
-                    RawWriteResult.NfcFailed(null, "zero-length UID — non-NFC-A tag?")
+                    RawWriteResult.NfcFailed(null, "zero-length UID, non-NFC-A tag?")
                 } else {
                     RawWriteResult.Success.Written(outcome.uid)
                 }

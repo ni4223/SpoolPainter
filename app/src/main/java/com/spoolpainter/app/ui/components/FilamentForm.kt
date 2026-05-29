@@ -19,6 +19,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.spoolpainter.app.domain.models.Brand
 import com.spoolpainter.app.domain.models.Material
+import com.spoolpainter.app.domain.models.SpoolmanFilament
 import com.spoolpainter.app.domain.models.TempRanges
 import com.spoolpainter.app.ui.screens.main.FormState
 
@@ -35,6 +36,18 @@ sealed interface FormChange {
     data class ColorHex(val value: String?) : FormChange
     data class Variant(val value: String?) : FormChange
     data class TempRangesChanged(val value: TempRanges) : FormChange
+
+    // U8-Δ-1 — filament picker
+    data class FilamentSelected(val value: SpoolmanFilament?) : FormChange
+    data object FilamentSectionToggled : FormChange
+
+    // U8-Δ-2 — More details expander
+    data object MoreDetailsToggled : FormChange
+    data class EmptySpoolWeightChanged(val value: String) : FormChange
+    data class PriceChanged(val value: String) : FormChange
+    data class FullSpoolWeightChanged(val value: String) : FormChange
+    data class DiameterChanged(val value: String) : FormChange
+    data class DensityChanged(val value: String) : FormChange
 }
 
 /**
@@ -50,6 +63,9 @@ fun FilamentForm(
     customBrand: String,
     enabled: Boolean,
     canSave: Boolean,
+    filaments: List<SpoolmanFilament>,
+    materials: List<Material>,
+    brands: List<String>,
     onChange: (FormChange) -> Unit,
     onSave: () -> Unit,
     modifier: Modifier = Modifier,
@@ -61,10 +77,20 @@ fun FilamentForm(
             .testTag("main-filament-form"),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
+        FilamentSectionExpander(
+            filaments = filaments,
+            selectedFilamentId = state.selectedFilamentId,
+            expanded = state.filamentSectionExpanded,
+            enabled = enabled,
+            onToggle = { onChange(FormChange.FilamentSectionToggled) },
+            onSelect = { onChange(FormChange.FilamentSelected(it)) },
+        )
+
         MaterialPicker(
             selected = state.material,
             customName = customMaterial,
             enabled = enabled,
+            materials = materials,
             onSelect = { onChange(FormChange.MaterialPicked(it)) },
             onCustomNameChange = { onChange(FormChange.CustomMaterialChanged(it)) },
         )
@@ -85,6 +111,7 @@ fun FilamentForm(
             selected = state.brand,
             customName = customBrand,
             enabled = enabled,
+            brands = brands,
             onSelect = { onChange(FormChange.BrandPicked(it)) },
             onCustomNameChange = { onChange(FormChange.CustomBrandChanged(it)) },
         )
@@ -93,6 +120,22 @@ fun FilamentForm(
             ranges = state.tempRanges,
             enabled = enabled,
             onChange = { onChange(FormChange.TempRangesChanged(it)) },
+        )
+
+        MoreDetailsExpander(
+            expanded = state.moreDetailsExpanded,
+            enabled = enabled,
+            emptySpoolWeightG = state.emptySpoolWeightG,
+            priceMajor = state.priceMajor,
+            fullSpoolWeightG = state.fullSpoolWeightG,
+            diameterMm = state.diameterMm,
+            densityGPerCm3 = state.densityGPerCm3,
+            onToggle = { onChange(FormChange.MoreDetailsToggled) },
+            onEmptySpoolWeightChange = { onChange(FormChange.EmptySpoolWeightChanged(it)) },
+            onPriceChange = { onChange(FormChange.PriceChanged(it)) },
+            onFullSpoolWeightChange = { onChange(FormChange.FullSpoolWeightChanged(it)) },
+            onDiameterChange = { onChange(FormChange.DiameterChanged(it)) },
+            onDensityChange = { onChange(FormChange.DensityChanged(it)) },
         )
 
         if (enabled) {

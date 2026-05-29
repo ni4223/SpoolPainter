@@ -51,7 +51,39 @@ open class NfcAdapterWrapper @Inject constructor(
 
     open suspend fun writeRecords(tag: Tag, records: List<NdefRecordView>) = withContext(dispatcher) {
         val ndef = Ndef.get(tag)
+        if (ndef != null) {
+            writeViaNdef(ndef, records)
+            return@withContext
+        }
+        // Ndef.get returned null. Two cases:
+        //   1. Truly non-NDEF tag (factory-locked vendor) → throw NonNdef.
+        //   2. Fresh blank that Android hasn't promoted yet, OR a stale Tag
+        //      handle from a re-tap right after our previous write — both
+        //      surface as NdefFormatable in the techList. Format + write.
+        val formatable = android.nfc.tech.NdefFormatable.get(tag)
             ?: throw NonNdefTagException()
+        try {
+            formatable.connect()
+            val message = records.toNdefMessage()
+            val payloadSize = message.byteArrayLength
+            try {
+                formatable.format(message)
+            } catch (e: java.io.IOException) {
+                throw java.io.IOException(
+                    "NdefFormatable.format IOException (payload=${payloadSize}B): ${e.message ?: "no message"}",
+                    e,
+                )
+            }
+        } finally {
+            try {
+                formatable.close()
+            } catch (_: Throwable) {
+                // best-effort close
+            }
+        }
+    }
+
+    private fun writeViaNdef(ndef: Ndef, records: List<NdefRecordView>) {
         try {
             ndef.connect()
             val message = records.toNdefMessage()

@@ -20,6 +20,12 @@ data class SpoolmanFilament(
     val settings_extruder_temp: Int? = null,
     val settings_bed_temp: Int? = null,
     val extra: Map<String, String>? = null,
+    // U8: stored filament metadata (density/diameter/weight/spool_weight/price).
+    val density: Float? = null,
+    val diameter: Float? = null,
+    val weight: Float? = null,
+    val spool_weight: Float? = null,
+    val price: Float? = null,
 )
 
 data class SpoolmanVendor(

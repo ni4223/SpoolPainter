@@ -1,7 +1,9 @@
 package com.spoolpainter.app.domain.usecases
 
+import com.spoolpainter.app.data.remote.spoolman.ExpanderOverrides
 import com.spoolpainter.app.domain.models.TempRanges
 import com.spoolpainter.app.ui.screens.main.FormState
+import com.spoolpainter.app.ui.screens.main.toExpanderOverrides
 
 data class NewFilamentRequest(
     val name: String,
@@ -10,6 +12,7 @@ data class NewFilamentRequest(
     val colorHex: String,
     val variant: String?,
     val tempRanges: TempRanges,
+    val expanderOverrides: ExpanderOverrides = ExpanderOverrides.EMPTY,
 ) {
     companion object {
         fun fromForm(
@@ -23,6 +26,7 @@ data class NewFilamentRequest(
             colorHex = form.colorHex ?: "",
             variant = form.variant,
             tempRanges = form.tempRanges,
+            expanderOverrides = form.toExpanderOverrides(),
         )
     }
 }

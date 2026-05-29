@@ -222,6 +222,6 @@ class ReadAndPairUseCaseTest {
 
         val result = useCase.invoke()
         assertTrue(result is ReadAndPairResult.NfcFailed)
-        assertEquals("zero-length UID — non-NFC-A tag?", (result as ReadAndPairResult.NfcFailed).reason)
+        assertEquals("zero-length UID, non-NFC-A tag?", (result as ReadAndPairResult.NfcFailed).reason)
     }
 }

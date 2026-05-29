@@ -77,10 +77,13 @@ class MainViewModelTest {
     )
     private val anotherSpool = sampleSpool.copy(id = 43)
 
+    private val materialBrandRepo = com.spoolpainter.app.data.local.FakeMaterialBrandRepository()
+
     private fun newVm(): MainViewModel = MainViewModel(
         nfc = nfc,
         spoolman = spoolman,
         settings = settings,
+        materialBrandRepo = materialBrandRepo,
         readAndPair = ReadAndPairUseCase(nfc, spoolman),
         createAndPair = createAndPair,
         twoTag = twoTag,
@@ -192,7 +195,7 @@ class MainViewModelTest {
     }
 
     @Test
-    fun `onReadTapped BlankForm clears form preserves rawWriteMode`() = runTest {
+    fun `onReadTapped BlankForm resets form to defaults preserves rawWriteMode`() = runTest {
         val vm = newVm()
         nfc.setBufferedTap(NfcResult.Success(sampleUid, TagClassification.Blank))
         spoolman.nextFindSpoolsByCardUidResult = SpoolmanOutcome.Success(emptyList())
@@ -201,13 +204,14 @@ class MainViewModelTest {
 
         val s = vm.state.value
         assertEquals(sampleUid, s.form.cardUid)
-        assertNull(s.form.material)
-        assertNull(s.form.brand)
+        // Form resets to defaults (PLA / Generic), not null.
+        assertEquals("PLA", s.form.material?.name)
+        assertEquals("Generic", s.form.brand?.name)
         assertNull(s.form.selectedSpoolId)
     }
 
     @Test
-    fun `onReadTapped Ambiguous populates AmbiguityState and form stays blank`() = runTest {
+    fun `onReadTapped Ambiguous populates AmbiguityState and form stays at defaults`() = runTest {
         val vm = newVm()
         nfc.setBufferedTap(NfcResult.Success(sampleUid, TagClassification.OpenSpool(openSpoolPayload)))
         spoolman.nextFindSpoolsByCardUidResult = SpoolmanOutcome.Success(listOf(sampleSpool, anotherSpool))
@@ -217,7 +221,7 @@ class MainViewModelTest {
         val s = vm.state.value
         assertNotNull(s.ambiguity)
         assertEquals(2, s.ambiguity!!.matches.size)
-        assertNull(s.form.material)
+        assertEquals("PLA", s.form.material?.name)
         assertNull(s.form.selectedSpoolId)
     }
 
@@ -275,7 +279,7 @@ class MainViewModelTest {
     }
 
     @Test
-    fun `onSpoolSelected null clears form including cardUid`() = runTest {
+    fun `onSpoolSelected null clears form to defaults`() = runTest {
         val vm = newVm()
         nfc.setBufferedTap(NfcResult.Success(sampleUid, TagClassification.Blank))
         spoolman.nextFindSpoolsByCardUidResult = SpoolmanOutcome.Success(listOf(sampleSpool))
@@ -284,7 +288,8 @@ class MainViewModelTest {
         val s = vm.state.value
         assertNull(s.form.cardUid)
         assertNull(s.form.selectedSpoolId)
-        assertNull(s.form.material)
+        // Form resets to defaults — not null.
+        assertEquals("PLA", s.form.material?.name)
     }
 
     @Test
@@ -371,7 +376,9 @@ class MainViewModelTest {
     @Test
     fun `onWriteTapped whenCanWriteFalse isNoOp andDoesNotChangeActiveFlow`() = runTest {
         val vm = newVm()
-        // canWrite is false (form not primed).
+        // Force canSubmit false by clearing material; defaults pre-fill it,
+        // so without this the fresh form would satisfy canWrite.
+        vm.onMaterialPicked(null)
         assertEquals(false, vm.canWrite.value)
         vm.onWriteTapped()
         assertEquals(ActiveFlow.Idle, vm.state.value.activeFlow)

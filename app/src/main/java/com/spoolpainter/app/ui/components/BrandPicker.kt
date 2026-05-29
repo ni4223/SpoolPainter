@@ -11,6 +11,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -21,15 +22,20 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.spoolpainter.app.data.local.BrandDatabase
 import com.spoolpainter.app.domain.models.Brand
 
 /**
  * Brand picker styled to match v1's BrandSelector. "Other" reveals an inline
  * custom-name field; the typed value is forwarded via [onCustomNameChange].
+ *
+ * The [brands] list is the merged set from MaterialBrandRepository
+ * (presets ∪ Spoolman vendors), so vendors created in Spoolman appear here
+ * automatically once `refresh()` runs.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -37,6 +43,7 @@ fun BrandPicker(
     selected: Brand?,
     customName: String,
     enabled: Boolean,
+    brands: List<String>,
     onSelect: (Brand?) -> Unit,
     onCustomNameChange: (String) -> Unit,
     modifier: Modifier = Modifier,
@@ -73,19 +80,40 @@ fun BrandPicker(
                 shape = RoundedCornerShape(20.dp),
             )
             if (enabled) {
-                androidx.compose.material3.DropdownMenu(
+                ExposedDropdownMenu(
                     expanded = expanded,
                     onDismissRequest = { expanded = false },
+                    modifier = Modifier.clip(RoundedCornerShape(20.dp)),
                 ) {
-                    BrandDatabase.brands.forEach { brand ->
+                    if (brands.any { it.equals("Other", ignoreCase = true) }) {
                         DropdownMenuItem(
-                            text = { Text(brand) },
+                            text = {
+                                Text(
+                                    "Other",
+                                    style = MaterialTheme.typography.bodyLarge.copy(
+                                        fontStyle = FontStyle.Italic,
+                                    ),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            },
                             onClick = {
                                 expanded = false
-                                onSelect(Brand(brand))
+                                onSelect(Brand("Other"))
                             },
                         )
+                        HorizontalDivider()
                     }
+                    brands
+                        .filterNot { it.equals("Other", ignoreCase = true) }
+                        .forEach { brand ->
+                            DropdownMenuItem(
+                                text = { Text(brand) },
+                                onClick = {
+                                    expanded = false
+                                    onSelect(Brand(brand))
+                                },
+                            )
+                        }
                 }
             }
         }

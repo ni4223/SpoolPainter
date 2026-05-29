@@ -38,6 +38,7 @@ class FakeSpoolmanApi : SpoolmanApi {
     var nextSpoolPatchHttpError: Failure.Http? = null
     var nextFilamentCreateHttpError: Failure.Http? = null
     var nextSpoolCreateHttpError: Failure.Http? = null
+    var failPatchFilament: Failure? = null
 
     val callLog: MutableList<String> = mutableListOf()
 
@@ -167,6 +168,30 @@ class FakeSpoolmanApi : SpoolmanApi {
         if (idx < 0) return Response.error(404, "not found".toResponseBody(null))
         val updated = spoolList[idx].copy(extra = body.extra)
         spoolList[idx] = updated
+        return Response.success(updated)
+    }
+
+    override suspend fun patchFilament(
+        filamentId: Int,
+        body: PatchFilamentBody,
+    ): Response<SpoolmanFilament> {
+        callLog += "patchFilament($filamentId,body=$body)"
+        failPatchFilament?.let { return it.toResponse() }
+        val idx = filamentList.indexOfFirst { it.id == filamentId }
+        if (idx < 0) return Response.error(404, "not found".toResponseBody(null))
+        val current = filamentList[idx]
+        val updated = current.copy(
+            name = body.name ?: current.name,
+            settings_extruder_temp = body.settings_extruder_temp ?: current.settings_extruder_temp,
+            settings_bed_temp = body.settings_bed_temp ?: current.settings_bed_temp,
+            density = body.density ?: current.density,
+            diameter = body.diameter ?: current.diameter,
+            weight = body.weight ?: current.weight,
+            spool_weight = body.spool_weight ?: current.spool_weight,
+            price = body.price ?: current.price,
+            extra = body.extra ?: current.extra,
+        )
+        filamentList[idx] = updated
         return Response.success(updated)
     }
 

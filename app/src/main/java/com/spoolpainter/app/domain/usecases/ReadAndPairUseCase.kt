@@ -34,7 +34,7 @@ class ReadAndPairUseCase @Inject constructor(
 
     private suspend fun handleSuccess(success: NfcResult.Success): ReadAndPairResult {
         if (success.uid.hex.isEmpty()) {
-            return ReadAndPairResult.NfcFailed("zero-length UID — non-NFC-A tag?")
+            return ReadAndPairResult.NfcFailed("zero-length UID, non-NFC-A tag?")
         }
         val outcome = spoolman.findSpoolsByCardUid(success.uid)
         return branchOnSpoolman(success.uid, success.classification, outcome)

@@ -36,10 +36,12 @@ class NfcRepositoryClassifierTest {
     }
 
     @Test
-    fun `empty record list classifies as Vendor non-OpenSpool NDEF`() = runTest {
-        val classification = classify(emptyList())
-        assertTrue(classification is TagClassification.Vendor)
-        assertEquals("non-OpenSpool NDEF", (classification as TagClassification.Vendor).reason)
+    fun `empty record list classifies as Blank (rewriteable)`() = runTest {
+        // Tags with empty NDEF messages are typically half-formatted blanks
+        // or our own writes that got interrupted. Treat them as Blank so the
+        // user can rewrite them; the chip itself enforces lock state on
+        // genuine factory-locked tags.
+        assertEquals(TagClassification.Blank, classify(emptyList()))
     }
 
     @Test
@@ -55,42 +57,41 @@ class NfcRepositoryClassifierTest {
     }
 
     @Test
-    fun `text_plain record classifies as Vendor non-OpenSpool NDEF`() = runTest {
-        val classification = classify(textPlainRecords("not openspool"))
+    fun `text_plain record classifies as Blank (overwritable)`() = runTest {
+        // No OpenSpool MIME match. Could be anything from a URL bookmark to
+        // a partial vendor write — but if the chip is rewriteable, we let
+        // the user overwrite. The chip's own write protection is the gate.
+        assertEquals(TagClassification.Blank, classify(textPlainRecords("not openspool")))
+    }
+
+    @Test
+    fun `malformed JSON inside OpenSpool MIME classifies as Blank (recover from partial write)`() = runTest {
+        // Most common cause: our own write got interrupted (app stopped,
+        // tag lifted mid-write). Treat as Blank so the user can simply
+        // re-tap and finish the write.
         assertEquals(
-            TagClassification.Vendor("non-OpenSpool NDEF"),
-            classification,
+            TagClassification.Blank,
+            classify(malformedOpenSpoolRecords("{not valid json")),
         )
     }
 
     @Test
-    fun `malformed JSON inside OpenSpool MIME classifies as Vendor`() = runTest {
-        val classification = classify(malformedOpenSpoolRecords("{not valid json"))
-        assertTrue(classification is TagClassification.Vendor)
-        val reason = (classification as TagClassification.Vendor).reason
-        assertTrue("reason is `$reason`", reason == "not OpenSpool JSON" || reason.startsWith("malformed JSON:"))
+    fun `non-OpenSpool JSON inside OpenSpool MIME classifies as Blank`() = runTest {
+        assertEquals(
+            TagClassification.Blank,
+            classify(malformedOpenSpoolRecords("""{"foo":"bar"}""")),
+        )
     }
 
     @Test
-    fun `non-OpenSpool JSON inside OpenSpool MIME classifies as Vendor`() = runTest {
-        val classification = classify(malformedOpenSpoolRecords("""{"foo":"bar"}"""))
-        assertEquals(TagClassification.Vendor("not OpenSpool JSON"), classification)
-    }
-
-    @Test
-    fun `OpenSpool JSON missing required field classifies as Vendor malformed`() = runTest {
+    fun `OpenSpool JSON missing required field classifies as Blank`() = runTest {
         val json = """{"protocol":"openspool","type":"PLA"}"""
-        val classification = classify(malformedOpenSpoolRecords(json))
-        assertTrue(classification is TagClassification.Vendor)
-        assertTrue(
-            (classification as TagClassification.Vendor).reason.startsWith("malformed JSON:"),
-        )
+        assertEquals(TagClassification.Blank, classify(malformedOpenSpoolRecords(json)))
     }
 
     @Test
-    fun `empty payload bytes classify as Vendor empty NDEF payload`() = runTest {
-        val classification = classify(emptyOpenSpoolRecords())
-        assertEquals(TagClassification.Vendor("empty NDEF payload"), classification)
+    fun `empty payload bytes classify as Blank`() = runTest {
+        assertEquals(TagClassification.Blank, classify(emptyOpenSpoolRecords()))
     }
 
     @Test

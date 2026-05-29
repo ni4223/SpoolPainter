@@ -1,5 +1,7 @@
 package com.spoolpainter.app.support
 
+import com.spoolpainter.app.data.remote.spoolman.ExpanderOverrides
+import com.spoolpainter.app.data.remote.spoolman.PatchFilamentBody
 import com.spoolpainter.app.data.remote.spoolman.SpoolmanApi
 import com.spoolpainter.app.data.remote.spoolman.SpoolmanApiFactory
 import com.spoolpainter.app.data.remote.spoolman.SpoolmanOutcome
@@ -73,6 +75,18 @@ class FakeSpoolmanRepository(
     var lastCreateRequest: NewFilamentRequest? = null
         private set
 
+    var nextCreateSpoolForExistingFilamentResult: SpoolmanOutcome<SpoolmanSpool>? = null
+    var createSpoolForExistingFilamentCalls: Int = 0
+        private set
+    var lastCreateForExisting: Pair<Int, ExpanderOverrides>? = null
+        private set
+
+    var nextPatchFilamentResult: SpoolmanOutcome<SpoolmanFilament>? = null
+    var patchFilamentCalls: Int = 0
+        private set
+    var lastPatchFilament: Pair<Int, PatchFilamentBody>? = null
+        private set
+
     override suspend fun findSpoolsByCardUid(uid: CardUid): SpoolmanOutcome<List<SpoolmanSpool>> {
         lastFindUid = uid
         return nextFindSpoolsByCardUidResult
@@ -117,6 +131,26 @@ class FakeSpoolmanRepository(
         lastCreateRequest = req
         return nextCreateSpoolResult
             ?: SpoolmanOutcome.ParseError(IllegalStateException("nextCreateSpoolResult not set"))
+    }
+
+    override suspend fun createSpoolForExistingFilament(
+        filamentId: Int,
+        expanderOverrides: ExpanderOverrides,
+    ): SpoolmanOutcome<SpoolmanSpool> {
+        createSpoolForExistingFilamentCalls++
+        lastCreateForExisting = filamentId to expanderOverrides
+        return nextCreateSpoolForExistingFilamentResult
+            ?: SpoolmanOutcome.ParseError(IllegalStateException("nextCreateSpoolForExistingFilamentResult not set"))
+    }
+
+    override suspend fun patchFilament(
+        filamentId: Int,
+        body: PatchFilamentBody,
+    ): SpoolmanOutcome<SpoolmanFilament> {
+        patchFilamentCalls++
+        lastPatchFilament = filamentId to body
+        return nextPatchFilamentResult
+            ?: SpoolmanOutcome.ParseError(IllegalStateException("nextPatchFilamentResult not set"))
     }
 
     override suspend fun testConnection(): SpoolmanOutcome<String> =

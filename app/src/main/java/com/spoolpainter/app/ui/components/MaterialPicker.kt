@@ -11,6 +11,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -21,10 +22,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.spoolpainter.app.data.local.MaterialDatabase
 import com.spoolpainter.app.domain.models.Material
 
 /**
@@ -32,6 +34,11 @@ import com.spoolpainter.app.domain.models.Material
  * material from the dropdown invokes [onSelect]; choosing the "Other" entry
  * opens an inline custom-name field, with the typed name passed through
  * [onCustomNameChange].
+ *
+ * The [materials] list is the merged set from MaterialBrandRepository
+ * (presets ∪ distinct material strings on Spoolman filaments), so custom
+ * materials the user has saved appear here automatically once `refresh()`
+ * runs.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -39,6 +46,7 @@ fun MaterialPicker(
     selected: Material?,
     customName: String,
     enabled: Boolean,
+    materials: List<Material>,
     onSelect: (Material?) -> Unit,
     onCustomNameChange: (String) -> Unit,
     modifier: Modifier = Modifier,
@@ -64,7 +72,7 @@ fun MaterialPicker(
                 onValueChange = {},
                 readOnly = true,
                 enabled = enabled,
-                label = { Text("Filament Type") },
+                label = { Text("Material") },
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
                 modifier = Modifier.menuAnchor().fillMaxWidth(),
                 textStyle = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
@@ -75,19 +83,41 @@ fun MaterialPicker(
                 shape = RoundedCornerShape(20.dp),
             )
             if (enabled) {
-                androidx.compose.material3.DropdownMenu(
+                ExposedDropdownMenu(
                     expanded = expanded,
                     onDismissRequest = { expanded = false },
+                    modifier = Modifier.clip(RoundedCornerShape(20.dp)),
                 ) {
-                    MaterialDatabase.materials.forEach { material ->
+                    val other = materials.firstOrNull { it.name.equals("Other", ignoreCase = true) }
+                    if (other != null) {
                         DropdownMenuItem(
-                            text = { Text(material.name) },
+                            text = {
+                                Text(
+                                    other.name,
+                                    style = MaterialTheme.typography.bodyLarge.copy(
+                                        fontStyle = FontStyle.Italic,
+                                    ),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            },
                             onClick = {
                                 expanded = false
-                                onSelect(material)
+                                onSelect(other)
                             },
                         )
+                        HorizontalDivider()
                     }
+                    materials
+                        .filterNot { it.name.equals("Other", ignoreCase = true) }
+                        .forEach { material ->
+                            DropdownMenuItem(
+                                text = { Text(material.name) },
+                                onClick = {
+                                    expanded = false
+                                    onSelect(material)
+                                },
+                            )
+                        }
                 }
             }
         }

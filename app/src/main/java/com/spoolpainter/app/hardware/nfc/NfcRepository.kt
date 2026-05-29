@@ -125,8 +125,8 @@ open class NfcRepository internal constructor(
         val raw = try {
             wrapper.read(tag)
         } catch (t: Throwable) {
-            transition { NfcResult.Error("zero-length UID — non-NFC-A tag?", t) }
-            logCause("zero-length UID — non-NFC-A tag?", t)
+            transition { NfcResult.Error("zero-length UID, non-NFC-A tag?", t) }
+            logCause("zero-length UID, non-NFC-A tag?", t)
             return
         }
         val classification = classify(raw)
@@ -164,12 +164,11 @@ open class NfcRepository internal constructor(
         classification: TagClassification,
         intent: NfcIntent.Write,
     ) {
-        if (classification is TagClassification.Vendor) {
-            transition {
-                NfcResult.Error("vendor-tag protected (FR-4.7): ${classification.reason}")
-            }
-            return
-        }
+        // No software vendor-tag pre-block. Genuine factory-locked tags are
+        // rejected by the chip itself (Ndef.get returns null → NonNdefTagException,
+        // or Ndef.isWritable false → "tag is read-only"). Pre-blocking here
+        // misclassified our own partial writes as "vendor" and stopped the
+        // user from rewriting them.
         val records = encodePayloadRecords(intent.payload)
         try {
             wrapper.writeRecords(tag, records)
@@ -223,12 +222,8 @@ open class NfcRepository internal constructor(
         classification: TagClassification,
         expectedPayload: OpenSpoolPayload,
     ) {
-        if (classification is TagClassification.Vendor) {
-            transition {
-                NfcResult.Error("vendor-tag protected (FR-4.7): ${classification.reason}")
-            }
-            return
-        }
+        // (Vendor pre-block removed; see runWriteThenVerify. The chip's
+        // own write-protection / NDEF availability is the only gate.)
         val expectedRecords = encodePayloadRecords(expectedPayload)
         val readback = try {
             wrapper.readRecords(tag)
@@ -254,37 +249,53 @@ open class NfcRepository internal constructor(
             //
             // MifareClassic chips are factory-encrypted by vendors (Bambu,
             // Creality, etc.); Android still reports NdefFormatable in their
-            // techList but the sectors are locked. Treat any MifareClassic
-            // tag with no NDEF data as a vendor tag.
+            // techList but the sectors are locked. Treat MifareClassic-only
+            // tags (no Ndef in techList) as vendor tags.
+            //
+            // A tag with `Ndef` in techList that returns null records is NOT
+            // a vendor tag — it's typically a tag we just wrote where the OS
+            // tag handle is briefly stale (the U6a OPEN-1 race). Treat it as
+            // Blank so the user's next Save & Write doesn't get misrouted
+            // into the vendor-pair-only flow.
             val isMifareClassic = raw.techList.contains("android.nfc.tech.MifareClassic")
             val isFormattable = raw.techList.contains("android.nfc.tech.NdefFormatable")
             val isNdef = raw.techList.contains("android.nfc.tech.Ndef")
             return when {
+                isNdef -> TagClassification.Blank
                 isMifareClassic ->
                     TagClassification.Vendor("non-NDEF tag (MifareClassic)")
-                isFormattable || isNdef -> TagClassification.Blank
+                isFormattable -> TagClassification.Blank
                 else ->
                     TagClassification.Vendor("non-NDEF tag (${raw.techList.joinToString().ifEmpty { "unknown tech" }})")
             }
         }
-        if (records.isEmpty()) return TagClassification.Vendor("non-OpenSpool NDEF")
+        // Records readable but no OpenSpool MIME match (or empty list).
+        // Treat as Blank — this is a writable NDEF tag the user can overwrite.
+        // The earlier behaviour (return Vendor) misclassified our own
+        // partially-written tags as "vendor" and blocked rewrites; the only
+        // tags that should actually be rejected as vendor are MifareClassic-
+        // locked ones, which we already caught above.
+        if (records.isEmpty()) return TagClassification.Blank
         val mimeRecord = records.firstOrNull { record ->
             record.tnf == NdefRecordView.TNF_MIME_MEDIA && run {
                 val mime = String(record.type, Charsets.US_ASCII).lowercase()
                 mime == MIME_OPENSPOOL || mime == MIME_JSON
             }
-        } ?: return TagClassification.Vendor("non-OpenSpool NDEF")
+        } ?: return TagClassification.Blank
         val payloadBytes = mimeRecord.payload
-        if (payloadBytes.isEmpty()) return TagClassification.Vendor("empty NDEF payload")
+        if (payloadBytes.isEmpty()) return TagClassification.Blank
         val text = try {
             String(payloadBytes, Charsets.UTF_8)
         } catch (_: Throwable) {
-            return TagClassification.Vendor("non-UTF-8 NDEF payload")
+            return TagClassification.Blank
         }
+        // OpenSpool MIME is present but the JSON didn't parse → most likely a
+        // truncated / partial write of our own format. Still Blank-like so
+        // the user can rewrite it.
         return when (val decoded = OpenSpoolPayloadCodec.fromJson(text)) {
             is OpenSpoolDecodeResult.Success -> TagClassification.OpenSpool(decoded.payload)
-            is OpenSpoolDecodeResult.Malformed -> TagClassification.Vendor("malformed JSON: ${decoded.reason}")
-            is OpenSpoolDecodeResult.NotOpenSpool -> TagClassification.Vendor("not OpenSpool JSON")
+            is OpenSpoolDecodeResult.Malformed,
+            is OpenSpoolDecodeResult.NotOpenSpool -> TagClassification.Blank
         }
     }
 
