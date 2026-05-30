@@ -174,6 +174,8 @@ fun MainScreen(
                         customMaterial = customMaterial,
                         customBrand = customBrand,
                         enabled = state.activeFlow == ActiveFlow.Idle,
+                        spoolmanConfigured = state.spoolman.urlConfigured,
+                        spoolmanReachable = state.spoolman.reachable,
                         filaments = filaments,
                         materials = materials,
                         brands = brands,
@@ -204,6 +206,8 @@ fun MainScreen(
             MoreDetailsExpander(
                 expanded = state.form.moreDetailsExpanded,
                 enabled = state.activeFlow == ActiveFlow.Idle,
+                spoolmanConfigured = state.spoolman.urlConfigured,
+                spoolmanReachable = state.spoolman.reachable,
                 tempRanges = state.form.tempRanges,
                 emptySpoolWeightG = state.form.emptySpoolWeightG,
                 priceMajor = state.form.priceMajor,
@@ -304,11 +308,21 @@ private fun BannerSlot(banner: BannerState) {
                     contentColor = MaterialTheme.colorScheme.onErrorContainer,
                 ),
             ) {
-                Text(
-                    text = "Spoolman unreachable" + (banner.lastError?.let { ": $it" } ?: ""),
+                Column(
                     modifier = Modifier.padding(12.dp),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    Text(
+                        text = "Spoolman unreachable",
+                        style = MaterialTheme.typography.titleSmall,
+                    )
+                    banner.lastError?.takeIf { it.isNotBlank() }?.let { detail ->
+                        Text(
+                            text = detail,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                }
             }
         }
     }

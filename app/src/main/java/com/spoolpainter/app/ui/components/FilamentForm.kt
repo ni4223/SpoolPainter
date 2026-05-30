@@ -64,6 +64,8 @@ fun FilamentForm(
     customMaterial: String,
     customBrand: String,
     enabled: Boolean,
+    spoolmanConfigured: Boolean,
+    spoolmanReachable: Boolean,
     filaments: List<SpoolmanFilament>,
     materials: List<Material>,
     brands: List<String>,
@@ -78,16 +80,18 @@ fun FilamentForm(
             .testTag("main-filament-form"),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        FilamentSectionExpander(
-            filaments = filaments,
-            selectedFilamentId = state.selectedFilamentId,
-            expanded = state.filamentSectionExpanded,
-            enabled = enabled,
-            sortKey = filamentSortKey,
-            sortDirection = filamentSortDirection,
-            onToggle = { onChange(FormChange.FilamentSectionToggled) },
-            onSelect = { onChange(FormChange.FilamentSelected(it)) },
-        )
+        if (spoolmanConfigured) {
+            FilamentSectionExpander(
+                filaments = filaments,
+                selectedFilamentId = state.selectedFilamentId,
+                enabled = enabled && spoolmanReachable,
+                expanded = state.filamentSectionExpanded,
+                sortKey = filamentSortKey,
+                sortDirection = filamentSortDirection,
+                onToggle = { onChange(FormChange.FilamentSectionToggled) },
+                onSelect = { onChange(FormChange.FilamentSelected(it)) },
+            )
+        }
 
         MaterialPicker(
             selected = state.material,

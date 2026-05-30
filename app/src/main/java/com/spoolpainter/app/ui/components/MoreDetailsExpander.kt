@@ -40,6 +40,8 @@ import com.spoolpainter.app.domain.models.TempRanges
 fun MoreDetailsExpander(
     expanded: Boolean,
     enabled: Boolean,
+    spoolmanConfigured: Boolean,
+    spoolmanReachable: Boolean,
     tempRanges: TempRanges,
     emptySpoolWeightG: Float?,
     priceMajor: Float?,
@@ -98,55 +100,58 @@ fun MoreDetailsExpander(
                         enabled = enabled,
                         onChange = onTempRangesChange,
                     )
-                    HorizontalDivider()
-                    SectionLabel("Weight")
-                    DecimalField(
-                        label = "Filament weight",
-                        supportingText = "Net filament only. Excludes the empty spool.",
-                        suffix = "g",
-                        value = fullSpoolWeightG,
-                        enabled = enabled,
-                        testTag = "more-details-full-spool-weight",
-                        onChange = onFullSpoolWeightChange,
-                    )
-                    DecimalField(
-                        label = "Spool weight",
-                        supportingText = "Empty spool only.",
-                        suffix = "g",
-                        value = emptySpoolWeightG,
-                        enabled = enabled,
-                        testTag = "more-details-empty-spool-weight",
-                        onChange = onEmptySpoolWeightChange,
-                    )
-                    HorizontalDivider()
-                    SectionLabel("Others")
-                    DecimalField(
-                        label = "Diameter",
-                        supportingText = null,
-                        suffix = "mm",
-                        value = diameterMm,
-                        enabled = enabled,
-                        testTag = "more-details-diameter",
-                        onChange = onDiameterChange,
-                    )
-                    DecimalField(
-                        label = "Density",
-                        supportingText = null,
-                        suffix = "g/cm³",
-                        value = densityGPerCm3,
-                        enabled = enabled,
-                        testTag = "more-details-density",
-                        onChange = onDensityChange,
-                    )
-                    DecimalField(
-                        label = "Price",
-                        supportingText = null,
-                        suffix = priceSuffix,
-                        value = priceMajor,
-                        enabled = enabled,
-                        testTag = "more-details-price",
-                        onChange = onPriceChange,
-                    )
+                    if (spoolmanConfigured) {
+                        val spoolmanFieldsEnabled = enabled && spoolmanReachable
+                        HorizontalDivider()
+                        SectionLabel("Weight")
+                        DecimalField(
+                            label = "Filament weight",
+                            supportingText = "Net filament only. Excludes the empty spool.",
+                            suffix = "g",
+                            value = fullSpoolWeightG,
+                            enabled = spoolmanFieldsEnabled,
+                            testTag = "more-details-full-spool-weight",
+                            onChange = onFullSpoolWeightChange,
+                        )
+                        DecimalField(
+                            label = "Spool weight",
+                            supportingText = "Empty spool only.",
+                            suffix = "g",
+                            value = emptySpoolWeightG,
+                            enabled = spoolmanFieldsEnabled,
+                            testTag = "more-details-empty-spool-weight",
+                            onChange = onEmptySpoolWeightChange,
+                        )
+                        HorizontalDivider()
+                        SectionLabel("Others")
+                        DecimalField(
+                            label = "Diameter",
+                            supportingText = null,
+                            suffix = "mm",
+                            value = diameterMm,
+                            enabled = spoolmanFieldsEnabled,
+                            testTag = "more-details-diameter",
+                            onChange = onDiameterChange,
+                        )
+                        DecimalField(
+                            label = "Density",
+                            supportingText = null,
+                            suffix = "g/cm³",
+                            value = densityGPerCm3,
+                            enabled = spoolmanFieldsEnabled,
+                            testTag = "more-details-density",
+                            onChange = onDensityChange,
+                        )
+                        DecimalField(
+                            label = "Price",
+                            supportingText = null,
+                            suffix = priceSuffix,
+                            value = priceMajor,
+                            enabled = spoolmanFieldsEnabled,
+                            testTag = "more-details-price",
+                            onChange = onPriceChange,
+                        )
+                    }
                 }
             }
         }

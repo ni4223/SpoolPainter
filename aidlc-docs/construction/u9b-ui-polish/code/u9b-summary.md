@@ -149,3 +149,40 @@ Tests:
 - `app/src/test/java/com/spoolpainter/app/ui/screens/main/MainViewModelTwoTagTest.kt` (modified — same helper + 5 assertion updates)
 
 Total: 10 production / 2 test / 0 deleted. No build / config / dependency changes.
+
+## §11 — Post-close-out bug-fix (commit `698e2f9`, 2026-05-30)
+
+A follow-up landed after the U9b close-out commit (`4995ca9`) on `v2` to address two related issues the user surfaced once the new layout was live:
+
+### Bug 1 — Spoolman-only sections rendered when no URL configured
+The Filament expander (`FilamentSectionExpander`) and the Weight + Others sections of the Filament metadata expander map directly to Spoolman fields (`weight`, `spool_weight`, `diameter`, `density`, `price`). With no Spoolman backend, those values have nowhere to land. They previously rendered unconditionally, presenting the user empty/null fields they couldn't meaningfully edit.
+
+**Fix**: same visibility rule the `SpoolmanDropdown` already uses. `FilamentForm` and `MoreDetailsExpander` gained two new params:
+
+- `spoolmanConfigured: Boolean` — bound to `state.spoolman.urlConfigured`
+- `spoolmanReachable: Boolean` — bound to `state.spoolman.reachable`
+
+Visibility/state matrix:
+
+| State | Filament expander | Weight + Others sections |
+|---|---|---|
+| No URL | hidden | hidden |
+| URL configured + reachable | visible + enabled | visible + enabled |
+| URL configured + unreachable | visible + **disabled** | visible + **disabled** |
+
+Temperature section stays visible in all states (lives on the NFC tag, not Spoolman).
+
+### Bug 2 — Offline banner copy wrapped mid-sentence
+Banner was a single `Text` concatenating `"Spoolman unreachable" + (lastError?.let { ": $it" } ?: "")`. On long error messages the layout wrapped mid-clause to a second line, looking like a bug. Restructured into a Column with two rows:
+
+- `titleSmall` header — "Spoolman unreachable"
+- `bodySmall` detail — exception message (omitted when blank)
+
+Each line is now a complete thought; long errors wrap naturally inside the bodySmall row.
+
+### Files touched (delta)
+- `app/src/main/java/com/spoolpainter/app/ui/components/FilamentForm.kt` (new `spoolmanConfigured` + `spoolmanReachable` params; Filament expander gated)
+- `app/src/main/java/com/spoolpainter/app/ui/components/MoreDetailsExpander.kt` (same two params; Weight + Others sections gated)
+- `app/src/main/java/com/spoolpainter/app/ui/screens/main/MainScreen.kt` (passes the flags + restructured `BannerSlot.Offline` Column)
+
+Tests **362 / 362** maintained; no test changes needed (fields/sections that hide are also untouched by existing assertions).
