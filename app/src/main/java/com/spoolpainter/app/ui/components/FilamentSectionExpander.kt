@@ -22,6 +22,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.spoolpainter.app.data.local.FilamentSortKey
+import com.spoolpainter.app.data.local.SortDirection
 import com.spoolpainter.app.domain.models.SpoolmanFilament
 
 /**
@@ -35,6 +37,8 @@ fun FilamentSectionExpander(
     selectedFilamentId: Int?,
     expanded: Boolean,
     enabled: Boolean,
+    sortKey: FilamentSortKey,
+    sortDirection: SortDirection,
     onToggle: () -> Unit,
     onSelect: (SpoolmanFilament?) -> Unit,
     modifier: Modifier = Modifier,
@@ -83,6 +87,8 @@ fun FilamentSectionExpander(
                     filaments = filaments,
                     selectedFilamentId = selectedFilamentId,
                     enabled = enabled,
+                    sortKey = sortKey,
+                    sortDirection = sortDirection,
                     onSelect = onSelect,
                 )
             }

@@ -8,7 +8,7 @@
 ## 1. Construction Order (Q-D2=A — Strict)
 
 ```
-U1 → U2 → U3 → U4 → U5 → U6a → U6b → U7 → U8 → U9 → U10
+U1 → U2 → U3 → U4 → U5 → U6a → U6b → U7 → U8 → U9 → U9b → U10
                                                        │
                                                        ▼  HARD GATE (Q-FU1=C)
                                                        │  (v2.0 must ship to Play Store testing track)
@@ -27,19 +27,20 @@ Rows: dependent unit (`needs ↓`).
 Columns: depended-on unit (`provides →`).
 `✓` = direct dependency; `(✓)` = interface-only seam (declares interface in earlier unit, impl in later unit).
 
-| Needs ↓ \ Provides → | U1 | U2 | U3 | U4 | U5 | U6a | U6b | U7 | U8 | U9 | U10 |
-|---|---|---|---|---|---|---|---|---|---|---|---|
-| **U1** | — | | | | | | | | | | |
-| **U2** | ✓ | — | | | | | | | | | |
-| **U3** | ✓ | ✓ | — | | | | | | | | |
-| **U4** | ✓ | ✓ | | — | | | | | | | |
-| **U5** | ✓ | ✓ | ✓ | ✓ | — | | | | | | |
-| **U6a** | ✓ | ✓ | ✓ | ✓ | ✓ | — | (✓) | | | | |
-| **U6b** | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — | | | | |
-| **U7** | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — | | | |
-| **U8** | ✓ | | ✓ | | | ✓ | | | — | | |
-| **U9** | ✓ | | ✓ | | | | | | ✓ | — | |
-| **U10** | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — |
+| Needs ↓ \ Provides → | U1 | U2 | U3 | U4 | U5 | U6a | U6b | U7 | U8 | U9 | U9b | U10 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **U1** | — | | | | | | | | | | | |
+| **U2** | ✓ | — | | | | | | | | | | |
+| **U3** | ✓ | ✓ | — | | | | | | | | | |
+| **U4** | ✓ | ✓ | | — | | | | | | | | |
+| **U5** | ✓ | ✓ | ✓ | ✓ | — | | | | | | | |
+| **U6a** | ✓ | ✓ | ✓ | ✓ | ✓ | — | (✓) | | | | | |
+| **U6b** | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — | | | | | |
+| **U7** | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — | | | | |
+| **U8** | ✓ | | ✓ | | | ✓ | | | — | | | |
+| **U9** | ✓ | | ✓ | | | | | | ✓ | — | | |
+| **U9b** | ✓ | | | | | | | | ✓ | ✓ | — | |
+| **U10** | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — |
 
 **Interface seam (U6a ↔ U6b)**: U6a's `CreateAndPairUseCase` invokes a move-on-bind precheck through a `MoveOnBindUseCase` interface that U6a declares. U6b ships the implementation. Until U6b lands, U6a uses a no-op default (proceed without precheck) — fine because the U6 install gate (Q-T2=B) covers U6a + U6b together.
 

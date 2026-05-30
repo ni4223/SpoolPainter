@@ -2,7 +2,6 @@ package com.spoolpainter.app.ui.screens.settings
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -35,7 +34,11 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.spoolpainter.app.data.local.Currency
+import com.spoolpainter.app.data.local.FilamentSortKey
+import com.spoolpainter.app.data.local.SpoolSortKey
 import com.spoolpainter.app.ui.common.UiEffect
+import com.spoolpainter.app.ui.components.ThemeToggleSwitch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -44,6 +47,7 @@ fun SettingsScreen(
     onBack: () -> Unit = {},
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val themeOverride by viewModel.themeOverride.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(Unit) {
@@ -64,6 +68,13 @@ fun SettingsScreen(
                     IconButton(onClick = onBack, modifier = Modifier.testTag("settings-back")) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
+                },
+                actions = {
+                    ThemeToggleSwitch(
+                        current = themeOverride,
+                        onToggle = viewModel::onThemeToggled,
+                        modifier = Modifier.padding(end = 8.dp),
+                    )
                 },
             )
         },
@@ -92,22 +103,13 @@ fun SettingsScreen(
                     .testTag("settings-url-field"),
                 label = { Text("URL") },
             )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            Button(
+                onClick = { viewModel.onUrlSaved(draftUrl) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("settings-save"),
             ) {
-                Button(
-                    onClick = { viewModel.onUrlSaved(draftUrl) },
-                    modifier = Modifier.testTag("settings-save"),
-                ) {
-                    Text("Save")
-                }
-                OutlinedButton(
-                    onClick = viewModel::onTestConnectionTapped,
-                    modifier = Modifier.testTag("settings-test-connection"),
-                ) {
-                    Text("Test connection")
-                }
+                Text("Save")
             }
             OutlinedButton(
                 onClick = viewModel::onRefreshTapped,
@@ -117,9 +119,36 @@ fun SettingsScreen(
             ) {
                 Text("Refresh spool list")
             }
-            Text(
-                text = "Sort order, theme, and full banner UI land in U9.",
-                style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+            SettingsSortSection(
+                label = "Spool list sort",
+                selectedKey = state.spoolSortKey,
+                direction = state.spoolSortDirection,
+                keys = SpoolSortKey.values(),
+                keyLabel = ::spoolSortKeyLabel,
+                onKeySelected = viewModel::onSpoolSortKeyChanged,
+                onDirectionChanged = viewModel::onSpoolSortDirectionChanged,
+                testTag = "settings-spool-sort",
+            )
+            SettingsSortSection(
+                label = "Filament list sort",
+                selectedKey = state.filamentSortKey,
+                direction = state.filamentSortDirection,
+                keys = FilamentSortKey.values(),
+                keyLabel = ::filamentSortKeyLabel,
+                onKeySelected = viewModel::onFilamentSortKeyChanged,
+                onDirectionChanged = viewModel::onFilamentSortDirectionChanged,
+                testTag = "settings-filament-sort",
+            )
+            SettingsSegmentedSection(
+                label = "Currency",
+                options = listOf(
+                    Currency.Dollar to "$ Dollar",
+                    Currency.Euro to "€ Euro",
+                    Currency.Generic to "¤ Money",
+                ),
+                selected = state.currency,
+                onSelect = viewModel::onCurrencyChanged,
+                testTag = "settings-currency",
             )
         }
     }

@@ -2,7 +2,12 @@ package com.spoolpainter.app.ui.screens.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.spoolpainter.app.data.local.Currency
+import com.spoolpainter.app.data.local.FilamentSortKey
 import com.spoolpainter.app.data.local.SettingsRepository
+import com.spoolpainter.app.data.local.SortDirection
+import com.spoolpainter.app.data.local.SpoolSortKey
+import com.spoolpainter.app.data.local.ThemeOverride
 import com.spoolpainter.app.data.remote.spoolman.SpoolmanOutcome
 import com.spoolpainter.app.data.remote.spoolman.SpoolmanRepository
 import com.spoolpainter.app.data.remote.spoolman.UrlNotConfiguredException
@@ -25,12 +30,56 @@ class SettingsViewModel @Inject constructor(
 ) : ViewModel() {
 
     val state: StateFlow<SettingsUiState> = settings.settings
-        .map { SettingsUiState(it.url, it.sortOrder, it.themeOverride) }
+        .map {
+            SettingsUiState(
+                url = it.url,
+                spoolSortKey = it.spoolSortKey,
+                spoolSortDirection = it.spoolSortDirection,
+                filamentSortKey = it.filamentSortKey,
+                filamentSortDirection = it.filamentSortDirection,
+                currency = it.currency,
+            )
+        }
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5_000),
             initialValue = SettingsUiState(),
         )
+
+    fun onSpoolSortKeyChanged(key: SpoolSortKey) {
+        viewModelScope.launch { settings.setSpoolSortKey(key) }
+    }
+
+    fun onSpoolSortDirectionChanged(direction: SortDirection) {
+        viewModelScope.launch { settings.setSpoolSortDirection(direction) }
+    }
+
+    fun onFilamentSortKeyChanged(key: FilamentSortKey) {
+        viewModelScope.launch { settings.setFilamentSortKey(key) }
+    }
+
+    fun onFilamentSortDirectionChanged(direction: SortDirection) {
+        viewModelScope.launch { settings.setFilamentSortDirection(direction) }
+    }
+
+    fun onCurrencyChanged(currency: Currency) {
+        viewModelScope.launch { settings.setCurrency(currency) }
+    }
+
+    val themeOverride: StateFlow<ThemeOverride> = settings.settings
+        .map { it.themeOverride }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, ThemeOverride.Light)
+
+    fun onThemeToggled() {
+        viewModelScope.launch {
+            val next = if (themeOverride.value == ThemeOverride.Dark) {
+                ThemeOverride.Light
+            } else {
+                ThemeOverride.Dark
+            }
+            settings.setThemeOverride(next)
+        }
+    }
 
     private val _effects = Channel<UiEffect>(Channel.BUFFERED)
     val effects: Flow<UiEffect> = _effects.receiveAsFlow()
@@ -50,28 +99,6 @@ class SettingsViewModel @Inject constructor(
             trimmed
         } else {
             "http://$trimmed"
-        }
-    }
-
-    fun onTestConnectionTapped() {
-        viewModelScope.launch {
-            val message = when (val outcome = spoolman.testConnection()) {
-                is SpoolmanOutcome.Success -> {
-                    val base = "Connected to Spoolman v${outcome.data}"
-                    when (spoolman.ensureExtraFieldsRegistered()) {
-                        is SpoolmanOutcome.Success -> "$base • fields ready"
-                        else -> base
-                    }
-                }
-                is SpoolmanOutcome.HttpError -> "HTTP ${outcome.code}: ${outcome.message}"
-                is SpoolmanOutcome.NetworkError -> if (outcome.cause is UrlNotConfiguredException) {
-                    "Save a URL first"
-                } else {
-                    "Network error: ${outcome.cause.message ?: outcome.cause::class.simpleName}"
-                }
-                is SpoolmanOutcome.ParseError -> "Could not parse Spoolman response"
-            }
-            _effects.trySend(UiEffect.ShowSnackbar(message))
         }
     }
 

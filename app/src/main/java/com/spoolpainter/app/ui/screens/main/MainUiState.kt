@@ -1,5 +1,8 @@
 package com.spoolpainter.app.ui.screens.main
 
+import com.spoolpainter.app.data.local.FilamentSortKey
+import com.spoolpainter.app.data.local.SortDirection
+import com.spoolpainter.app.data.local.SpoolSortKey
 import com.spoolpainter.app.data.remote.spoolman.ExpanderOverrides
 import com.spoolpainter.app.domain.models.Brand
 import com.spoolpainter.app.domain.models.Material
@@ -25,6 +28,11 @@ data class MainUiState(
      *  instead of form.cardUid (which the dropdown selection can overwrite). */
     val observedTagUid: CardUid? = null,
     val writeMode: WriteMode = WriteMode.Spoolman,
+    val spoolSortKey: SpoolSortKey = SpoolSortKey.Id,
+    val spoolSortDirection: SortDirection = SortDirection.Desc,
+    val filamentSortKey: FilamentSortKey = FilamentSortKey.Id,
+    val filamentSortDirection: SortDirection = SortDirection.Desc,
+    val priceSuffix: String = "$",
 )
 
 data class FormState(

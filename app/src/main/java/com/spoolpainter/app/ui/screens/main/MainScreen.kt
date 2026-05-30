@@ -44,6 +44,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.spoolpainter.app.data.local.SortDirection
+import com.spoolpainter.app.data.local.SpoolSortKey
 import com.spoolpainter.app.domain.models.SpoolmanSpool
 import com.spoolpainter.app.domain.primitives.NfcResult
 import com.spoolpainter.app.ui.common.UiEffect
@@ -52,6 +54,7 @@ import com.spoolpainter.app.ui.components.FormChange
 import com.spoolpainter.app.ui.components.sheets.BottomSheetHost
 import com.spoolpainter.app.ui.components.sheets.PairAnotherTagUiState
 import com.spoolpainter.app.ui.components.sheets.RepairConfirmViewModel
+import com.spoolpainter.app.ui.components.spoolComparator
 
 @Composable
 fun MainScreen(
@@ -119,6 +122,8 @@ fun MainScreen(
             if (state.spoolman.urlConfigured) {
                 SpoolmanDropdown(
                     spools = state.spoolman.spools,
+                    sortKey = state.spoolSortKey,
+                    sortDirection = state.spoolSortDirection,
                     selectedId = state.spoolman.selectedSpoolId,
                     enabled = state.activeFlow == ActiveFlow.Idle && state.spoolman.reachable,
                     onSelect = viewModel::onSpoolSelected,
@@ -140,6 +145,9 @@ fun MainScreen(
                 filaments = filaments,
                 materials = materials,
                 brands = brands,
+                filamentSortKey = state.filamentSortKey,
+                filamentSortDirection = state.filamentSortDirection,
+                priceSuffix = state.priceSuffix,
                 onChange = { change ->
                     when (change) {
                         is FormChange.MaterialPicked -> viewModel.onMaterialPicked(change.value)
@@ -271,18 +279,16 @@ private fun WritingHint(activeFlow: ActiveFlow, nfc: NfcResult) {
 @Composable
 internal fun SpoolmanDropdown(
     spools: List<SpoolmanSpool>,
+    sortKey: SpoolSortKey,
+    sortDirection: SortDirection,
     selectedId: Int?,
     enabled: Boolean,
     onSelect: (SpoolmanSpool?) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
-    // Cached spools include archived entries (move-on-bind needs them) but
-    // the dropdown is for picking an active spool to write to. Sort newest
-    // first — recently-created spools are the most likely target after a
-    // pair, so users shouldn't have to scroll past everything to find them.
     val visibleSpools = spools
         .filterNot { it.archived }
-        .sortedByDescending { it.id ?: Int.MIN_VALUE }
+        .sortedWith(spoolComparator(sortKey, sortDirection))
     val selected = spools.firstOrNull { it.id == selectedId }
     val displayText = if (!enabled) {
         "Configure Spoolman URL in Settings"

@@ -43,7 +43,7 @@ private val DarkColors = darkColorScheme(
 @Composable
 fun SpoolPainterTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    dynamicColor: Boolean = false, // Disable dynamic colors to use our custom theme
+    dynamicColor: Boolean = true,
     content: @Composable () -> Unit
 ) {
     val colorScheme = when {

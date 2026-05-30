@@ -1,11 +1,15 @@
 package com.spoolpainter.app.ui.screens.settings
 
-import com.spoolpainter.app.data.local.SortOrder
-import com.spoolpainter.app.data.local.ThemeOverride
+import com.spoolpainter.app.data.local.Currency
+import com.spoolpainter.app.data.local.FilamentSortKey
+import com.spoolpainter.app.data.local.SortDirection
+import com.spoolpainter.app.data.local.SpoolSortKey
 
-// connectivity field added in U9 (depends on U3 ConnectivityState).
 data class SettingsUiState(
     val url: String = "",
-    val sortOrder: SortOrder = SortOrder.Default,
-    val themeOverride: ThemeOverride = ThemeOverride.System,
+    val spoolSortKey: SpoolSortKey = SpoolSortKey.Id,
+    val spoolSortDirection: SortDirection = SortDirection.Desc,
+    val filamentSortKey: FilamentSortKey = FilamentSortKey.Id,
+    val filamentSortDirection: SortDirection = SortDirection.Desc,
+    val currency: Currency = Currency.Dollar,
 )

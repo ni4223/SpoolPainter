@@ -1309,3 +1309,243 @@ Carve-outs:
 **Context**: Per-unit loop close-out. Single bundled commit; no push (per [[feedback-aidlc-unit-close-out-commit]]); no IDE noise (`.idea/*` already gitignored).
 
 ---
+
+## Session resume — U9 open-up + new unit U9b inserted
+**Timestamp**: 2026-05-29T00:00:00Z
+**User Input**: "aidlc continue" → mid-prompt the user added a new unit directive: "add 1 more stage at the end to fix UI elements: this should include things like getting logo on main screena and spalsh screen back. having main UI fixed up as per v1 and fix messages on the save and test connection to show on up as they are hided by keyboard, adding sorting for the filament too, make other and color wheel option more feel like action, more clear UI for them, and i will keep addimg more" (typos preserved per audit-log policy — capture user's COMPLETE RAW INPUT exactly as provided).
+**AI Response**: Confirmed working tree state — clean against `origin/v2`, 2 commits ahead (U7 close-out `665b362` + U8 close-out `bcb7f0d`); U8 fully DONE per state file. Authored a new construction unit **U9b — UI Polish** between U9 and U10, mirroring the U6a/U6b split convention:
+- `aidlc-docs/inception/application-design/unit-of-work.md` — appended new §U9b section (between §U9 and §U10) with Domain / Origin / Scope (running list — explicitly open) / Components touched / Stories in scope / Public interfaces produced (none) / Entry criteria (U9 complete) / Exit criteria (in-scope items applied + verified on moto g stylus 2025 / Android 16 + tests at unchanged-or-higher count + APK size review + no formal install gate per Q-T2=B) / Tests / Carve-outs (no functional behavior changes; no release-build work; no splash A/B). Initial scope items captured verbatim from user direction: **branding restore** (logo on main screen + splash screen artwork), **main UI parity with v1 audit** (cross-references `ui-followups.md` UI-01), **snackbar visibility under keyboard** (Save + Test-connection feedback hidden by IME), **filament dropdown sort** (extends `SortOrder` to filament picker — currently spool-side only), **"Other" + "Color Wheel" affordance polish** (both feel passive — make them read as actions). Item list left explicitly open ("user is iterating; this scope grows as install-time UX surfaces more items").
+- `unit-of-work.md` §1 — Q-D2 row updated to reflect new strict order: U1 → U2 → U3 → U4 → U5 → U6a → U6b → U7 → U8 → U9 → U9b → U10.
+- `unit-of-work.md` §U10 — entry criteria moved from "U9 complete" to "U9b complete".
+- `unit-of-work-dependency.md` — execution order line and dependency matrix both extended with a U9b column + row. U9b depends on U1 / U8 / U9 (Hilt scaffold + filament listing for the picker sort + Settings UI it polishes); does not depend on U2/U3/U4/U5/U6/U7 directly.
+- `aidlc-state.md` Stage Progress — added new bullet `[ ] U9b (UI Polish) — pending; inserted 2026-05-29 by user direction during U9 open-up...` between existing U9 and U10 bullets.
+- `aidlc-state.md` Status footer — bumped count from "11 v2.0 units" → "12 v2.0 units"; appended a new "Session resumed 2026-05-29" bullet noting the U9b insertion + the open-ended scope policy + the now-current Next Stage = U9.
+
+No code changes in this audit entry; this is a workflow-doc scope expansion only. U9b's per-unit loop will open after U9 close-out per the strict ordering rule. Resuming U9's per-unit loop next.
+**Status**: U8 DONE; U9b inserted between U9 and U10; U9 ready to open. Awaiting per-unit gate assessment for U9.
+**Context**: Mid-session unit insertion. The user explicitly framed this as additive rather than a U10 rescope — U6a/U6b precedent applied: a focused polish unit gets its own per-unit loop with its own DoD rather than fattening another unit's scope.
+
+---
+
+## U9 — Per-unit gate assessment + Functional Design Part 1 (planning)
+**Timestamp**: 2026-05-29T00:00:00Z
+**User Input**: "do it" (continuing the AIDLC continue session that opened with U9b insertion).
+**AI Response**: Opened U9's per-unit loop. Per-unit gate assessment: Functional Design EXECUTE; NFR Requirements / NFR Design / Infrastructure Design SKIP. FD Part 1 plan authored at `aidlc-docs/construction/plans/u9-settings-theming-banner-functional-design-plan.md` covering: scope (settings UI completeness — sort + theme pickers; theme override application; OfflineBanner finalisation; sort comparator wiring per Q-U9-1); existing-code seams confirmed (Settings schema already shipped; ViewModel state already wired; SpoolPainterTheme currently un-instrumented for settings); explicit deferrals to U9b (branding, IME-aware snackbar, filament sort, "Other"/"Color Wheel" affordance, UI-01); explicit deferrals to U10 (UI-05/UI-07 snackbar copy, NFR-5 log stripping, APK size review). Ten Q-U9-* questions logged with "My pick" defaults: comparator location, control style (segmented buttons), theme hoisting (MainActivity), dynamicColor default flip (true on Android 12+), S-10.2 Retry gap (delta doc), sort enum reconciliation, banner extract-to-helper, snackbar-on-change, banner-as-Settings-shortcut. Test target: ~344/344 (delta +12 vs U8's 332).
+**Status**: FD Part 1 (planning) authored. Awaiting Q-U9-1..Q-U9-10 answers (or "go go go" to accept all defaults) before generating FD Part 2 artefacts.
+**Context**: Per-unit loop start per `core-workflow.md` CONSTRUCTION → Per-Unit Loop → Functional Design Step 2/3 (plan creation + question generation).
+
+---
+
+## U9 — FD Part 1 scope expansion (currency + filament sort pull-in)
+**Timestamp**: 2026-05-29T00:00:00Z
+**User Input**: 1) "i need to add more req to 9b one" 2) "what is in so far?" 3) "in setting we want currency switcher too, we can jst switch $ and eurpo sign for now and maybe obne that is genric like money" 4) "wherevre its rght, i think filamnet sort from 9b should be hewre too" (typos preserved per audit-log policy).
+**AI Response**: Surfaced current U9b scope. Flagged that currency switcher fits U9's shape (Settings field + control + display binding) better than U9b's "no net-new business logic" carve-out; user agreed and pulled filament sort into U9 too. Folded both into U9:
+- `unit-of-work.md` §U9 scope: bullet for spool+filament sort wiring (single comparator factory) + currency switcher; stories list adds S-9.4 (currency); tests add `SpoolComparatorTest` + `MainViewModelCurrencyTest` + currency repo round-trip.
+- `unit-of-work.md` §U9b scope: filament dropdown sort line struck through ("MOVED TO U9 2026-05-29 per user direction").
+- U9 FD plan: per-unit gate row updated (FD scope = sort + theme + currency); existing-code touchpoints table extended (`MoreDetailsExpander.kt` price suffix → parameter; `Settings.kt` schema gains `currency: Currency`; `SettingsRepository.setCurrency`); §1.1 in-scope items expanded; Q-U9-1 default flipped C → A (wire BOTH spool + filament in U9); §2.9 out-of-scope guards flipped filament sort to ✅; new §2.5b authored (Currency enum $ / € / ¤ U+00A4; serialiser default-extension is JSON-additive — no migration); two new questions logged: **Q-U9-11** (currency option set; My pick A — Dollar/Euro/Generic ¤) + **Q-U9-12** (carrier shape; My pick A — pre-derived `priceSuffix: String`); §2.6 tests extended; target test count 332 + ~18 ≈ **~350 / 350**; §3 ledger Q-U9-1..Q-U9-12; §4 approval gate "twelve Q-U9-* questions".
+**Status**: U9 FD Part 1 plan re-scoped. Awaiting Q-U9-1..Q-U9-12 answers (or "go go go" for defaults) before FD Part 2 artefacts.
+**Context**: Mid-stage scope expansion within FD Part 1 — no FD artefacts generated yet, so no FD-Part-2 invalidation concern. U9b scope shrinks accordingly; U9b's "open list" policy is unchanged.
+
+---
+
+## U9 — Functional Design Part 2 (artefact generation)
+**Timestamp**: 2026-05-29T00:00:00Z
+**User Input**: "start on doc for u9" → (interrupted) → "start AIDLC for u9" — interpreted as "go go go" approval on Q-U9-1..Q-U9-12 (all "My pick" defaults locked).
+**AI Response**: Locked answers per FD Part 1 ledger:
+
+| # | Locked answer |
+|---|---|
+| Q-U9-1 | A — wire BOTH spool + filament dropdowns in U9 (single comparator factory) |
+| Q-U9-2 | C — ship enum-driven labels (Default / Alphabetical / Material then Color); story revisit for U10 |
+| Q-U9-3 | A — keep banner derivation in `MainViewModel`; test in-place |
+| Q-U9-4 | A — `SingleChoiceSegmentedButtonRow` for sort + theme + currency |
+| Q-U9-5 | A — hoist theme resolution to `MainActivity.setContent` |
+| Q-U9-6 | A — no confirmation snackbar on sort/theme/currency change |
+| Q-U9-7 | B — extract comparator to `ui/components/SortComparators.kt` |
+| Q-U9-8 | A — flip `dynamicColor` default `false` → `true` (Material You on Android 12+) |
+| Q-U9-9 | A — banner stays read-only (not clickable) |
+| Q-U9-10 | B — author `requirements-delta-banner-passive.md` |
+| Q-U9-11 | A — Currency: Dollar ($) / Euro (€) / Generic (¤ U+00A4) |
+| Q-U9-12 | A — pre-derived `priceSuffix: String` on `MainUiState` |
+
+Generated four FD artefacts under `aidlc-docs/construction/u9-settings-theming-banner/functional-design/`:
+- `domain-entities.md` — net-new `Currency` enum (Q-U9-11=A) with $/€/¤ symbols; `Settings` schema delta (additive `currency: Currency = Currency.Dollar`; JSON-additive — kotlinx-serialization fills missing field with default on read, no migration code); `SettingsRepository.setCurrency` setter; `SettingsUiState.currency`; `MainUiState.sortOrder` + `MainUiState.priceSuffix` projections; comparator factory `ui/components/SortComparators.kt` (NEW file) with `spoolComparator(SortOrder)` + `filamentComparator(SortOrder)`; `SpoolPainterTheme` `dynamicColor` default flipped `false → true`; `MainActivity` Hilt-injects `SettingsRepository`, resolves `darkTheme` from `themeOverride` at `setContent`. File-impact summary: 1 created, 13 modified, 0 deleted.
+- `business-rules.md` — BR-U9-1..33 covering: §1 Settings persistence (FR-9.1..9.4), §2 Settings UI (segmented buttons + label conventions + asymmetric snackbar policy), §3 sort comparator wiring (BR-U9-13..17 — both spool + filament; archived filtering preserved; default-mode behavior change in filament picker documented), §4 theme override + dynamic color (BR-U9-18..22 — single resolution site; no Activity.recreate; pre-Android-12 fallback preserved), §5 banner derivation (BR-U9-23..28 — derivation in-place; not-clickable; Q-U9-10=B delta authored), §6 currency switcher (BR-U9-29..33 — pre-derived priceSuffix per Q-U9-12=A; client-side visual only; no Spoolman API impact), §7 AC matrix (S-9.1..S-9.4 + S-10.2 + S-12.1 + S-13.1..2 — S-10.2 Retry AC marked N/A; superseded by Q-CD1.1=A delta), §8 out-of-scope guards.
+- `business-logic-model.md` — six diagrams: (1) Settings change → DataStore round-trip (currency representative); (2) cold-start theme resolution flowchart; (3) runtime theme override change (no Activity.recreate); (4) sort order change → dropdown re-render (zero Spoolman API calls); (5) banner derivation flowchart; (6) currency → priceSuffix derivation. Plus state summary (no new state-machine variants — pure projection extensions) + concurrency model (existing reactive Flow + Compose contract; no new locks/channels/actors).
+- `frontend-components.md` — Settings layout ASCII; new `SettingsSegmentedSection<T>` generic helper composable (single source for sort + theme + currency); `SettingsViewModel` extension (3 handlers); `MainScreen.SpoolmanDropdown` + `FilamentPicker` wiring (`spoolComparator` / `filamentComparator`); `MoreDetailsExpander` price-suffix parameterisation; `FilamentForm` plumbing; `MainActivity` Hilt + Theme.kt `dynamicColor` flip; visual state matrix; a11y notes; composable signature delta summary (5 signatures touched); test target ~350 / 350 (delta +18 vs U8's 332).
+
+Also authored Q-U9-10=B requirements delta at `aidlc-docs/inception/requirements/requirements-delta-banner-passive.md` — closes S-10.2 "Retry control" AC permanently by reframing S-10.2 as "passive banner; Test connection lives in Settings"; reaffirms Q-CD1.1=A and Q-U9-9=A; documents the forward-compat reversal path if install-time iteration ever asks for banner-resident Retry.
+
+**Status**: U9 Functional Design Part 2 EXECUTED. Awaiting user approval at the FD stage gate before opening Code Generation Part 1.
+**Context**: Per-unit loop, Functional Design Step 6 (artefact generation) per `construction/functional-design.md`. Standardised 2-option completion message follows.
+
+---
+
+## U9 — FD Part 2 revision (theme → TopAppBar; sort split into spool + filament)
+**Timestamp**: 2026-05-29T00:00:00Z
+**User Input**: "For theme, put it on top bar with just sign like moon sun and auto in between, so you togle towards moon its dark, etc so two kind of sorts, spool sort and filament. u though we added filament sort to thi section"
+**AI Response**: Acknowledged the gap — prior FD Part 2 had folded filament-sort into a single shared `Settings.sortOrder` field controlling both dropdowns simultaneously, while user's direction at scope-expansion time ("filamnet sort from 9b should be hewre too") is now clarified as **two independent sorts**. Theme also moves out of `SettingsScreen` into a 3-state cycle icon on the MainScreen TopAppBar. Two design changes folded in:
+
+1. **Sort split into two `Settings` fields** — `sortOrder` is renamed to `spoolSortOrder` and a new `filamentSortOrder: SortOrder = SortOrder.Default` is added. Both default to `Default`. Independent setters: `setSpoolSortOrder` + `setFilamentSortOrder`. Independent handlers on `SettingsViewModel` (`onSpoolSortOrderChanged` + `onFilamentSortOrderChanged`). Two segmented sections on `SettingsScreen` ("Spool list sort" + "Filament list sort"), same enum and labels (`Default` / `Alphabetical` / `Material then Color`). `MainUiState` carries both fields independently. `SpoolmanDropdown` reads `state.spoolSortOrder`; `FilamentPicker` reads `state.filamentSortOrder` via caller. Comparator factory at `ui/components/SortComparators.kt` is unchanged in shape — same `spoolComparator(SortOrder)` / `filamentComparator(SortOrder)` factories; consumers just pass their own enum value. Legacy `sortOrder` JSON key is silently dropped by `Json { ignoreUnknownKeys = true }` on read (preference resets to `Default`/`Default` on upgrade — acceptable for v2 testing-track population). One-time JSON-element migration (preserve legacy `sortOrder` → `spoolSortOrder`) deferred to U10.
+
+2. **Theme moves to MainScreen TopAppBar (Q-U9-13=A)** — `SettingsScreen` no longer exposes `themeOverride`; the section is removed entirely. `SettingsUiState.themeOverride` field is dropped; `SettingsViewModel.onThemeOverrideChanged` is removed. New `ThemeCycleIconButton` composable lives at `ui/components/ThemeCycleIconButton.kt`; rendered in `MainTopBar` to the left of the Settings gear. Cycle order: `System → Light → Dark → System`. Glyphs: `BrightnessAuto` (System) / `LightMode` (Light) / `DarkMode` (Dark) — outlined Material icons (already on the U8 classpath). `MainViewModel` exposes `themeOverride: StateFlow<ThemeOverride>` (standalone — separate from `MainUiState` so theme tap doesn't recompose the form) plus `onThemeCycleTapped()` handler. `MainActivity.setContent` is still the `darkTheme` resolution site — unchanged in shape. Per-state `contentDescription` for TalkBack ("Theme: Light (tap to switch to Dark)" etc.). No confirmation snackbar (icon flip + colorScheme swap are the confirmation).
+
+**FD artefacts re-locked**:
+- `aidlc-docs/construction/u9-settings-theming-banner/functional-design/domain-entities.md` — §1.2 `Settings` schema (sort split + currency add); §1.2.1 legacy-`sortOrder` migration carve-out; §1.3 repo interface delta (5 setters); §1.4 `SettingsUiState` (drops `themeOverride`); §1.5 `MainUiState` (3 new fields); §1.5b new `MainViewModel.themeOverride` flow + `onThemeCycleTapped`; §2.2 consumer-wiring table; §6 forward-compat (long-press menu carve-out + legacy-JSON migration); §7 file impact (2 created — `SortComparators.kt` + `ThemeCycleIconButton.kt`; 13 modified; 0 deleted).
+- `business-rules.md` — BR-U9-2 split into BR-U9-2a/2b (independent sources of truth); BR-U9-3 setter call-site moves to `MainViewModel.onThemeCycleTapped`; BR-U9-7 section ordering drops Theme from Settings; BR-U9-9 reserved blank to avoid renumbering; BR-U9-13 split into BR-U9-13a/13b (independent comparator wiring); new BR-U9-19a/19b/19c/19d (TopAppBar cycle icon + `MainViewModel.themeOverride` flow + no-snackbar + per-state contentDescription); §7 AC matrix gains three filament-sort rows + theme moves to "MainScreen cycle icon (Q-U9-13=A)"; §8 adds two carve-outs (long-press menu + legacy-JSON migration).
+- `business-logic-model.md` — Diagram 1 representative shifted to currency (now five setter paths). Diagram 3 redrawn from "Settings tap" to "TopAppBar cycle tap" with `ThemeCycleIconButton` + `MainViewModel.onThemeCycleTapped`; cycle-order note added. Diagram 4 redrawn as two independent sequences (spool sort change → spool dropdown reorders; filament picker UNCHANGED; symmetric for filament sort change). §7 state summary lists the standalone `MainViewModel.themeOverride` projection as separate from `MainUiState`. §8 concurrency model notes that theme cycle is a side-flow emission path.
+- `frontend-components.md` — §1 layout drops Theme block; new §1b for TopAppBar cycle icon. §2.1 `SettingsScreen` body reflects three sections (spool sort + filament sort + currency). §2.3 `SettingsViewModel` drops `onThemeOverrideChanged`; gains `onSpoolSortOrderChanged` + `onFilamentSortOrderChanged` + `onCurrencyChanged`. §2.3b new — `MainViewModel` theme flow + handler. §2.4 new — `ThemeCycleIconButton` composable signature + a11y notes. §2.5 `MainTopBar` signature delta. §2.6 `SpoolmanDropdown` reads `state.spoolSortOrder`. §2.7 `FilamentPicker` accepts `sortOrder: SortOrder` parameter (caller passes `state.filamentSortOrder`). §3 visual state matrix gains theme cycle row. §6 composable signature delta table extended (`MainTopBar`, `ThemeCycleIconButton`, `FilamentForm` gains `filamentSortOrder` param). §7 test target raised to **~352 / 352** (Δ +20 vs U8's 332) — added `MainViewModelThemeCycleTest` + `MainViewModelSortTest` (independence check); `SettingsViewModelTest` no longer covers `onThemeOverrideChanged`.
+
+**Plan ledger updated** at `aidlc-docs/construction/plans/u9-settings-theming-banner-functional-design-plan.md`:
+- §3 ledger now lists 13 questions (Q-U9-13 added).
+- Q-U9-1 / Q-U9-2 / Q-U9-4 entries revised in-place with revision notes.
+- §4 approval gate text bumped from "twelve" → "thirteen"; documents that FD Part 2 was generated against twelve and re-locked after the revision.
+
+**Status**: U9 Functional Design Part 2 RE-LOCKED. Standardised 2-option completion message follows.
+**Context**: User-driven mid-stage revision. No code generated yet — FD Part 2 was the in-flight artefact set; all four FD docs + the plan + the Q ledger are coherent against the new design. Awaiting FD stage gate approval before opening Code Gen Part 1.
+
+---
+
+## U9 — FD APPROVED + Code Generation Part 1 plan authored
+**Timestamp**: 2026-05-29T00:00:00Z
+**User Input**: "ok" (approval at the FD stage gate following the sort-split + theme-TopAppBar revision).
+**AI Response**: U9 Functional Design APPROVED. Opened Code Generation Part 1 (Planning). Authored `aidlc-docs/construction/plans/u9-settings-theming-banner-code-generation-plan.md` with 16 numbered sections covering:
+- §1 Build deps (no new third-party deps; `material-icons-extended` already on classpath)
+- §2 Domain layer (Settings.kt schema delta — Currency enum + sort split + 3 new fields; SettingsSerializer.kt verify `ignoreUnknownKeys = true`; SettingsRepository.kt 5-setter interface)
+- §3 Comparator factory NEW file `ui/components/SortComparators.kt`
+- §4 NEW file `ui/components/ThemeCycleIconButton.kt` — stateless composable; outlined Material icons; mid-codegen filled-icon fallback documented
+- §5 Settings UI (drop themeOverride field; replace placeholder with 3 segmented sections; new `SettingsSegmentedSection<T>` generic helper)
+- §6 MainScreen TopAppBar + theme cycle (MainViewModel.themeOverride standalone flow + onThemeCycleTapped; MainUiState 3 new fields; MainTopBar signature delta; SpoolmanDropdown + FilamentPicker + MoreDetailsExpander + FilamentForm signature deltas)
+- §7 MainActivity Hilt + Theme.kt dynamicColor flip
+- §8 Banner — no UI change
+- §9 Requirements delta (already authored)
+- §10 Existing tests touched (SettingsRepositoryTest field rename; MainViewModelTest fakes update; rg sweep for legacy `setSortOrder` callers)
+- §11 New tests — 6 test classes covering sort comparators, banner derivation, currency, theme cycle, sort independence; revised running total to **354 / 354** (Δ +22 vs U8's 332; FD §7 estimate of 352 was off by 2 due to `SettingsRepositoryTest` split)
+- §12 `u9-summary.md` outline + U10 manual checklist (9 scenarios — sort persistence, sort independence, theme cycle, cold-start theme, dynamic color, pre-12 fallback, currency, banner, TalkBack)
+- §13 Verification gates (compileDebugKotlin / testDebugUnitTest / assembleDebug; no U9 install gate per Q-T2=B)
+- §14 Brownfield invariants (no `*_modified` files, no MaterialDatabase/BrandDatabase resurrection, no proto, no legacy sortOrder production references, inclusive language)
+- §15 Net file impact: 9 created (3 production + 5 test + 1 doc) / 13 modified production + 2 modified test / 0 deleted
+- §16 Standardised 2-option approval gate
+
+**Status**: Code Generation Part 1 plan AUTHORED. Awaiting user approval at the standardised 2-option gate before opening Part 2.
+**Approval prompt logged**: 2026-05-29T00:00:00Z — "U9 Code Generation Part 1 plan — approve and proceed to Part 2?"
+**Context**: Per-unit loop, Code Generation Part 1 Steps 1–9 per `construction/code-generation.md`. Plan doc is the source of truth for Part 2 checkbox tracking; per [[feedback-aidlc-proper-plan-doc]] no inlined chat plans + no audit.md content stuffing.
+
+---
+
+## U9 Code Generation Part 2 — EXECUTED
+**Timestamp**: 2026-05-29T00:00:00Z
+**User Input**: "aidlc continue. start code genration"
+**AI Response**: Interpreted as approval for Code Gen Part 2 (the Part 1 plan was awaiting the 2-option gate). Executed the plan checkboxes §1..§16 end-to-end without further interactive Q&A.
+**Context**: Per-unit loop, Code Generation Part 2.
+
+### Execution log (terse)
+- §1 No build deps required — but plan §1.1 was wrong: `material-icons-extended` was NOT on the classpath. Discovered at first `compileDebugKotlin`. Added `androidx-compose-material-icons-extended` to the version catalog + `app/build.gradle.kts`. Cost: APK +30 MB.
+- §2 Settings.kt → adds Currency enum + 2 new sort fields + currency field. SettingsSerializer adds `Json { ignoreUnknownKeys = true }`. SettingsRepository interface + impl swap setSortOrder → setSpoolSortOrder + add setFilamentSortOrder + setCurrency.
+- §3 SortComparators.kt authored. Mid-codegen pivot: `compareBy(comparator) { selector(it) }` inside a `when (order) ->` failed Kotlin 2.0.21 inference; refactored to explicit `Comparator { a, b -> CI.compare(...) }` lambdas chained with `.then(...)`. Functional behaviour preserved; 6 SortComparatorTest cases pass.
+- §4 ThemeCycleIconButton.kt authored. Mid-codegen pivot: switched `Icons.Outlined.{BrightnessAuto,LightMode,DarkMode}` → `Icons.Filled.{...}` (per plan §4.1.3 fallback) after the outlined imports failed to resolve once `material-icons-extended` was added.
+- §5 SettingsUiState drop themeOverride; replace sortOrder with two fields; add currency. SettingsViewModel state mapping + 3 new handlers; onThemeOverrideChanged removed. SettingsSegmentedSection<T> generic helper authored. SettingsScreen 3 segmented sections in place of the placeholder text block.
+- §6 MainViewModel: `themeOverride: StateFlow<ThemeOverride>` + `onThemeCycleTapped()` standalone (recomposes only the topbar icon — banner/form unaffected). New launch projects spoolSortOrder + filamentSortOrder + priceSuffix into `MainUiState`. Constructor `settings` parameter promoted to `private val`. MainUiState gains 3 new fields with defaults preserving today's behavior. MainScreen collects `themeOverride`, threads it into `MainTopBar`, passes `state.spoolSortOrder` into `SpoolmanDropdown`, passes `state.filamentSortOrder` + `state.priceSuffix` into `FilamentForm`. SpoolmanDropdown uses `spoolComparator(sortOrder)` on visible spool list. FilamentSectionExpander → FilamentPicker plumb sortOrder. MoreDetailsExpander suffix parameterised.
+- §7 MainActivity injects SettingsRepository, resolves darkTheme at setContent, flips SpoolPainterTheme dynamicColor=true. Theme.kt comment removed; default flipped.
+- §8 Banner UI unchanged — only test coverage extends (§11.3 below).
+- §9 requirements-delta-banner-passive.md already authored at FD time.
+- §10 SettingsRepositoryTest rewritten (defaults case extended, sort split, currency added). FakeSettingsRepository interface aligned (drop setSortOrder; add setSpoolSortOrder + setFilamentSortOrder + setCurrency). Audit `rg "setSortOrder|\.sortOrder\b" app/src` post-edit returns empty — zero stale references.
+- §11 6 NEW test classes authored (SortComparatorTest 6 cases; MainViewModelBannerTest 5 cases; MainViewModelCurrencyTest 3 cases; MainViewModelThemeCycleTest 2 cases; MainViewModelSortTest 1 case; SettingsViewModelTest 3 cases). FakeSpoolmanRepository extended with `connectivity` override + `setConnectivity(...)` helper for the banner derivation tests.
+- §12 u9-summary.md authored at `aidlc-docs/construction/u9-settings-theming-banner/code/u9-summary.md`.
+- §13 ✅ compileDebugKotlin; ✅ testDebugUnitTest **354 / 354** (0 failures, 0 errors; Δ +22 vs U8's 332); ✅ assembleDebug **64 MB APK** (Δ +30 MB vs U8's 34 MB — exceeds plan §13.3's 36 MB U10 trigger). Logged as **U10-Δ-1** (R8 / per-icon vector copy in U10 release polish).
+- §14 Brownfield invariants pass (no `*_modified` files; no MaterialDatabase/BrandDatabase resurrection; no proto; zero production references to legacy sortOrder; no new permissions; inclusive language preserved).
+- §15 Net file impact: 9 production + test files created, 13 production files modified + 2 test files modified + 1 build file modified (libs.versions.toml + app/build.gradle.kts both touched for the icon-extended dep), 1 doc file created. Zero deleted.
+- §16 Approval gate ready.
+
+**Status**: Code Generation Part 2 EXECUTED. Awaiting user approval at the standardised 2-option gate before close-out commit.
+
+---
+
+
+## U9-Δ-1 — install-time iteration on theme + sort UX
+**Timestamp**: 2026-05-29T00:00:00Z
+**User Input**: "so theme one, goes in seeting too, setting tab bar, and i was thinking some sort of toggle, left right or something. Sort, just keep material, brand, id. in dropdown, check v1" → "2 in theme is fine. 2-add last used too to what i said, also need way to do sort asc or dsc."
+**AI Response**: Authored U9-Δ-1 install-time iteration patch. Direct execution under [[feedback-aidlc-proper-plan-doc]] authorisation pattern (small in-flight delta; no separate FD revision required — captured here + in u9-summary.md update later).
+**Context**: U9 install-time iteration on theme widget + sort UI. Reframes the FD's 3-state cycle + 3-key segmented buttons.
+
+### Schema delta
+- `Settings.sortOrder`-derived (`spoolSortOrder` / `filamentSortOrder`) fields **deleted**. Replaced by `spoolSortKey: SortKey` + `spoolSortDirection: SortDirection` + same pair for filament.
+- New enum `SortKey { Material, Brand, Id, LastUsed }` (4 keys; mirrors v1's `Brand A-Z / Material A-Z / Last Used` plus `Id`). Old `SortOrder { Default, Alphabetical, MaterialThenColor }` removed.
+- New enum `SortDirection { Asc, Desc }`.
+- `ThemeOverride { System, Light, Dark }` → `ThemeOverride { Light, Dark }`. `System` removed; `darkTheme` now resolves directly from `settings.themeOverride == Dark`.
+- `Settings.themeOverride` default flips `System` → `Light`.
+- `SettingsSerializer` adds `coerceInputValues = true` so legacy `themeOverride: "System"` payloads decode to the new default rather than throwing.
+
+### v1 reference (verified by reading `git show main:app/src/main/java/com/spoolpainter/app/ui/screens/SettingsScreen.kt`)
+- v1 sort options: `"None" / "Brand (A-Z)" / "Material (A-Z)" / "Last Used"` rendered in an `ExposedDropdownMenu`.
+- v2 swaps "None" → "Id" (more meaningful with v2's local sorting) and adds explicit asc/desc toggle (v1 had server-side asc/desc baked into the option string).
+
+### LastUsed semantics
+- Spoolman has a `last_used` field on spools but `SpoolmanSpool` doesn't model it. `SortKey.LastUsed` therefore degrades to id ordering for both spools and filaments (filaments have no `last_used` at the wire level either). Documented inline in `SortComparators.kt`. Logged for U10 as a follow-up — model `last_used` properly so the option earns its label.
+
+### UI pivots
+- **Theme widget** = `Switch` (Material 3 `Switch` with thumb-icon: sun/moon). Lives on **both** the Main TopAppBar (replacing the cycle icon) and the Settings TopAppBar (right side, before the back-arrow returns the user). One handler per VM; Settings VM gets its own `themeOverride: StateFlow<ThemeOverride>` + `onThemeToggled()`.
+- **Sort widget** = `ExposedDropdownMenu` (4 keys) + sibling `IconButton` showing `ArrowUpward` (Asc) or `ArrowDownward` (Desc). Tap the icon to flip direction. Per dropdown — both spool + filament sections get the pair side-by-side. Currency stays a `SegmentedButtonRow`.
+- New file `ui/components/ThemeToggleSwitch.kt` (replaces `ThemeCycleIconButton.kt`, deleted).
+- New file `ui/screens/settings/SettingsSortSection.kt`.
+
+### MainViewModel
+- `onThemeCycleTapped()` → `onThemeToggled()` (2-state flip).
+- Sort projection rewritten to a private `SortProjection` data class (4 fields + priceSuffix) so `combine`-style `Triple` doesn't blow up when the field count grows. `MainUiState` carries `spoolSortKey` + `spoolSortDirection` + `filamentSortKey` + `filamentSortDirection` + `priceSuffix`.
+
+### MainViewModel toggle handler bug fix (during test run)
+- First test pass exposed an `assertEquals(Desc, awaitItem())` failure on the second `onSpoolSortDirectionToggled()`. Root cause: `SettingsViewModel.state` is `WhileSubscribed(5_000)` — without an active collector, `state.value` returns the stale initial `SettingsUiState()`. Fix: read `settings.settings.value.spoolSortDirection` (the repo's `Eagerly`-started flow) directly inside the handler. Same fix applied to `onFilamentSortDirectionToggled()`. Recorded for U10 to consider switching the VM `state` to `Eagerly` for parity.
+
+### Deletions
+- `app/src/main/java/com/spoolpainter/app/ui/components/ThemeCycleIconButton.kt`
+
+### Verification
+- `compileDebugKotlin` ✅
+- `testDebugUnitTest` ✅ **364 / 364** (Δ +10 vs U9 close-out's 354 — extra direction toggle / key cases; SortComparatorTest gained LastUsed-degrades cases; SettingsRepositoryTest gained 4 separate setter cases instead of 2)
+- `assembleDebug` + `installDebug` ✅ on moto g stylus 2025 / Android 16; APK 65 MB (Δ +1 MB vs U9 close-out's 64 MB — Switch + ArrowUpward/ArrowDownward icons negligible).
+
+**Status**: U9-Δ-1 patch landed in working tree; ready for install-time sanity check on the new theme switch + sort dropdowns.
+
+---
+
+
+## U9-Δ-1 fixup — theme toggle moved off MainScreen
+**Timestamp**: 2026-05-29T00:00:00Z
+**User Input**: "why its still on main screen i said toogle on setting screen"
+**AI Response**: Misread original direction — "goes in seeting too, setting tab bar" was meant as **only** Settings TopAppBar, not "both". Removed `ThemeToggleSwitch` from MainScreen TopAppBar; kept on Settings TopAppBar. Dropped `MainViewModel.themeOverride` flow + `onThemeToggled()` (now exclusive to `SettingsViewModel`). Deleted obsolete `MainViewModelThemeCycleTest.kt`. Tests **362 / 362** (Δ -2 vs prior 364 — removed 2 MainViewModel theme cases). `installDebug` ✅. Recorded as feedback memory: when user uses the word "too", verify scope; do not assume duplication across surfaces.
+**Context**: U9-Δ-1 install-time fixup.
+
+---
+
+
+## U9-Δ-1 fixup #2 — drop SortKey.LastUsed
+**Timestamp**: 2026-05-29T00:00:00Z
+**User Input**: "does filament even have last used?" → "why are you even adding it then"
+**AI Response**: Correct — Spoolman's `last_used` is per-spool, and `SpoolmanSpool` doesn't model it yet. The label promised a behaviour the data couldn't deliver (degraded to id ordering on both sides). Dropped `SortKey.LastUsed` entirely. Will re-add when `SpoolmanSpool.last_used_at` is properly modelled in U10. Removed enum value, comparator branches (both sides), `SettingsSortSection.sortKeyLabel` mapping, and 2 SortComparatorTest cases. Tests **360 / 360** ✅. `installDebug` ✅. **U10-Δ-2 reframed**: model `last_used_at` on `SpoolmanSpool` AND re-add `SortKey.LastUsed` (spool side only — filaments don't have last_used at the wire level).
+**Context**: U9-Δ-1 install-time fixup #2.
+
+---
+
+
+## U9-Δ-1 close-out
+**Timestamp**: 2026-05-29T00:00:00Z
+**User Input**: "finish this"
+**AI Response**: U9-Δ-1 install-time iteration complete. Final shipped shape:
+- Sort: split into `SpoolSortKey { Material, Brand, Id, LastUsed }` + `FilamentSortKey { Material, Brand, Id }`. `SpoolmanSpool.last_used` modelled. Comparator: `LastUsed Asc/Desc` with null-`last_used` always sorting last.
+- Theme: 2-state `Switch` on **Settings TopAppBar only**. `ThemeOverride.System` dropped.
+- Currency: `$ Dollar / € Euro / ¤ Money` segmented row.
+- Sort UI: full-width key dropdown + full-width Asc/Desc segmented row per section, no checkmark icon on segments (`icon = {}`).
+- Settings layout: full-width Save (no Test connection); full-width Refresh; Spool sort; Filament sort; Currency.
+
+**Verification**: compileDebugKotlin ✅; testDebugUnitTest ✅ **362 / 362** (Δ +30 vs U8); installDebug ✅ on moto g stylus 2025 / Android 16; APK 65 MB.
+
+**U10 follow-ups**:
+- U10-Δ-1: APK size review (R8 minify or per-icon vector copy to drop `material-icons-extended`).
+- U10-Δ-2: Legacy `sortOrder` JSON key one-time migration (`coerceInputValues` covers enum-value drift but not key→key translation).
+- JDK 17 portability.
+
+**Status**: U9 close-out summary authored at `aidlc-docs/construction/u9-settings-theming-banner/code/u9-summary.md`. State file bumped. Awaiting Code Gen Part 2 stage-gate approval at the standardised 2-option gate. Per [[feedback-aidlc-unit-close-out-commit]] no commit until approval.
+**Context**: U9 Code Gen Part 2 + Δ-1 install-time iteration finalised.
+
+---
+

@@ -25,6 +25,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.spoolpainter.app.data.local.FilamentSortKey
+import com.spoolpainter.app.data.local.SortDirection
 import com.spoolpainter.app.domain.models.SpoolmanFilament
 
 /**
@@ -38,11 +40,15 @@ fun FilamentPicker(
     filaments: List<SpoolmanFilament>,
     selectedFilamentId: Int?,
     enabled: Boolean,
+    sortKey: FilamentSortKey,
+    sortDirection: SortDirection,
     onSelect: (SpoolmanFilament?) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val sorted = remember(filaments) { filaments.sortedBy { it.displayString().lowercase() } }
+    val sorted = remember(filaments, sortKey, sortDirection) {
+        filaments.sortedWith(filamentComparator(sortKey, sortDirection))
+    }
     val selected = sorted.firstOrNull { it.id == selectedFilamentId }
     val displayValue = selected?.displayString().orEmpty()
 

@@ -40,7 +40,6 @@ class SettingsRepositoryTest {
 
     @After
     fun tearDown() {
-        // TestScope cleans itself; DataStore file lives in tempFolder.
     }
 
     @Test
@@ -48,8 +47,12 @@ class SettingsRepositoryTest {
         repository.settings.test {
             val first = awaitItem()
             assertEquals("", first.url)
-            assertEquals(SortOrder.Default, first.sortOrder)
-            assertEquals(ThemeOverride.System, first.themeOverride)
+            assertEquals(SpoolSortKey.Id, first.spoolSortKey)
+            assertEquals(SortDirection.Desc, first.spoolSortDirection)
+            assertEquals(FilamentSortKey.Id, first.filamentSortKey)
+            assertEquals(SortDirection.Desc, first.filamentSortDirection)
+            assertEquals(ThemeOverride.Light, first.themeOverride)
+            assertEquals(Currency.Dollar, first.currency)
             cancelAndIgnoreRemainingEvents()
         }
     }
@@ -65,11 +68,41 @@ class SettingsRepositoryTest {
     }
 
     @Test
-    fun `setSortOrder updates settings flow`() = runTest {
+    fun `setSpoolSortKey updates settings flow`() = runTest {
         repository.settings.test {
-            assertEquals(SortOrder.Default, awaitItem().sortOrder)
-            repository.setSortOrder(SortOrder.Alphabetical)
-            assertEquals(SortOrder.Alphabetical, awaitItem().sortOrder)
+            assertEquals(SpoolSortKey.Id, awaitItem().spoolSortKey)
+            repository.setSpoolSortKey(SpoolSortKey.LastUsed)
+            assertEquals(SpoolSortKey.LastUsed, awaitItem().spoolSortKey)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `setSpoolSortDirection updates settings flow`() = runTest {
+        repository.settings.test {
+            assertEquals(SortDirection.Desc, awaitItem().spoolSortDirection)
+            repository.setSpoolSortDirection(SortDirection.Asc)
+            assertEquals(SortDirection.Asc, awaitItem().spoolSortDirection)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `setFilamentSortKey updates settings flow`() = runTest {
+        repository.settings.test {
+            assertEquals(FilamentSortKey.Id, awaitItem().filamentSortKey)
+            repository.setFilamentSortKey(FilamentSortKey.Brand)
+            assertEquals(FilamentSortKey.Brand, awaitItem().filamentSortKey)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `setFilamentSortDirection updates settings flow`() = runTest {
+        repository.settings.test {
+            assertEquals(SortDirection.Desc, awaitItem().filamentSortDirection)
+            repository.setFilamentSortDirection(SortDirection.Asc)
+            assertEquals(SortDirection.Asc, awaitItem().filamentSortDirection)
             cancelAndIgnoreRemainingEvents()
         }
     }
@@ -77,9 +110,21 @@ class SettingsRepositoryTest {
     @Test
     fun `setThemeOverride updates settings flow`() = runTest {
         repository.settings.test {
-            assertEquals(ThemeOverride.System, awaitItem().themeOverride)
+            assertEquals(ThemeOverride.Light, awaitItem().themeOverride)
             repository.setThemeOverride(ThemeOverride.Dark)
             assertEquals(ThemeOverride.Dark, awaitItem().themeOverride)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `setCurrency updates settings flow through Dollar Euro Generic`() = runTest {
+        repository.settings.test {
+            assertEquals(Currency.Dollar, awaitItem().currency)
+            repository.setCurrency(Currency.Euro)
+            assertEquals(Currency.Euro, awaitItem().currency)
+            repository.setCurrency(Currency.Generic)
+            assertEquals(Currency.Generic, awaitItem().currency)
             cancelAndIgnoreRemainingEvents()
         }
     }

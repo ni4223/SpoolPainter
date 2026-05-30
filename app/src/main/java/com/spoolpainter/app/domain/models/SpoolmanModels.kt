@@ -9,6 +9,9 @@ data class SpoolmanSpool(
     val lot_nr: String? = null,
     val archived: Boolean = false,
     val extra: Map<String, String>? = null,
+    // ISO-8601 string from Spoolman; null on freshly-created spools that
+    // haven't had filament consumed yet. Used by SortKey.LastUsed.
+    val last_used: String? = null,
 )
 
 data class SpoolmanFilament(

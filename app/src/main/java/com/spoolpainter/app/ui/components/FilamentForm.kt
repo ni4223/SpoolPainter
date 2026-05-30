@@ -17,6 +17,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.spoolpainter.app.data.local.FilamentSortKey
+import com.spoolpainter.app.data.local.SortDirection
 import com.spoolpainter.app.domain.models.Brand
 import com.spoolpainter.app.domain.models.Material
 import com.spoolpainter.app.domain.models.SpoolmanFilament
@@ -66,6 +68,9 @@ fun FilamentForm(
     filaments: List<SpoolmanFilament>,
     materials: List<Material>,
     brands: List<String>,
+    filamentSortKey: FilamentSortKey,
+    filamentSortDirection: SortDirection,
+    priceSuffix: String,
     onChange: (FormChange) -> Unit,
     onSave: () -> Unit,
     modifier: Modifier = Modifier,
@@ -82,6 +87,8 @@ fun FilamentForm(
             selectedFilamentId = state.selectedFilamentId,
             expanded = state.filamentSectionExpanded,
             enabled = enabled,
+            sortKey = filamentSortKey,
+            sortDirection = filamentSortDirection,
             onToggle = { onChange(FormChange.FilamentSectionToggled) },
             onSelect = { onChange(FormChange.FilamentSelected(it)) },
         )
@@ -127,6 +134,7 @@ fun FilamentForm(
             enabled = enabled,
             emptySpoolWeightG = state.emptySpoolWeightG,
             priceMajor = state.priceMajor,
+            priceSuffix = priceSuffix,
             fullSpoolWeightG = state.fullSpoolWeightG,
             diameterMm = state.diameterMm,
             densityGPerCm3 = state.densityGPerCm3,

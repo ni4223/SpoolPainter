@@ -39,6 +39,7 @@ fun MoreDetailsExpander(
     enabled: Boolean,
     emptySpoolWeightG: Float?,
     priceMajor: Float?,
+    priceSuffix: String,
     fullSpoolWeightG: Float?,
     diameterMm: Float?,
     densityGPerCm3: Float?,
@@ -104,7 +105,7 @@ fun MoreDetailsExpander(
                 DecimalField(
                     label = "Price",
                     supportingText = null,
-                    suffix = "$",
+                    suffix = priceSuffix,
                     value = priceMajor,
                     enabled = enabled,
                     testTag = "more-details-price",

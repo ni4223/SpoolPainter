@@ -52,7 +52,7 @@ import javax.inject.Inject
 class MainViewModel @Inject constructor(
     private val nfc: NfcRepository,
     spoolman: SpoolmanRepository,
-    settings: SettingsRepository,
+    private val settings: SettingsRepository,
     private val materialBrandRepo: MaterialBrandRepository,
     private val readAndPair: ReadAndPairUseCase,
     private val createAndPair: CreateAndPairUseCase,
@@ -145,6 +145,30 @@ class MainViewModel @Inject constructor(
                 .distinctUntilChanged()
                 .collect { value ->
                     _state.update { it.copy(spoolman = it.spoolman.copy(urlConfigured = value)) }
+                }
+        }
+        viewModelScope.launch {
+            settings.settings
+                .map { s ->
+                    SortProjection(
+                        spoolKey = s.spoolSortKey,
+                        spoolDir = s.spoolSortDirection,
+                        filamentKey = s.filamentSortKey,
+                        filamentDir = s.filamentSortDirection,
+                        priceSuffix = s.currency.symbol,
+                    )
+                }
+                .distinctUntilChanged()
+                .collect { p ->
+                    _state.update {
+                        it.copy(
+                            spoolSortKey = p.spoolKey,
+                            spoolSortDirection = p.spoolDir,
+                            filamentSortKey = p.filamentKey,
+                            filamentSortDirection = p.filamentDir,
+                            priceSuffix = p.priceSuffix,
+                        )
+                    }
                 }
         }
         // WriteMode is derived from settings.url. No connectivity check — a
@@ -936,3 +960,11 @@ class MainViewModel @Inject constructor(
         const val WRITE_TIMEOUT_MS_DEFAULT: Long = 15_000L
     }
 }
+
+private data class SortProjection(
+    val spoolKey: com.spoolpainter.app.data.local.SpoolSortKey,
+    val spoolDir: com.spoolpainter.app.data.local.SortDirection,
+    val filamentKey: com.spoolpainter.app.data.local.FilamentSortKey,
+    val filamentDir: com.spoolpainter.app.data.local.SortDirection,
+    val priceSuffix: String,
+)

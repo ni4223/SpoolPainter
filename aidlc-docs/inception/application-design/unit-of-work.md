@@ -21,7 +21,7 @@
 | Q-SG3 | A — U10 own unit | Release polish ≠ functional work |
 | Q-SG4 | B (constrained by Q-FU1=C) | v2.1 lightweight stubs only |
 | Q-D1 | C — Hybrid | Interfaces at primary cross-unit boundaries; plain classes elsewhere |
-| Q-D2 | A — Strict order | U1 → U2 → U3 → U4 → U5 → U6a → U6b → U7 → U8 → U9 → U10 |
+| Q-D2 | A — Strict order | U1 → U2 → U3 → U4 → U5 → U6a → U6b → U7 → U8 → U9 → U9b → U10 (U9b inserted 2026-05-29 per user direction; mirrors U6a/U6b split convention) |
 | Q-D3 | A | Spoolman-touching helpers live in U3 |
 | Q-T1 | B | DoD = code merged + unit tests passing |
 | Q-T2 | B (per Q-FU2=A) | Milestone install gates at U1 / U5 / U6 / U10 (treating U6a OR U6b → "U6") |
@@ -471,11 +471,13 @@ If the workspace contains uncommitted changes from prior units that were never c
 **Domain**: Settings + UI shell.
 
 **Scope**:
-- `SettingsScreen` Compose — URL field, Test connection button, sort order, theme override (S-9.1, S-9.2, S-9.3).
+- `SettingsScreen` Compose — URL field, Test connection button, sort order, theme override, **currency** (S-9.1, S-9.2, S-9.3, S-9.4).
 - `SettingsViewModel` — Test-connection action delegates to `SpoolmanRepository.probe()`. Settings owns the **only** Test-connection action (Q-CD1.1=A — no banner-resident retry; banner is passive).
 - `OfflineBanner` finalised — `state.banner` derivation (URL configured AND `connectivity == Unreachable` → show; URL not configured → hide entirely; URL configured AND reachable → hide). Read-only banner; no action.
 - Material 3 theming — dynamic color on Android 12+ (S-12.1); system-follow + Settings override (FR-12.2).
 - UI shell (S-13.1, S-13.2) — confirm `MainScreen` two-action layout; confirm bottom-sheet hosting pattern (sheets already implemented in U6b/U7; this unit verifies the shell shape).
+- **Sort comparator wiring — both spool and filament dropdowns** read the sort order picked in Settings. (Filament-side wiring pulled in from U9b 2026-05-29 per user direction — same comparator factory; no point shipping spool sort without filament sort.)
+- **Currency switcher** — Settings-resident currency picker; persisted to DataStore; bound to the price field suffix in `MoreDetailsExpander` (currently hard-coded `$`). Options scope locked in FD Q-U9-11.
 
 **Components produced**:
 - `ui/screens/settings/SettingsScreen.kt`.
@@ -483,7 +485,7 @@ If the workspace contains uncommitted changes from prior units that were never c
 - `OfflineBanner.kt` — full impl.
 - `ui/theme/Theme.kt` — Material 3 + dynamic color + override.
 
-**Stories in scope**: S-9.1, S-9.2, S-9.3, S-12.1, S-13.1, S-13.2.
+**Stories in scope**: S-9.1, S-9.2, S-9.3, **S-9.4 (NEW — currency switcher)**, S-12.1, S-13.1, S-13.2.
 
 **Public interfaces produced**:
 - (None new — `SettingsRepository` interface already exists from U1.)
@@ -495,7 +497,52 @@ If the workspace contains uncommitted changes from prior units that were never c
 **Tests (Q-T3=B)**:
 - `SettingsViewModel` — URL save invokes `probe()`; valid URL persists; failure surfaces error.
 - `OfflineBanner` derivation against `(connectivity, settings.url)` matrix.
-- `SettingsRepository` round-trips for sort order + theme override.
+- `SettingsRepository` round-trips for sort order + theme override + **currency**.
+- `SpoolComparatorTest` — spool + filament comparators (one case per `SortOrder`).
+- `MainViewModelCurrencyTest` — price-suffix derivation tracks `Settings.currency`.
+
+---
+
+### U9b — UI Polish (added 2026-05-29 per user direction)
+
+**Domain**: UI fit-and-finish.
+
+**Origin**: Inserted between U9 and U10 by user direction 2026-05-29 — "add 1 more stage at the end to fix UI elements". Mirrors the U6a/U6b split convention (a focused polish unit after the functional unit). Replaces what would otherwise have piled into U10's release-polish scope.
+
+**Scope (running list — user explicitly reserves the right to keep adding items)**:
+- **Branding restore** — restore the SpoolPainter logo on the main screen (v1 had it; lost during v2 rewrite) and bring back the splash screen artwork.
+- **Main UI parity with v1** — audit the v2 main screen against v1's layout/spacing/typography and fix the points of regression. Cross-reference `aidlc-docs/ui-followups.md` UI-01 (Spoolman dropdown styling drift) at the same time.
+- **Snackbar visibility under keyboard** — Save and Test-connection success/error snackbars are currently hidden by the soft keyboard. Reposition the snackbar host (or dismiss IME on submit) so feedback is visible.
+- ~~**Filament dropdown sort**~~ — **MOVED TO U9** 2026-05-29 per user direction ("filamnet sort from 9b should be hewre too"). U9 now ships both spool + filament sort against the same `SortOrder` enum + shared comparator factory.
+- **"Other" + "Color Wheel" affordances** — both feel passive today; make them read as actions (icon, divider, container, or styled row). Carry forward the U8 close-out's italic-divider treatment but make the affordance louder.
+- **Open list** — user is iterating; this scope grows as install-time UX surfaces more items. Each addition is appended in-place to this section + logged in `audit.md`.
+
+**Components touched** (initial set; extends as scope grows):
+- `ui/activity/MainActivity.kt` + `res/` (splash screen — Android 12+ `androidx.core:core-splashscreen`).
+- `ui/screens/main/MainScreen.kt` (logo slot; layout polish).
+- `ui/screens/main/MainScreen.kt` + `ui/screens/settings/SettingsScreen.kt` (snackbar host + IME handling).
+- `ui/components/FilamentPicker.kt` + `MainViewModel` filament-list derivation (sort).
+- `ui/components/MaterialPicker.kt` + `BrandPicker.kt` + `ColorPicker.kt` ("Other" + "Color Wheel" row affordance).
+
+**Stories in scope**: S-13.1 (re-validated post-polish), `aidlc-docs/ui-followups.md` items as triaged into U9b, and net-new follow-ups discovered during U9b's own install-time iteration.
+
+**Public interfaces produced**: none new — UX-only.
+
+**Entry criteria**: U9 complete (Settings + Theming + Banner already finalised — U9b polishes on top, doesn't re-architect).
+
+**Exit criteria**:
+- All in-scope items applied and visually verified on moto g stylus 2025 / Android 16.
+- Tests pass at unchanged or higher count vs. U9's close-out (no test deletions without explanation).
+- `assembleDebug` size review — flag if growth >0.5 MB vs. U9 baseline.
+- No formal install gate (per Q-T2=B); manual verification covered organically through iteration as in U7/U8.
+
+**Tests (Q-T3=B)**:
+- Tests added only where new logic appears (filament sort comparator, snackbar IME-aware host wrapper if extracted). Pure visual fixes ship without new tests; rely on existing render-stability tests (no `testTag` regressions).
+
+**Carve-outs**:
+- **Functional behavior changes are out of scope** — if an item requires net-new business logic (e.g. a new Spoolman call), it routes back to U10 or a dedicated new unit, not U9b.
+- **No release-build work** — that stays in U10.
+- **No splash-animation A/B** — single static splash, matching v1's intent.
 
 ---
 
@@ -524,7 +571,7 @@ If the workspace contains uncommitted changes from prior units that were never c
 
 **Public interfaces produced**: none (release unit).
 
-**Entry criteria**: U9 complete.
+**Entry criteria**: U9b complete.
 
 **Exit criteria**:
 - `versionCode 100`, `versionName 2.0` set.

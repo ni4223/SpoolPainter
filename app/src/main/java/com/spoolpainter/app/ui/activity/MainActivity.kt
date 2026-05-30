@@ -14,6 +14,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.spoolpainter.app.data.local.SettingsRepository
+import com.spoolpainter.app.data.local.ThemeOverride
 import com.spoolpainter.app.hardware.nfc.NfcRepository
 import com.spoolpainter.app.ui.screens.main.MainScreen
 import com.spoolpainter.app.ui.screens.settings.SettingsScreen
@@ -25,13 +28,16 @@ import javax.inject.Inject
 class MainActivity : ComponentActivity() {
 
     @Inject lateinit var nfcRepository: NfcRepository
+    @Inject lateinit var settingsRepository: SettingsRepository
 
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            SpoolPainterTheme {
+            val settings by settingsRepository.settings.collectAsStateWithLifecycle()
+            val darkTheme = settings.themeOverride == ThemeOverride.Dark
+            SpoolPainterTheme(darkTheme = darkTheme, dynamicColor = true) {
                 var showSettings by rememberSaveable { mutableStateOf(false) }
                 if (showSettings) {
                     BackHandler { showSettings = false }

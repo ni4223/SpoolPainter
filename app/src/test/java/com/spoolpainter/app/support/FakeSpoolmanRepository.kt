@@ -1,5 +1,6 @@
 package com.spoolpainter.app.support
 
+import com.spoolpainter.app.data.remote.spoolman.ConnectivityState
 import com.spoolpainter.app.data.remote.spoolman.ExpanderOverrides
 import com.spoolpainter.app.data.remote.spoolman.PatchFilamentBody
 import com.spoolpainter.app.data.remote.spoolman.SpoolmanApi
@@ -35,6 +36,13 @@ class FakeSpoolmanRepository(
 
     private val _filaments = MutableStateFlow<List<SpoolmanFilament>>(emptyList())
     override val filaments: StateFlow<List<SpoolmanFilament>> = _filaments.asStateFlow()
+
+    private val _connectivity = MutableStateFlow<ConnectivityState>(ConnectivityState.Unknown)
+    override val connectivity: StateFlow<ConnectivityState> = _connectivity.asStateFlow()
+
+    fun setConnectivity(state: ConnectivityState) {
+        _connectivity.value = state
+    }
 
     var nextFindSpoolsByCardUidResult: SpoolmanOutcome<List<SpoolmanSpool>> =
         SpoolmanOutcome.Success(emptyList())
