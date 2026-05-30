@@ -1549,3 +1549,115 @@ Also authored Q-U9-10=B requirements delta at `aidlc-docs/inception/requirements
 
 ---
 
+
+## U9b open-up
+**Timestamp**: 2026-05-29T00:00:00Z
+**User Input**: "aidlc continue" (after `/clear` + `/context`)
+**AI Response**: Workspace state read; U9 close-out commit `055e721` already on `v2` (1 ahead of `origin/v2`, not pushed — matches per-unit close-out convention). State file's "Awaiting Code Gen Part 2 stage-gate approval" text was stale; the approval was implicit in the close-out commit landing. Per execution plan + `unit-of-work.md` §U9b construction order (U1 → U2 → U3 → U4 → U5 → U6a → U6b → U7 → U8 → U9 → U9b → U10), next stage = **U9b — UI Polish**. Proposed per-unit gate: FD/NFR-R/NFR-D/Infra-D all SKIP (U9b is pure UI fit-and-finish per §U9b carve-out). Surfaced `AskUserQuestion`: "Go go go (recommended)" / "Adjust scope first" / "Run a light FD instead of SKIP".
+**Context**: U9b session-open; gate-plan offer.
+
+---
+
+## U9b scope adjustment — pull-in round
+**Timestamp**: 2026-05-29T00:00:00Z
+**User Input**: "Adjust scope first"
+**AI Response**: Surfaced 4 carry-overs/items routed elsewhere — UI-13 (filament metadata edit-on-save), UI-02 (passive-tap prompt), UI-05 (NDEF write-failure copy, currently routed U10), UI-07 (broader snackbar copy review, routed U10). Asked which to pull in / drop / split.
+**Context**: U9b scope assembly.
+
+---
+
+## U9b scope adjustment — pull all in + UI suggest
+**Timestamp**: 2026-05-29T00:00:00Z
+**User Input**: "okay pull in all, also see how ui was in V1, i see some elemts of it but not all, like you see how temp card feel like on top, it used to be all, but with included hidden menu idk how to, suggest some options"
+**AI Response**: Compared `v2` MainScreen + `TempPanel.kt` + `MoreDetailsExpander.kt` against `main:app/src/main/java/com/spoolpainter/app/ui/screens/SpoolPainterScreen.kt` + `TemperatureCard.kt`. Diagnosed: in v1 the TempPanel was the only elevated Card inside the form, so it visually stood out as a "section block" sitting on top of the field stack. v2 kept that exact card styling but added a flat `MoreDetailsExpander` below it, so the temp card looks like a privileged "premium" block while the new hidden menu reads as a second-class afterthought. Surfaced 4 layout options with ASCII previews via `AskUserQuestion`.
+**Context**: U9b scope assembly + visual layering question.
+
+---
+
+## U9b scope adjustment — Temp + More-Details visual fix locked
+**Timestamp**: 2026-05-29T00:00:00Z
+**User Input**: "Match temp — both elevated cards" (preview-selected)
+**AI Response**: Locked: wrap `MoreDetailsExpander` in an elevated Card with the same shape (`RoundedCornerShape(16.dp)`) / elevation (`4.dp`) / padding (`16.dp`) as `TempPanel`. Header row inside the expander card stays clickable to collapse/expand. Surfaced two follow-up questions: (a) splash artwork strategy; (b) UI-13 scope.
+**Context**: U9b layout decision #1.
+
+---
+
+## U9b scope adjustment — splash + UI-13 scope
+**Timestamp**: 2026-05-29T00:00:00Z
+**User Input**: Splash = "v1 logo on Material 3 splash theme"; UI-13 = "i was thinking more than meta data, lets talk more"
+**AI Response**: Splash locked: v1 logo as foreground on `androidx.core:core-splashscreen`, background follows current theme. UI-13: re-read `ui-followups.md` §UI-13. Current logged scope = filament-scope edits only (density / diameter / weight / spool weight / price / temp ranges / color / variant); material name + brand explicitly excluded. Surfaced 6 directions for "more than metadata" — material/brand edits, spool-level fields (`remaining_weight` / `archived`), spool deletion/archive, multi-spool implications messaging, unpair/move-to-another-filament, delete-a-tag's-UID.
+**Context**: U9b scope assembly + UI-13 expansion question.
+
+---
+
+## U9b scope adjustment — recommendation + final lock
+**Timestamp**: 2026-05-29T00:00:00Z
+**User Input**: "what do you think would begood" → "how we want to do i willlet you decide i am more concerned about editing part, i am with you on metdata edit, Remianing weight, sure but that has to be clear what it is. archive is fine too"
+**AI Response**: Recommended bundle: (1) UI-13 filament-metadata edit + sibling-spool confirmation, (2) `remaining_weight` field on expander under "This spool" sub-header (PATCH `/spool/{id}`), (3) Archive-this-spool button + confirmation, with material/brand edits explicitly deferred (reshape filament identity → own unit). Recommended honesty option (a): pull all three into U9b as a named carve-out exception against the §U9b "no functional behavior changes" rule, since they're one coherent feature. User approved the bundle and the locked carve-out path. Expander rename: "Filament metadata" → "Spool details" because contents become mixed-scope. Remaining-weight UX clarity locked: field label `Remaining weight (g)`, placeholder = current Spoolman value, help text `How much filament is left on this spool`, range 0..full_spool_weight. **Locked U9b 9-item scope**: (1) branding restore — main-screen logo + splash via Material 3 `core-splashscreen` with v1 logo foreground; (2) main-UI parity with v1 incl. UI-01; (3) Temp + More-Details = both elevated cards; (4) snackbar visibility under keyboard on Settings + Main; (5) "Other" + "Color Wheel" affordance polish; (6) UI-02 passive-tap prompt; (7) UI-05 NDEF write-failure copy; (8) UI-07 broader snackbar copy review; (9) edit-a-paired-spool (UI-13 metadata + remaining_weight + archive). Per-unit gate: FD EXECUTE (light); NFR-R / NFR-D / Infra-D SKIP. Authoring FD Part 1 plan + `Q-U9b-*` questions next.
+**Context**: U9b scope locked; FD Part 1 authoring next.
+
+---
+
+## U9b scope adjustment — tap-the-tag question
+**Timestamp**: 2026-05-29T00:00:00Z
+**User Input**: "lets rethink this editing stuff, most of our app interaction involves tapping on tag, do we do that when we edit? how will that work"
+**AI Response**: Surfaced the NDEF-vs-Spoolman field split — what lives on the tag (material / brand / color / temps / variant / spoolId) vs. Spoolman-only (`remaining_weight`, `archived`). Three save-flow models proposed: (1) always tap (forces tap to update fields not on the tag — silly), (2) conditional label "Save" vs "Save & Write" based on which fields changed (recommended), (3) two-step decouple (Save Spoolman-only, then separate "Write to tag" prompt). Recommended (2) and outlined the Spoolman-updated-but-tag-stale risk.
+**Context**: U9b scope adjustment — editing-flow design.
+
+---
+
+## U9b scope adjustment — single-button-Save rejected
+**Timestamp**: 2026-05-29T00:00:00Z
+**User Input**: "with single button it get confusing when i need to tap when its not required example vendor tag, no with this its more confusing"
+**AI Response**: Withdrew the conditional-label model. Pivoted to two buttons in the existing-spool path — "Save" (Spoolman only, no tap) + "Write tag" (tap required). Single "Save & Write" preserved on no-spool-selected path (create-and-pair) since spool can't exist without tag write. Archive stays its own button, tap-free.
+**Context**: U9b scope adjustment — design pivot to two-button model.
+
+---
+
+## U9b scope adjustment — drop filament-metadata edit, keep archive + remaining-weight
+**Timestamp**: 2026-05-29T00:00:00Z
+**User Input**: "i aam thinking lets remove filament stuff out of scope, we can do that meta data tab gets the save button and thats what user can edit"
+**AI Response**: Dropped UI-13 filament-metadata edit + sibling-spool confirmation entirely. Reshaped to: main form Save & Write unchanged; expander gets its own Save button for spool-scope only (`remaining_weight` + Archive). Surfaced follow-up: when a spool is selected, what should the 5 existing filament-metadata fields (density / diameter / weight / spool weight / price) inside the expander become — read-only display, stay-as-inputs-edits-ignored, or hide entirely?
+**Context**: U9b scope adjustment — narrowing edit scope to spool-scope only.
+
+---
+
+## U9b scope adjustment — confusion + further trim
+**Timestamp**: 2026-05-29T00:00:00Z
+**User Input**: "what?  i didn t get this question at all" (after AskUserQuestion clarification round) → "true these are filament feilds, idk this is getting confusing. i would like easy way to update weight remaining weight, but this is too much and feel OOS"
+**AI Response**: Acknowledged the editing design is sliding past "polish" into territory that wants its own design pass. Proposed: drop filament-metadata edit + remaining-weight + the two-button question entirely from U9b. Keep only "Archive this spool" as a tiny self-contained button. Defer remaining-weight + filament-metadata edit to a future "edit a paired spool" unit (post-U10 or fold into U10 if small).
+**Context**: U9b scope adjustment — withdrawing editing scope; archive pitched as last keeper.
+
+---
+
+## U9b scope adjustment — drop archive too
+**Timestamp**: 2026-05-29T00:00:00Z
+**User Input**: "remove archive too"
+**AI Response**: Final scope locked: U9b becomes pure polish, 8 items, no functional carve-out exception. All editing-related work (UI-13 metadata edit + remaining_weight + archive-this-spool) deferred. Logged as `ui-followups.md` UI-14 (edit a paired spool — design pass needed) + UI-15 (archive a spool from the app), both with the rationale + design-pass open questions captured + holding deltas (`patchFilament` already exists; `patchSpool` not yet implemented; `SpoolPatch` data class shape proposed). Updated `unit-of-work.md` §3-U9b — reverted carve-out exception; restored "no functional behavior changes" rule in full; added explanatory note about the two scope-adjust rounds.
+**Context**: U9b scope adjustment — final lock at 8-item polish.
+
+---
+
+## U9b scope adjustment — add editing for "later after release"
+**Timestamp**: 2026-05-29T00:00:00Z
+**User Input**: "add editing for something later after release"
+**AI Response**: Reframed UI-14 + UI-15 routing — explicitly NOT U10 (release polish), explicitly NOT v2.0. Park behind the v2.0 Play Store testing-track release per `project_playstore_testing` memory + this user direction. Updated both `ui-followups.md` entries to read "post-v2.0 release, NOT v2.0 scope" with the user quote. State file Current Stage updated to reflect the parked position.
+**Context**: U9b scope adjustment — editing routed post-v2.0 release.
+
+---
+
+## U9b FD skip
+**Timestamp**: 2026-05-29T00:00:00Z
+**User Input**: "skip fd"
+**AI Response**: Per-unit gate finalised: FD SKIP, NFR-R / NFR-D / Infra-D SKIP. The retired FD plan (`u9b-ui-polish-functional-design-plan.md`) stays on disk for the audit trail but is no longer the active gate. The 6 Q-U9b-* design choices (splash drawable source, IME-aware snackbar wiring, UI-02 prompt frequency, UI-05 NDEF write-failure copy, "Other"/"Color Wheel" affordance pattern, UI-07 audit scope) fold into the Code Gen Part 1 plan as design choices. Authoring `aidlc-docs/construction/plans/u9b-ui-polish-code-generation-plan.md` next.
+**Context**: U9b per-unit gate decision — FD skipped.
+
+---
+
+## U9b Code Gen Part 1 plan answers
+**Timestamp**: 2026-05-29T00:00:00Z
+**User Input**: "for 4, domt use - in message" → "just keep it till try again" → "all other good"
+**AI Response**: Q-U9b-4 LOCKED at `"Couldn't write to tag. Try again."` (no em-dash / en-dash / hyphen as a separator). Added §7.1.5.1 to the plan codifying the dash-as-separator rule, and applied it symmetrically to the §7 broader-copy audit (Q-U9b-6=A). Saved a persistent memory entry `[[feedback-no-dash-separator-in-user-copy]]` so the rule sticks across future units. "all other good" interpreted as blanket approval of the recommended option for the remaining six questions: Q-U9b-1=A (no-op — splash already shipped), Q-U9b-2=A (`imePadding()` on Scaffold content), Q-U9b-3=A (once-per-session), Q-U9b-5=A (outlined row with leading icon), Q-U9b-6=A (audit-and-revise pass), Q-U9b-7=A (no outer Card on MainScreen).
+**Context**: U9b Code Gen Part 1 — all 7 design choices locked.
+
+---

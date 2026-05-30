@@ -1,5 +1,6 @@
 package com.spoolpainter.app.ui.screens.main
 
+import app.cash.turbine.ReceiveTurbine
 import app.cash.turbine.test
 import com.spoolpainter.app.data.local.Settings
 import com.spoolpainter.app.data.remote.spoolman.SpoolmanOutcome
@@ -91,6 +92,20 @@ class MainViewModelTest {
         rawWrite = rawWrite,
         vendorUidOnlyPair = vendorUidOnlyPair,
     )
+
+    /**
+     * UI-02 (Q-U9b-3=A): the once-per-session ambient-tap hint can race with
+     * test-expected emissions because [primeFormForWrite] pushes a lastSeenTag
+     * while the VM is still Idle. This helper drains that single hint so the
+     * caller can assert against the next emission.
+     */
+    private suspend fun ReceiveTurbine<UiEffect>.awaitNonAmbientSnackbar(): UiEffect.ShowSnackbar {
+        while (true) {
+            val effect = awaitItem() as UiEffect.ShowSnackbar
+            if (effect.message == "Tag detected. Press Read tag to load.") continue
+            return effect
+        }
+    }
 
     private fun primeFormForWrite(vm: MainViewModel) {
         // Settings URL must be non-blank for WriteMode.Spoolman; otherwise
@@ -447,8 +462,8 @@ class MainViewModelTest {
 
         vm.effects.test {
             vm.onWriteTapped()
-            val emission = awaitItem() as UiEffect.ShowSnackbar
-            assertTrue(emission.message.contains("Verify failed"))
+            val emission = awaitNonAmbientSnackbar()
+            assertTrue(emission.message.contains("Couldn't write to tag"))
             cancelAndIgnoreRemainingEvents()
         }
         // Form preserved.
@@ -467,7 +482,7 @@ class MainViewModelTest {
 
         vm.effects.test {
             vm.onWriteTapped()
-            val emission = awaitItem() as UiEffect.ShowSnackbar
+            val emission = awaitNonAmbientSnackbar()
             assertTrue(emission.message.contains("500"))
             cancelAndIgnoreRemainingEvents()
         }
@@ -484,8 +499,8 @@ class MainViewModelTest {
 
         vm.effects.test {
             vm.onWriteTapped()
-            val emission = awaitItem() as UiEffect.ShowSnackbar
-            assertTrue(emission.message.contains("tag lost"))
+            val emission = awaitNonAmbientSnackbar()
+            assertTrue(emission.message.contains("Couldn't write to tag"))
             cancelAndIgnoreRemainingEvents()
         }
         assertNotNull(vm.state.value.form.material)

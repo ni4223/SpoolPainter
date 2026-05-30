@@ -53,25 +53,43 @@ fun TempPanel(
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Medium,
             )
-
-            TempRow(
-                label = "Nozzle",
-                min = ranges.extruderMin,
-                max = ranges.extruderMax,
-                enabled = enabled,
-                onMinChange = { onChange(ranges.copy(extruderMin = it)) },
-                onMaxChange = { onChange(ranges.copy(extruderMax = it)) },
-            )
-
-            TempRow(
-                label = "Bed",
-                min = ranges.bedMin,
-                max = ranges.bedMax,
-                enabled = enabled,
-                onMinChange = { onChange(ranges.copy(bedMin = it)) },
-                onMaxChange = { onChange(ranges.copy(bedMax = it)) },
-            )
+            TempRows(ranges = ranges, enabled = enabled, onChange = onChange)
         }
+    }
+}
+
+/**
+ * Bare nozzle + bed rows without the Card / heading wrapper. Used by
+ * MoreDetailsExpander so the Temperature section can sit alongside the spool
+ * metadata section under one expander.
+ */
+@Composable
+fun TempRows(
+    ranges: TempRanges,
+    enabled: Boolean,
+    onChange: (TempRanges) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        TempRow(
+            label = "Nozzle",
+            min = ranges.extruderMin,
+            max = ranges.extruderMax,
+            enabled = enabled,
+            onMinChange = { onChange(ranges.copy(extruderMin = it)) },
+            onMaxChange = { onChange(ranges.copy(extruderMax = it)) },
+        )
+        TempRow(
+            label = "Bed",
+            min = ranges.bedMin,
+            max = ranges.bedMax,
+            enabled = enabled,
+            onMinChange = { onChange(ranges.copy(bedMin = it)) },
+            onMaxChange = { onChange(ranges.copy(bedMax = it)) },
+        )
     }
 }
 

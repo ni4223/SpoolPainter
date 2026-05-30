@@ -509,22 +509,25 @@ If the workspace contains uncommitted changes from prior units that were never c
 
 **Origin**: Inserted between U9 and U10 by user direction 2026-05-29 — "add 1 more stage at the end to fix UI elements". Mirrors the U6a/U6b split convention (a focused polish unit after the functional unit). Replaces what would otherwise have piled into U10's release-polish scope.
 
-**Scope (running list — user explicitly reserves the right to keep adding items)**:
-- **Branding restore** — restore the SpoolPainter logo on the main screen (v1 had it; lost during v2 rewrite) and bring back the splash screen artwork.
-- **Main UI parity with v1** — audit the v2 main screen against v1's layout/spacing/typography and fix the points of regression. Cross-reference `aidlc-docs/ui-followups.md` UI-01 (Spoolman dropdown styling drift) at the same time.
-- **Snackbar visibility under keyboard** — Save and Test-connection success/error snackbars are currently hidden by the soft keyboard. Reposition the snackbar host (or dismiss IME on submit) so feedback is visible.
-- ~~**Filament dropdown sort**~~ — **MOVED TO U9** 2026-05-29 per user direction ("filamnet sort from 9b should be hewre too"). U9 now ships both spool + filament sort against the same `SortOrder` enum + shared comparator factory.
-- **"Other" + "Color Wheel" affordances** — both feel passive today; make them read as actions (icon, divider, container, or styled row). Carry forward the U8 close-out's italic-divider treatment but make the affordance louder.
-- **Open list** — user is iterating; this scope grows as install-time UX surfaces more items. Each addition is appended in-place to this section + logged in `audit.md`.
+**Scope (locked 2026-05-29 after two scope-adjust rounds — first pulling in editing, then dropping it back out as user pushed back on conditional-save complexity. Final scope is pure polish; user explicitly reserves the right to keep adding items during install-time iteration)**:
 
-**Components touched** (initial set; extends as scope grows):
-- `ui/activity/MainActivity.kt` + `res/` (splash screen — Android 12+ `androidx.core:core-splashscreen`).
-- `ui/screens/main/MainScreen.kt` (logo slot; layout polish).
-- `ui/screens/main/MainScreen.kt` + `ui/screens/settings/SettingsScreen.kt` (snackbar host + IME handling).
-- `ui/components/FilamentPicker.kt` + `MainViewModel` filament-list derivation (sort).
+1. **Branding restore** — restore the SpoolPainter logo on the main screen (v1 had it; lost during v2 rewrite). Splash uses `androidx.core:core-splashscreen` with v1 logo as foreground; background follows the current theme (light/dark) — Material 3 splash idiom, not a static drawable.
+2. **Main UI parity with v1** — audit the v2 main screen against v1's layout/spacing/typography and fix the points of regression. Folds in `aidlc-docs/ui-followups.md` UI-01 (Spoolman dropdown styling drift).
+3. **Temp + More-Details visual fix** — wrap `MoreDetailsExpander` in an elevated `Card` with the same shape (`RoundedCornerShape(16.dp)`) / elevation (`4.dp`) / padding (`16.dp`) as `TempPanel`. v1's TempPanel was the only elevated card inside the form, so v2's flat MoreDetailsExpander reads as a second-class afterthought below the privileged temp block; matching the styling makes them read as two equally important sections. Header row inside the expander card stays clickable to collapse/expand.
+4. **Snackbar visibility under keyboard** — Save and Test-connection success/error snackbars are currently hidden by the soft keyboard on Settings + Main. Reposition the snackbar host (`imePadding` / `WindowInsets.ime`) or dismiss IME on submit so feedback is visible.
+5. **"Other" + "Color Wheel" affordances** — both feel passive today; make them read as actions (icon, divider, container, or styled row). Carry forward the U8 close-out's italic-divider treatment but make the affordance louder.
+6. **UI-02 — passive-tap prompt** (pulled in from "U9 or U10" routing) — small inline hint or transient snackbar on first ambient tap in an idle session: "Tag detected. Press **Read tag** to load." Debounce per UID, or once-per-session.
+7. **UI-05 — NDEF write-failure copy** (pulled in from U10 routing) — replace the technical NDEF write-failure copy with user-friendly copy.
+8. **UI-07 — broader snackbar copy review** (pulled in from U10 routing) — audit all snackbar strings for clarity / tone / actionability.
+
+**Components touched**:
+- `ui/activity/MainActivity.kt` + `res/values/themes.xml` + `res/drawable/` (splash screen — `androidx.core:core-splashscreen`; v1 logo as splash foreground).
+- `ui/screens/main/MainScreen.kt` (logo slot; layout polish; ambient-tap prompt hook; UI-01 dropdown styling).
+- `ui/screens/main/MainScreen.kt` + `ui/screens/settings/SettingsScreen.kt` (snackbar host + IME handling; copy review).
 - `ui/components/MaterialPicker.kt` + `BrandPicker.kt` + `ColorPicker.kt` ("Other" + "Color Wheel" row affordance).
+- `ui/components/MoreDetailsExpander.kt` (Card wrapper to match `TempPanel`).
 
-**Stories in scope**: S-13.1 (re-validated post-polish), `aidlc-docs/ui-followups.md` items as triaged into U9b, and net-new follow-ups discovered during U9b's own install-time iteration.
+**Stories in scope**: S-13.1 (re-validated post-polish), `aidlc-docs/ui-followups.md` items UI-01 / UI-02 / UI-05 / UI-07 as triaged into U9b, and net-new follow-ups discovered during U9b's own install-time iteration.
 
 **Public interfaces produced**: none new — UX-only.
 
@@ -532,15 +535,16 @@ If the workspace contains uncommitted changes from prior units that were never c
 
 **Exit criteria**:
 - All in-scope items applied and visually verified on moto g stylus 2025 / Android 16.
-- Tests pass at unchanged or higher count vs. U9's close-out (no test deletions without explanation).
-- `assembleDebug` size review — flag if growth >0.5 MB vs. U9 baseline.
+- Tests pass at unchanged count vs. U9's close-out 362 (no new logic; new tests only if a debounce helper is extracted for UI-02).
+- `assembleDebug` size review — flag if growth >0.5 MB vs. U9 baseline of 65 MB.
 - No formal install gate (per Q-T2=B); manual verification covered organically through iteration as in U7/U8.
 
 **Tests (Q-T3=B)**:
-- Tests added only where new logic appears (filament sort comparator, snackbar IME-aware host wrapper if extracted). Pure visual fixes ship without new tests; rely on existing render-stability tests (no `testTag` regressions).
+- `AmbientTagDebouncerTest` *(only if extracted as a helper)* — debounce-per-UID-per-session for UI-02.
+- Pure visual fixes ship without new tests; rely on existing render-stability tests (no `testTag` regressions).
 
 **Carve-outs**:
-- **Functional behavior changes are out of scope** — if an item requires net-new business logic (e.g. a new Spoolman call), it routes back to U10 or a dedicated new unit, not U9b.
+- **No functional behavior changes** — if an item requires net-new business logic (e.g., a new Spoolman call), it routes back to U10 or a dedicated new unit, not U9b. *(Restored in full 2026-05-29 — earlier this session a "edit-a-paired-spool" carve-out exception was proposed, then withdrawn after user feedback that conditional Save/Write semantics added more confusion than they solved. UI-13 (filament-metadata edit) + remaining-weight field + archive-this-spool are all deferred to a dedicated new unit; logged in `ui-followups.md` UI-14 / UI-15.)*
 - **No release-build work** — that stays in U10.
 - **No splash-animation A/B** — single static splash, matching v1's intent.
 

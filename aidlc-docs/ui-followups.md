@@ -385,3 +385,114 @@ SnackbarAndKeepsFormOnSuccess` would need to drop the snackbar assertion
 under option 1.
 
 ---
+
+## UI-14 — Edit a paired spool — design pass needed (post-v2.0 release)
+
+**State**: open (deferred — post-v2.0 release, NOT v2.0 scope)
+**Found in**: U9b scope-adjust round, 2026-05-29
+**Routing**: post-v2.0 — explicitly NOT U9b, NOT U10. Park behind the v2.0 Play Store testing-track release per user direction "add editing for something later after release" 2026-05-29.
+
+When a user picks an existing spool from the dropdown, today the form
+prefills from Spoolman but any edits to fields are silently ignored on
+save (the existing-spool path only appends the UID to `extra.card_uids`
+and re-writes the tag).
+
+The desired feature is "edit a paired spool" — let the user change values
+and have those changes propagate to Spoolman. The scope split:
+
+**Filament-scope edits** (live on the `filament` record in Spoolman, shared
+across every spool of that filament):
+- `density / diameter / weight / spool_weight / price`
+- temp ranges (`extruder min/max`, `bed min/max`)
+- `color_hex`
+- `extra.variant`
+
+**Spool-scope edits** (live on the `spool` record):
+- `remaining_weight`
+- `archived` (the standalone "Archive this spool" affordance)
+
+**Identity-affecting fields** (re-shape what filament the spool belongs to):
+- material name (PLA / PETG / etc.)
+- brand / vendor
+- These need a "create new filament instead?" / re-pair flow, not an
+  in-place edit.
+
+**Why this needs a design pass, not a polish patch**:
+
+During the U9b scope-adjust round we explored three save-flow models and
+none felt right inside U9b's polish framing:
+- *Always tap (Save & Write everywhere)* — forces an NFC tap to update
+  `remaining_weight`, which doesn't even live on the tag.
+- *Conditional label (Save vs Save & Write based on which fields changed)*
+  — user pushed back: "with single button it gets confusing when i need
+  to tap when its not required example vendor tag, no with this its more
+  confusing".
+- *Two buttons in the existing-spool path (Save + Write tag)* — close to
+  workable but means the main form has two distinct actions whose
+  visibility depends on `selectedSpoolId`, and we'd still need a Save
+  button inside the expander for spool-scope fields, plus the
+  filament-scope fields are pre-filled-but-not-editable… the design grew
+  beyond a single-unit polish surface.
+
+**Open questions for the design pass**:
+1. Where does the edit live — main form (current shape) or a dedicated
+   "Edit spool" screen / sheet?
+2. How is the NDEF-vs-Spoolman field split surfaced to the user (or is it
+   hidden)?
+3. Sibling-spool propagation — confirm dialog every time? Or only when
+   N ≥ threshold?
+4. Material/brand identity edit — separate "re-pair to different
+   filament" flow, or in-place "create new filament" dialog?
+5. Does Archive deserve its own sheet or stay a button on the same
+   surface?
+6. Tag-out-of-sync handling when the user saves filament-scope edits
+   without re-writing the tag.
+
+**Holding deltas (do NOT apply until the design pass)**:
+- `SpoolmanRepository.patchFilament(id, sparseDiff)` already shipped in
+  U8 §2.14. Idempotent. Ready for reuse.
+- `SpoolmanService.patchSpool(id, body)` is **not yet implemented** —
+  needs adding when the design pass lands.
+- `SpoolPatch(remainingWeightG: Float? = null, archived: Boolean? = null)`
+  data class is the obvious shape but not committed.
+
+**See also**: `aidlc-docs/audit.md` "U9b scope adjustment" entries for
+2026-05-29 — full Q&A trail of the three models we considered + the user
+quotes that ruled them out.
+
+---
+
+## UI-15 — Archive a spool from the app (post-v2.0 release)
+
+**State**: open (deferred — post-v2.0 release, NOT v2.0 scope)
+**Found in**: U9b scope-adjust round, 2026-05-29
+**Routing**: post-v2.0 — bundled with UI-14 in a single "edit a paired
+spool" design pass. User direction "add editing for something later after
+release" 2026-05-29 parks all editing behind the v2.0 testing-track
+release.
+
+Today, archiving a spool means opening Spoolman's web UI on a separate
+device. The app should expose a one-tap archive action on a paired spool.
+
+**Mechanics** (already designed in the U9b scope-adjust round before being
+deferred):
+- Visible only when `selectedSpoolId != null`.
+- Confirmation dialog (destructive-ish — recoverable from web UI but not
+  from the app).
+- PATCH `/spool/{id}` with `archived: true`.
+- Success → remove from in-memory list, clear form, snackbar "Archived".
+- Failure → snackbar, form state preserved.
+
+**Why deferred from U9b**:
+
+Initially proposed as a tiny standalone in U9b (one button, one PATCH).
+After user feedback narrowed editing scope further ("remove archive too"),
+archive went out with the rest of editing. Reasoning: any spool-write
+PATCH path opens the same "what does Save mean here?" question as the
+filament edits, and the `patchSpool` service method doesn't exist yet —
+adding one method for a single button felt scope-creepy when the bigger
+editing design isn't yet locked.
+
+**Done together with UI-14** when the editing design pass lands.
+
+---

@@ -19,43 +19,49 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun SpoolPainterLogo(
     color: Color,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    showText: Boolean = true,
 ) {
+    val colorFilter = if (color == Color.Black) {
+        ColorFilter.colorMatrix(
+            colorMatrix = androidx.compose.ui.graphics.ColorMatrix().apply {
+                setToScale(-1f, -1f, -1f, 1f)
+                set(0, 4, 255f)
+                set(1, 4, 255f)
+                set(2, 4, 255f)
+            }
+        )
+    } else {
+        ColorFilter.tint(color, BlendMode.Modulate)
+    }
+
+    if (!showText) {
+        Image(
+            painter = painterResource(id = R.drawable.spool_logo),
+            contentDescription = "SpoolPainter",
+            modifier = modifier,
+            colorFilter = colorFilter,
+            contentScale = ContentScale.Fit,
+        )
+        return
+    }
+
     Column(
-        modifier = modifier
-            .offset(x = (26).dp),
+        modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy((-18).dp)
     ) {
         Image(
             painter = painterResource(id = R.drawable.spool_logo),
             contentDescription = null,
-            modifier = Modifier
-                .height(125.dp)
-                .size(200.dp),
-            colorFilter = if (color == Color.Black) {
-                ColorFilter.colorMatrix(
-                    colorMatrix = androidx.compose.ui.graphics.ColorMatrix().apply {
-                        setToScale(-1f, -1f, -1f, 1f)
-                        set(0, 4, 255f)
-                        set(1, 4, 255f)
-                        set(2, 4, 255f)
-                    }
-                )
-            } else {
-                ColorFilter.tint(color, BlendMode.Modulate)
-            },
+            modifier = Modifier.height(96.dp),
+            colorFilter = colorFilter,
             contentScale = ContentScale.Fit
         )
-        
         Text(
             text = "Spool Painter",
-            style = MaterialTheme.typography.headlineLarge,
+            style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onBackground,
-            modifier = Modifier
-                .offset(y = (15).dp)
-                .offset(x = (-15).dp)
         )
     }
 }

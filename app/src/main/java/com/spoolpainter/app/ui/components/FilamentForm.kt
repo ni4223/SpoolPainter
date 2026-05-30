@@ -64,17 +64,13 @@ fun FilamentForm(
     customMaterial: String,
     customBrand: String,
     enabled: Boolean,
-    canSave: Boolean,
     filaments: List<SpoolmanFilament>,
     materials: List<Material>,
     brands: List<String>,
     filamentSortKey: FilamentSortKey,
     filamentSortDirection: SortDirection,
-    priceSuffix: String,
     onChange: (FormChange) -> Unit,
-    onSave: () -> Unit,
     modifier: Modifier = Modifier,
-    saveButtonLabel: String = "Save & Write",
 ) {
     Column(
         modifier = modifier
@@ -122,52 +118,34 @@ fun FilamentForm(
             onSelect = { onChange(FormChange.BrandPicked(it)) },
             onCustomNameChange = { onChange(FormChange.CustomBrandChanged(it)) },
         )
+    }
+}
 
-        TempPanel(
-            ranges = state.tempRanges,
-            enabled = enabled,
-            onChange = { onChange(FormChange.TempRangesChanged(it)) },
+@Composable
+fun SaveAndWriteButton(
+    label: String,
+    canSave: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Button(
+        onClick = onClick,
+        enabled = canSave,
+        modifier = modifier
+            .fillMaxWidth()
+            .height(48.dp)
+            .testTag("main-form-save"),
+        shape = RoundedCornerShape(20.dp),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = MaterialTheme.colorScheme.primary,
+        ),
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onPrimary,
         )
-
-        MoreDetailsExpander(
-            expanded = state.moreDetailsExpanded,
-            enabled = enabled,
-            emptySpoolWeightG = state.emptySpoolWeightG,
-            priceMajor = state.priceMajor,
-            priceSuffix = priceSuffix,
-            fullSpoolWeightG = state.fullSpoolWeightG,
-            diameterMm = state.diameterMm,
-            densityGPerCm3 = state.densityGPerCm3,
-            onToggle = { onChange(FormChange.MoreDetailsToggled) },
-            onEmptySpoolWeightChange = { onChange(FormChange.EmptySpoolWeightChanged(it)) },
-            onPriceChange = { onChange(FormChange.PriceChanged(it)) },
-            onFullSpoolWeightChange = { onChange(FormChange.FullSpoolWeightChanged(it)) },
-            onDiameterChange = { onChange(FormChange.DiameterChanged(it)) },
-            onDensityChange = { onChange(FormChange.DensityChanged(it)) },
-        )
-
-        if (enabled) {
-            Button(
-                onClick = onSave,
-                enabled = canSave,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(45.dp)
-                    .padding(top = 4.dp)
-                    .testTag("main-form-save"),
-                shape = RoundedCornerShape(20.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                ),
-            ) {
-                Text(
-                    text = saveButtonLabel,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onPrimary,
-                )
-            }
-        }
     }
 }
 

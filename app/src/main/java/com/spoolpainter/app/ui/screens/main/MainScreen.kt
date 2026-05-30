@@ -2,8 +2,10 @@ package com.spoolpainter.app.ui.screens.main
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -11,7 +13,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenuItem
@@ -28,7 +30,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -51,6 +52,9 @@ import com.spoolpainter.app.domain.primitives.NfcResult
 import com.spoolpainter.app.ui.common.UiEffect
 import com.spoolpainter.app.ui.components.FilamentForm
 import com.spoolpainter.app.ui.components.FormChange
+import com.spoolpainter.app.ui.components.MoreDetailsExpander
+import com.spoolpainter.app.ui.components.SaveAndWriteButton
+import com.spoolpainter.app.ui.components.SpoolPainterLogo
 import com.spoolpainter.app.ui.components.sheets.BottomSheetHost
 import com.spoolpainter.app.ui.components.sheets.PairAnotherTagUiState
 import com.spoolpainter.app.ui.components.sheets.RepairConfirmViewModel
@@ -89,8 +93,12 @@ fun MainScreen(
     }
 
     Scaffold(
-        topBar = { MainTopBar(onSettingsClick = viewModel::onSettingsTapped) },
-        snackbarHost = { SnackbarHost(snackbarHostState) },
+        snackbarHost = {
+            SnackbarHost(
+                hostState = snackbarHostState,
+                modifier = Modifier.imePadding(),
+            )
+        },
         floatingActionButton = {
             ReadFab(
                 isReading = state.activeFlow == ActiveFlow.ReadingForPair,
@@ -102,11 +110,16 @@ fun MainScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
+                .imePadding()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 12.dp)
+                .padding(horizontal = 8.dp, vertical = 4.dp)
                 .testTag("main-screen"),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            MainLogoHeader(
+                colorHex = state.form.colorHex,
+                onSettingsClick = viewModel::onSettingsTapped,
+            )
             BannerSlot(state.banner)
             BottomSheetHost(
                 activeFlow = state.activeFlow,
@@ -118,16 +131,25 @@ fun MainScreen(
                 onPairAnotherDismiss = viewModel::onPairAnotherTagDismissed,
             )
             ReadingHint(state.activeFlow, state.nfc)
-            WritingHint(state.activeFlow, state.nfc)
             if (state.spoolman.urlConfigured) {
-                SpoolmanDropdown(
-                    spools = state.spoolman.spools,
-                    sortKey = state.spoolSortKey,
-                    sortDirection = state.spoolSortDirection,
-                    selectedId = state.spoolman.selectedSpoolId,
-                    enabled = state.activeFlow == ActiveFlow.Idle && state.spoolman.reachable,
-                    onSelect = viewModel::onSpoolSelected,
-                )
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("main-spoolman-card"),
+                    shape = RoundedCornerShape(20.dp),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 5.dp),
+                ) {
+                    Column(modifier = Modifier.padding(10.dp)) {
+                        SpoolmanDropdown(
+                            spools = state.spoolman.spools,
+                            sortKey = state.spoolSortKey,
+                            sortDirection = state.spoolSortDirection,
+                            selectedId = state.spoolman.selectedSpoolId,
+                            enabled = state.activeFlow == ActiveFlow.Idle && state.spoolman.reachable,
+                            onSelect = viewModel::onSpoolSelected,
+                        )
+                    }
+                }
             }
             VendorTagHint(
                 observed = state.observedTagKind,
@@ -136,45 +158,79 @@ fun MainScreen(
                 alreadyLinked = state.spoolman.selectedSpoolId != null,
             )
             AmbiguityBlock(state.ambiguity)
-            FilamentForm(
-                state = state.form,
-                customMaterial = customMaterial,
-                customBrand = customBrand,
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("main-form-card"),
+                shape = RoundedCornerShape(20.dp),
+                elevation = CardDefaults.cardElevation(defaultElevation = 5.dp),
+            ) {
+                Column(
+                    modifier = Modifier.padding(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    FilamentForm(
+                        state = state.form,
+                        customMaterial = customMaterial,
+                        customBrand = customBrand,
+                        enabled = state.activeFlow == ActiveFlow.Idle,
+                        filaments = filaments,
+                        materials = materials,
+                        brands = brands,
+                        filamentSortKey = state.filamentSortKey,
+                        filamentSortDirection = state.filamentSortDirection,
+                        onChange = { change ->
+                            when (change) {
+                                is FormChange.MaterialPicked -> viewModel.onMaterialPicked(change.value)
+                                is FormChange.CustomMaterialChanged -> viewModel.onCustomMaterialChanged(change.value)
+                                is FormChange.BrandPicked -> viewModel.onBrandPicked(change.value)
+                                is FormChange.CustomBrandChanged -> viewModel.onCustomBrandChanged(change.value)
+                                is FormChange.ColorHex -> viewModel.onColorHexChanged(change.value)
+                                is FormChange.Variant -> viewModel.onVariantChanged(change.value)
+                                is FormChange.TempRangesChanged -> viewModel.onTempRangesChanged(change.value)
+                                is FormChange.FilamentSelected -> viewModel.onFilamentSelected(change.value)
+                                is FormChange.FilamentSectionToggled -> viewModel.onFilamentSectionToggled()
+                                is FormChange.MoreDetailsToggled -> viewModel.onMoreDetailsToggled()
+                                is FormChange.EmptySpoolWeightChanged -> viewModel.onEmptySpoolWeightChanged(change.value)
+                                is FormChange.PriceChanged -> viewModel.onPriceChanged(change.value)
+                                is FormChange.FullSpoolWeightChanged -> viewModel.onFullSpoolWeightChanged(change.value)
+                                is FormChange.DiameterChanged -> viewModel.onDiameterChanged(change.value)
+                                is FormChange.DensityChanged -> viewModel.onDensityChanged(change.value)
+                            }
+                        },
+                    )
+                }
+            }
+            MoreDetailsExpander(
+                expanded = state.form.moreDetailsExpanded,
                 enabled = state.activeFlow == ActiveFlow.Idle,
-                canSave = canWrite,
-                filaments = filaments,
-                materials = materials,
-                brands = brands,
-                filamentSortKey = state.filamentSortKey,
-                filamentSortDirection = state.filamentSortDirection,
+                tempRanges = state.form.tempRanges,
+                emptySpoolWeightG = state.form.emptySpoolWeightG,
+                priceMajor = state.form.priceMajor,
                 priceSuffix = state.priceSuffix,
-                onChange = { change ->
-                    when (change) {
-                        is FormChange.MaterialPicked -> viewModel.onMaterialPicked(change.value)
-                        is FormChange.CustomMaterialChanged -> viewModel.onCustomMaterialChanged(change.value)
-                        is FormChange.BrandPicked -> viewModel.onBrandPicked(change.value)
-                        is FormChange.CustomBrandChanged -> viewModel.onCustomBrandChanged(change.value)
-                        is FormChange.ColorHex -> viewModel.onColorHexChanged(change.value)
-                        is FormChange.Variant -> viewModel.onVariantChanged(change.value)
-                        is FormChange.TempRangesChanged -> viewModel.onTempRangesChanged(change.value)
-                        is FormChange.FilamentSelected -> viewModel.onFilamentSelected(change.value)
-                        is FormChange.FilamentSectionToggled -> viewModel.onFilamentSectionToggled()
-                        is FormChange.MoreDetailsToggled -> viewModel.onMoreDetailsToggled()
-                        is FormChange.EmptySpoolWeightChanged -> viewModel.onEmptySpoolWeightChanged(change.value)
-                        is FormChange.PriceChanged -> viewModel.onPriceChanged(change.value)
-                        is FormChange.FullSpoolWeightChanged -> viewModel.onFullSpoolWeightChanged(change.value)
-                        is FormChange.DiameterChanged -> viewModel.onDiameterChanged(change.value)
-                        is FormChange.DensityChanged -> viewModel.onDensityChanged(change.value)
-                    }
-                },
-                onSave = viewModel::onWriteTapped,
-                saveButtonLabel = when {
-                    state.observedTagKind == ObservedTagKind.Vendor &&
-                        state.writeMode == WriteMode.Spoolman -> "Save & Map"
-                    state.writeMode == WriteMode.RawNoUrl -> "Write to NFC"
-                    else -> "Save & Write"
-                },
+                fullSpoolWeightG = state.form.fullSpoolWeightG,
+                diameterMm = state.form.diameterMm,
+                densityGPerCm3 = state.form.densityGPerCm3,
+                onToggle = viewModel::onMoreDetailsToggled,
+                onTempRangesChange = viewModel::onTempRangesChanged,
+                onEmptySpoolWeightChange = viewModel::onEmptySpoolWeightChanged,
+                onPriceChange = viewModel::onPriceChanged,
+                onFullSpoolWeightChange = viewModel::onFullSpoolWeightChanged,
+                onDiameterChange = viewModel::onDiameterChanged,
+                onDensityChange = viewModel::onDensityChanged,
             )
+            if (state.activeFlow == ActiveFlow.Idle) {
+                SaveAndWriteButton(
+                    label = when {
+                        state.observedTagKind == ObservedTagKind.Vendor &&
+                            state.writeMode == WriteMode.Spoolman -> "Save & Map"
+                        state.writeMode == WriteMode.RawNoUrl -> "Write to NFC"
+                        else -> "Save & Write"
+                    },
+                    canSave = canWrite,
+                    onClick = viewModel::onWriteTapped,
+                )
+            }
             WritingHint(state.activeFlow, state.nfc)
             InstructionFooter(state.activeFlow)
         }
@@ -201,20 +257,39 @@ private fun InstructionFooter(activeFlow: ActiveFlow) {
     )
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun MainTopBar(onSettingsClick: () -> Unit) {
-    TopAppBar(
-        title = { Text("SpoolPainter") },
-        actions = {
-            IconButton(
-                onClick = onSettingsClick,
-                modifier = Modifier.testTag("main-settings-button"),
-            ) {
-                Icon(Icons.Default.Settings, contentDescription = "Settings")
-            }
-        },
-    )
+private fun MainLogoHeader(colorHex: String?, onSettingsClick: () -> Unit) {
+    val outline = MaterialTheme.colorScheme.outline
+    val tint = remember(colorHex, outline) {
+        parseLogoColor(colorHex) ?: outline
+    }
+    Box(modifier = Modifier.fillMaxWidth()) {
+        SpoolPainterLogo(
+            color = tint,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        IconButton(
+            onClick = onSettingsClick,
+            modifier = Modifier
+                .align(androidx.compose.ui.Alignment.TopEnd)
+                .testTag("main-settings-button"),
+        ) {
+            Icon(
+                Icons.Default.MoreVert,
+                contentDescription = "Settings",
+                tint = MaterialTheme.colorScheme.primary,
+            )
+        }
+    }
+}
+
+private fun parseLogoColor(hex: String?): androidx.compose.ui.graphics.Color? {
+    if (hex.isNullOrBlank() || hex.length != 6) return null
+    return try {
+        androidx.compose.ui.graphics.Color(android.graphics.Color.parseColor("#$hex"))
+    } catch (_: IllegalArgumentException) {
+        null
+    }
 }
 
 @Composable

@@ -1,5 +1,6 @@
 package com.spoolpainter.app.ui.screens.main
 
+import app.cash.turbine.ReceiveTurbine
 import app.cash.turbine.test
 import com.spoolpainter.app.data.remote.spoolman.SpoolmanOutcome
 import com.spoolpainter.app.domain.models.Brand
@@ -89,6 +90,15 @@ class MainViewModelTwoTagTest {
         nfc.pushLastSeenTag(TagBuffer(sampleUid, TagClassification.Blank, capturedAtEpochMs = 0L))
     }
 
+    /** See [MainViewModelTest.awaitNonAmbientSnackbar] for rationale. */
+    private suspend fun ReceiveTurbine<UiEffect>.awaitNonAmbientSnackbar(): UiEffect.ShowSnackbar {
+        while (true) {
+            val effect = awaitItem() as UiEffect.ShowSnackbar
+            if (effect.message == "Tag detected. Press Read tag to load.") continue
+            return effect
+        }
+    }
+
     private fun stagePromptingPairAnother(vm: MainViewModel) {
         primeFormForWrite(vm)
         createAndPair.nextResult = CreateAndPairResult.Success.WrittenAndPaired(
@@ -136,7 +146,7 @@ class MainViewModelTwoTagTest {
 
         vm.effects.test {
             vm.onPairAnotherTagDismissed()
-            val emission = awaitItem() as UiEffect.ShowSnackbar
+            val emission = awaitNonAmbientSnackbar()
             assertEquals("Saved with one tag", emission.message)
             cancelAndIgnoreRemainingEvents()
         }
@@ -155,7 +165,7 @@ class MainViewModelTwoTagTest {
 
         vm.effects.test {
             vm.onPairAnotherTagAccepted()
-            val emission = awaitItem() as UiEffect.ShowSnackbar
+            val emission = awaitNonAmbientSnackbar()
             assertEquals("Both tags paired", emission.message)
             cancelAndIgnoreRemainingEvents()
         }
@@ -199,7 +209,7 @@ class MainViewModelTwoTagTest {
 
         vm.effects.test {
             vm.onPairAnotherTagAccepted()
-            val emission = awaitItem() as UiEffect.ShowSnackbar
+            val emission = awaitNonAmbientSnackbar()
             assertTrue("got: ${emission.message}", emission.message.contains("#7"))
             cancelAndIgnoreRemainingEvents()
         }
@@ -247,7 +257,7 @@ class MainViewModelTwoTagTest {
 
         vm.effects.test {
             vm.onPairAnotherTagAccepted()
-            val emission = awaitItem() as UiEffect.ShowSnackbar
+            val emission = awaitNonAmbientSnackbar()
             assertTrue("got: ${emission.message}", emission.message.contains("#7"))
             assertTrue("got: ${emission.message}", emission.message.contains("#8"))
             assertTrue(
@@ -269,7 +279,7 @@ class MainViewModelTwoTagTest {
 
         vm.effects.test {
             vm.onPairAnotherTagAccepted()
-            val emission = awaitItem() as UiEffect.ShowSnackbar
+            val emission = awaitNonAmbientSnackbar()
             assertTrue(emission.message.contains("500"))
             cancelAndIgnoreRemainingEvents()
         }

@@ -88,6 +88,9 @@ class MainViewModel @Inject constructor(
     private var readJob: Job? = null
     private var writeJob: Job? = null
     private var priorActiveFlow: ActiveFlow? = null
+    // UI-02 (Q-U9b-3=A): once per ViewModel lifetime, the first ambient (un-prompted)
+    // tap surfaces a hint snackbar so users discover the Read button.
+    private var ambientTapHintShown: Boolean = false
 
     internal val readTimeoutMs: Long = READ_TIMEOUT_MS_DEFAULT
     internal val writeTimeoutMs: Long = WRITE_TIMEOUT_MS_DEFAULT
@@ -224,6 +227,21 @@ class MainViewModel @Inject constructor(
                     _state.update {
                         it.copy(observedTagKind = kind, observedTagUid = tag?.uid)
                     }
+                }
+                // UI-02 (Q-U9b-3=A): once-per-session passive-tap hint. Only fires
+                // when the tap is genuinely ambient (no read/write in flight,
+                // no spool already linked) so we don't pile copy on top of the
+                // active-flow hint banners.
+                if (
+                    tag != null &&
+                    !ambientTapHintShown &&
+                    _state.value.activeFlow == ActiveFlow.Idle &&
+                    _state.value.spoolman.selectedSpoolId == null
+                ) {
+                    ambientTapHintShown = true
+                    _effects.trySend(
+                        UiEffect.ShowSnackbar("Tag detected. Press Read tag to load."),
+                    )
                 }
             }
         }
@@ -691,7 +709,7 @@ class MainViewModel @Inject constructor(
             }
             is CreateAndPairResult.VerifyFailed -> {
                 _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
-                _effects.trySend(UiEffect.ShowSnackbar("Verify failed. Tap Save to retry."))
+                _effects.trySend(UiEffect.ShowSnackbar("Couldn't write to tag. Try again."))
             }
             is CreateAndPairResult.SpoolmanFailed -> {
                 _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
@@ -702,7 +720,7 @@ class MainViewModel @Inject constructor(
                 val msg = if (result.reason.contains("vendor-tag", ignoreCase = true)) {
                     "Vendor tag. Write blocked."
                 } else {
-                    "NFC error: ${result.reason}"
+                    "Couldn't write to tag. Try again."
                 }
                 _effects.trySend(UiEffect.ShowSnackbar(msg))
             }
@@ -807,7 +825,7 @@ class MainViewModel @Inject constructor(
             }
             is TwoTagResult.VerifyFailed -> {
                 _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
-                _effects.trySend(UiEffect.ShowSnackbar("Second-tag verify failed: ${result.cause}"))
+                _effects.trySend(UiEffect.ShowSnackbar("Couldn't write to second tag. Try again."))
             }
             is TwoTagResult.SpoolmanFailed -> {
                 _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
@@ -818,13 +836,13 @@ class MainViewModel @Inject constructor(
                 _effects.trySend(
                     UiEffect.ShowSnackbar(
                         "Partial state in Spoolman. UID was removed from spool " +
-                            "#${result.partiallyModifiedSpoolId}; restore manually if needed",
+                            "#${result.partiallyModifiedSpoolId}. Restore manually if needed.",
                     ),
                 )
             }
             is TwoTagResult.NfcFailed -> {
                 _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
-                _effects.trySend(UiEffect.ShowSnackbar("Tag write failed: ${result.reason}"))
+                _effects.trySend(UiEffect.ShowSnackbar("Couldn't write to tag. Try again."))
             }
             is TwoTagResult.Cancelled -> {
                 _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
@@ -854,11 +872,11 @@ class MainViewModel @Inject constructor(
             }
             is RawWriteResult.VerifyFailed -> {
                 _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
-                _effects.trySend(UiEffect.ShowSnackbar("Verify failed. Tap Write to retry."))
+                _effects.trySend(UiEffect.ShowSnackbar("Couldn't write to tag. Try again."))
             }
             is RawWriteResult.NfcFailed -> {
                 _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
-                _effects.trySend(UiEffect.ShowSnackbar("Tag write failed: ${result.reason}"))
+                _effects.trySend(UiEffect.ShowSnackbar("Couldn't write to tag. Try again."))
             }
             is RawWriteResult.Cancelled -> {
                 _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
