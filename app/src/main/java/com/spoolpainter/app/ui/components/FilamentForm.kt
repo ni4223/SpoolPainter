@@ -41,7 +41,6 @@ sealed interface FormChange {
 
     // U8-Δ-1 — filament picker
     data class FilamentSelected(val value: SpoolmanFilament?) : FormChange
-    data object FilamentSectionToggled : FormChange
 
     // U8-Δ-2 — More details expander
     data object MoreDetailsToggled : FormChange
@@ -81,14 +80,12 @@ fun FilamentForm(
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         if (spoolmanConfigured) {
-            FilamentSectionExpander(
+            FilamentSection(
                 filaments = filaments,
                 selectedFilamentId = state.selectedFilamentId,
                 enabled = enabled && spoolmanReachable,
-                expanded = state.filamentSectionExpanded,
                 sortKey = filamentSortKey,
                 sortDirection = filamentSortDirection,
-                onToggle = { onChange(FormChange.FilamentSectionToggled) },
                 onSelect = { onChange(FormChange.FilamentSelected(it)) },
             )
         }
@@ -142,13 +139,15 @@ fun SaveAndWriteButton(
         shape = RoundedCornerShape(20.dp),
         colors = ButtonDefaults.buttonColors(
             containerColor = MaterialTheme.colorScheme.primary,
+            contentColor = MaterialTheme.colorScheme.onPrimary,
+            disabledContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
+            disabledContentColor = MaterialTheme.colorScheme.onPrimary,
         ),
     ) {
         Text(
             text = label,
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Medium,
-            color = MaterialTheme.colorScheme.onPrimary,
         )
     }
 }

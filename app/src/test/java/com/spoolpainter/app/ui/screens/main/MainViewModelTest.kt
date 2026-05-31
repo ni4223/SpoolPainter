@@ -294,17 +294,25 @@ class MainViewModelTest {
     }
 
     @Test
-    fun `onSpoolSelected null clears form to defaults`() = runTest {
+    fun `onSpoolSelected null clears spool selection only, form fields preserved`() = runTest {
         val vm = newVm()
         nfc.setBufferedTap(NfcResult.Success(sampleUid, TagClassification.Blank))
         spoolman.nextFindSpoolsByCardUidResult = SpoolmanOutcome.Success(listOf(sampleSpool))
         vm.onReadTapped()
+        val before = vm.state.value
+        val materialBefore = before.form.material?.name
+        val brandBefore = before.form.brand?.name
+        val colorBefore = before.form.colorHex
+        val uidBefore = before.form.cardUid
         vm.onSpoolSelected(null)
-        val s = vm.state.value
-        assertNull(s.form.cardUid)
-        assertNull(s.form.selectedSpoolId)
-        // Form resets to defaults — not null.
-        assertEquals("PLA", s.form.material?.name)
+        val after = vm.state.value
+        assertNull(after.form.selectedSpoolId)
+        assertNull(after.spoolman.selectedSpoolId)
+        // Form entries the user can keep editing stay put.
+        assertEquals(materialBefore, after.form.material?.name)
+        assertEquals(brandBefore, after.form.brand?.name)
+        assertEquals(colorBefore, after.form.colorHex)
+        assertEquals(uidBefore, after.form.cardUid)
     }
 
     @Test

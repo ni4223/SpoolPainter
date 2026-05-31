@@ -6,6 +6,7 @@ import com.spoolpainter.app.domain.models.SpoolmanSpool
 import com.spoolpainter.app.domain.models.SpoolmanVendor
 import retrofit2.Response
 import retrofit2.http.Body
+import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.PATCH
 import retrofit2.http.POST
@@ -39,6 +40,9 @@ interface SpoolmanApi {
     @POST("api/v1/vendor")
     suspend fun createVendor(@Body body: CreateVendorRequest): Response<SpoolmanVendor>
 
+    @DELETE("api/v1/vendor/{id}")
+    suspend fun deleteVendor(@Path("id") vendorId: Int): Response<Unit>
+
     @POST("api/v1/filament")
     suspend fun createFilament(@Body body: CreateFilamentRequest): Response<SpoolmanFilament>
 
@@ -48,6 +52,9 @@ interface SpoolmanApi {
         @Body body: PatchFilamentBody,
     ): Response<SpoolmanFilament>
 
+    @DELETE("api/v1/filament/{id}")
+    suspend fun deleteFilament(@Path("id") filamentId: Int): Response<Unit>
+
     @POST("api/v1/spool")
     suspend fun createSpool(@Body body: CreateSpoolRequest): Response<SpoolmanSpool>
 
@@ -56,6 +63,9 @@ interface SpoolmanApi {
         @Path("id") spoolId: Int,
         @Body body: SpoolPatchBody,
     ): Response<SpoolmanSpool>
+
+    @DELETE("api/v1/spool/{id}")
+    suspend fun deleteSpool(@Path("id") spoolId: Int): Response<Unit>
 
     @GET("api/v1/field/{entityType}")
     suspend fun listFields(@Path("entityType") entityType: String): Response<List<ExtraFieldDef>>

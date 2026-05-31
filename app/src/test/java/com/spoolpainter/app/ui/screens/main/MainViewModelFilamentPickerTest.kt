@@ -164,17 +164,4 @@ class MainViewModelFilamentPickerTest {
         assertEquals(7, createAndPair.lastInput?.form?.selectedFilamentId)
     }
 
-    @Test fun `onFilamentSectionToggled flips filamentSectionExpanded, does not affect moreDetailsExpanded`() = runTest {
-        val vm = newVm()
-        assertEquals(false, vm.state.value.form.filamentSectionExpanded)
-        assertEquals(false, vm.state.value.form.moreDetailsExpanded)
-
-        vm.onFilamentSectionToggled()
-        assertEquals(true, vm.state.value.form.filamentSectionExpanded)
-        assertEquals(false, vm.state.value.form.moreDetailsExpanded)
-
-        vm.onFilamentSectionToggled()
-        assertEquals(false, vm.state.value.form.filamentSectionExpanded)
-        assertTrue(true) // independence of expanders confirmed
-    }
 }

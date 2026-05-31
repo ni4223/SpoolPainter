@@ -7,6 +7,7 @@ import com.spoolpainter.app.BuildConfig
 import com.spoolpainter.app.di.AppScope
 import com.spoolpainter.app.di.IoDispatcher
 import com.spoolpainter.app.domain.models.OpenSpoolPayload
+import com.spoolpainter.app.domain.primitives.CardUid
 import com.spoolpainter.app.domain.primitives.NfcIntent
 import com.spoolpainter.app.domain.primitives.NfcResult
 import com.spoolpainter.app.domain.primitives.OpenSpoolDecodeResult
@@ -122,12 +123,27 @@ open class NfcRepository internal constructor(
     }
 
     internal suspend fun handleTag(tag: Tag) {
-        val raw = try {
-            wrapper.read(tag)
-        } catch (t: Throwable) {
-            transition { NfcResult.Error("zero-length UID, non-NFC-A tag?", t) }
-            logCause("zero-length UID, non-NFC-A tag?", t)
-            return
+        // Peek state first: on a Writing-state tap we skip the NDEF pre-read
+        // entirely and synthesize a RawTagRead from the in-memory Tag object
+        // (uid + techList, no I/O). Cuts one Ndef.connect cycle off the write
+        // path so the user has a smaller "keep phone steady" window. Vendor
+        // taps were already gated upstream in MainViewModel.onWriteTapped, so
+        // arriving here in Writing state means the tag is NDEF-capable.
+        val isWriting = _state.value is NfcResult.Writing
+        val raw = if (isWriting) {
+            RawTagRead(
+                uid = CardUid.fromBytes(tag.id),
+                records = null,
+                techList = tag.techList?.toList().orEmpty(),
+            )
+        } else {
+            try {
+                wrapper.read(tag)
+            } catch (t: Throwable) {
+                transition { NfcResult.Error("zero-length UID, non-NFC-A tag?", t) }
+                logCause("zero-length UID, non-NFC-A tag?", t)
+                return
+            }
         }
         val classification = classify(raw)
         val now = clock.now().toEpochMilliseconds()
@@ -164,19 +180,27 @@ open class NfcRepository internal constructor(
         classification: TagClassification,
         intent: NfcIntent.Write,
     ) {
-        // No software vendor-tag pre-block. Genuine factory-locked tags are
-        // rejected by the chip itself (Ndef.get returns null → NonNdefTagException,
-        // or Ndef.isWritable false → "tag is read-only"). Pre-blocking here
-        // misclassified our own partial writes as "vendor" and stopped the
-        // user from rewriting them.
+        // Pre-block vendor-classified tags from any NDEF write attempt. Two
+        // cases land here as Vendor:
+        //   1. MifareClassic-only chip (no Ndef in techList) — Ndef.get
+        //      returns null and writeRecords would throw NonNdefTagException.
+        //   2. Bambu/Creality chips Android promotes to NDEF in techList.
+        //      writeRecords would return success bytes-wise but the chip
+        //      doesn't actually persist them; we'd then PATCH Spoolman
+        //      with the UID (correct outcome) but surface a "tag write
+        //      failed" snackbar (misleading).
+        // Surface as the standard vendor-tag rejection so the dispatch
+        // layer's vendor-tag snackbar fires.
+        if (classification is TagClassification.Vendor) {
+            transition {
+                NfcResult.Error("vendor-tag protected (FR-4.7): ${classification.reason}", null)
+            }
+            return
+        }
         val records = encodePayloadRecords(intent.payload)
         try {
             wrapper.writeRecords(tag, records)
         } catch (t: NonNdefTagException) {
-            // Tag exposes no NDEF tech — the read-side classifier couldn't
-            // tell this apart from a truly blank/formattable tag (records
-            // are null in both cases). Surface as a vendor-tag rejection
-            // (FR-4.7) so the UI copy is consistent.
             transition {
                 NfcResult.Error("vendor-tag protected (FR-4.7): non-NDEF tag", t)
             }
@@ -186,31 +210,25 @@ open class NfcRepository internal constructor(
             logCause("write failed", t)
             return
         }
-        transition { NfcResult.Verifying }
-        val readback = try {
-            wrapper.readRecords(tag)
-        } catch (t: Throwable) {
-            transition { NfcResult.Error("verify mismatch", t) }
-            logCause("verify mismatch", t)
-            return
-        }
-        // readback == null means Ndef.get(tag) couldn't reattach after the
-        // write — typical for fresh blanks the write just promoted to NDEF.
-        // The Tag handle captured a pre-write tech list, so a second
-        // connection on the same handle fails. The bytes ARE on the tag; a
-        // re-tap would read them. Treat null as "write succeeded, readback
-        // skipped" rather than verify-mismatch.
-        if (readback != null && readback != records) {
-            android.util.Log.w(
-                TAG,
-                "verify mismatch: readback=${readback.size} records=${records.size} bytesEqual=${readback.flatMap { it.payload.toList() } == records.flatMap { it.payload.toList() }}",
-            )
-            transition { NfcResult.Error("verify mismatch (readback != written)") }
-            return
-        }
-        if (readback == null) {
-            android.util.Log.w(TAG, "readback null after write — treating as success (tag promoted to NDEF, handle stale)")
-        }
+        // transition { NfcResult.Verifying }
+        // val readback = try {
+        //     wrapper.readRecords(tag)
+        // } catch (t: Throwable) {
+        //     transition { NfcResult.Error("verify mismatch", t) }
+        //     logCause("verify mismatch", t)
+        //     return
+        // }
+        // if (readback != null && readback != records) {
+        //     android.util.Log.w(
+        //         TAG,
+        //         "verify mismatch: readback=${readback.size} records=${records.size} bytesEqual=${readback.flatMap { it.payload.toList() } == records.flatMap { it.payload.toList() }}",
+        //     )
+        //     transition { NfcResult.Error("verify mismatch (readback != written)") }
+        //     return
+        // }
+        // if (readback == null) {
+        //     android.util.Log.w(TAG, "readback null after write — treating as success (tag promoted to NDEF, handle stale)")
+        // }
         transition {
             NfcResult.Success(raw.uid, TagClassification.OpenSpool(intent.payload))
         }
@@ -261,9 +279,15 @@ open class NfcRepository internal constructor(
             val isFormattable = raw.techList.contains("android.nfc.tech.NdefFormatable")
             val isNdef = raw.techList.contains("android.nfc.tech.Ndef")
             return when {
-                isNdef -> TagClassification.Blank
+                // MifareClassic in techList means a vendor-encrypted chip
+                // (Bambu, Creality, etc.). Android sometimes ALSO exposes
+                // Ndef on these (it auto-promotes), but our writes won't
+                // persist — the chip's crypto rejects them silently. Treat
+                // as Vendor regardless of Ndef presence so the write path
+                // pre-block + Spoolman UID-only pair fires.
                 isMifareClassic ->
-                    TagClassification.Vendor("non-NDEF tag (MifareClassic)")
+                    TagClassification.Vendor("MifareClassic (vendor-encrypted)")
+                isNdef -> TagClassification.Blank
                 isFormattable -> TagClassification.Blank
                 else ->
                     TagClassification.Vendor("non-NDEF tag (${raw.techList.joinToString().ifEmpty { "unknown tech" }})")

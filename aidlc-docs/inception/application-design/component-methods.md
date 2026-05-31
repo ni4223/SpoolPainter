@@ -19,7 +19,7 @@ Functional Design (per-unit, CONSTRUCTION phase).
 @Singleton
 class NfcRepository @Inject constructor(
     private val adapter: NfcAdapterWrapper,
-    private val parser: OpenSpoolPayloadParser,
+    private val parser: OpenSpoolPayloadCodec,
 )
 ```
 
@@ -34,7 +34,7 @@ class NfcRepository @Inject constructor(
 | `suspend fun disarm(): Unit` | — | Cancel any armed intent; transition `state` back to `Idle`. |
 
 **Internal**: tag classification (blank / OpenSpool / vendor) happens in
-the adapter wrapper after every read; `OpenSpoolPayloadParser` decodes
+the adapter wrapper after every read; `OpenSpoolPayloadCodec` decodes
 NDEF if present.
 
 ---
@@ -60,19 +60,19 @@ class SpoolmanRepository @Inject constructor(
 
 | Method | Returns | Purpose |
 |---|---|---|
-| `val filaments: StateFlow<List<Filament>>` | list | Cached filament list; invalidated on PATCH/POST. |
-| `val spools: StateFlow<List<Spool>>` | list | Cached spool list; invalidated on PATCH/POST. |
-| `val vendors: StateFlow<List<Vendor>>` | list | Cached vendor list; invalidated on PATCH/POST. |
+| `val filaments: StateFlow<List<SpoolmanFilament>>` | list | Cached filament list; invalidated on PATCH/POST. |
+| `val spools: StateFlow<List<SpoolmanSpool>>` | list | Cached spool list; invalidated on PATCH/POST. |
+| `val vendors: StateFlow<List<SpoolmanVendor>>` | list | Cached vendor list; invalidated on PATCH/POST. |
 | `suspend fun refresh(): SpoolmanOutcome<Unit>` | sealed | Force-refresh all three caches. |
-| `suspend fun findSpoolsByCardUid(uid: CardUid): SpoolmanOutcome<List<Spool>>` | sealed | FR-3.2 — `GET /api/v1/spool?lot_nr=card_uid:<uid>`. Substring match per Spoolman contract. |
+| `suspend fun findSpoolsByCardUid(uid: CardUid): SpoolmanOutcome<List<SpoolmanSpool>>` | sealed | FR-3.2 — `GET /api/v1/spool?lot_nr=card_uid:<uid>`. Substring match per Spoolman contract. |
 
 ### Mutations
 
 | Method | Returns | Purpose |
 |---|---|---|
-| `suspend fun createSpoolForNewFilament(req: NewSpoolRequest): SpoolmanOutcome<Spool>` | sealed | FR-7 chain (Q-S2=A): vendor lookup-or-create → filament lookup-or-create → spool POST with `lot_nr=card_uid:<uid>`. Internal sequencing private. Reuses existing entries (FR-7.5) before creating new. |
-| `suspend fun appendCardUidToSpool(spoolId: Int, uid: CardUid): SpoolmanOutcome<Spool>` | sealed | FR-4.6 / FR-6.2 — PATCH `lot_nr` adding `card_uid:<uid>` if not present. Preserves opaque tail (FR-2.2). |
-| `suspend fun removeCardUidFromSpool(spoolId: Int, uid: CardUid): SpoolmanOutcome<Spool>` | sealed | FR-5.2 — PATCH `lot_nr` removing only the matched UID; preserves opaque tail and other UIDs (Q6=A in requirements). |
+| `suspend fun createSpoolForNewFilament(req: NewSpoolRequest): SpoolmanOutcome<SpoolmanSpool>` | sealed | FR-7 chain (Q-S2=A): vendor lookup-or-create → filament lookup-or-create → spool POST with `lot_nr=card_uid:<uid>`. Internal sequencing private. Reuses existing entries (FR-7.5) before creating new. |
+| `suspend fun appendCardUidToSpool(spoolId: Int, uid: CardUid): SpoolmanOutcome<SpoolmanSpool>` | sealed | FR-4.6 / FR-6.2 — PATCH `lot_nr` adding `card_uid:<uid>` if not present. Preserves opaque tail (FR-2.2). |
+| `suspend fun removeCardUidFromSpool(spoolId: Int, uid: CardUid): SpoolmanOutcome<SpoolmanSpool>` | sealed | FR-5.2 — PATCH `lot_nr` removing only the matched UID; preserves opaque tail and other UIDs (Q6=A in requirements). |
 | `suspend fun moveCardUid(fromSpoolId: Int, toSpoolId: Int, uid: CardUid): SpoolmanOutcome<MoveOnBindResult>` | sealed (declared by `MoveOnBindUseCase` if Q-S3=C — see use-case) | *Not on this repository.* Move-on-bind is composed from `removeCardUidFromSpool` + `appendCardUidToSpool` inside `MoveOnBindUseCase` per Q-S3=C. |
 
 ### Returned types
@@ -108,10 +108,12 @@ class SettingsRepository @Inject constructor(
 
 | Method | Returns | Purpose |
 |---|---|---|
-| `val settings: StateFlow<Settings>` | `Settings(url, sortOrder, themeOverride)` | DataStore-backed. |
+| `val settings: StateFlow<Settings>` | `Settings(url, spoolSortOrder, filamentSortOrder, themeOverride, currency)` | DataStore-backed. Sort split into spool + filament per U9. |
 | `suspend fun setUrl(url: String)` | — | FR-9.1. |
-| `suspend fun setSortOrder(order: SortOrder)` | — | FR-9.2. |
-| `suspend fun setThemeOverride(theme: ThemeOverride)` | — | FR-9.3. |
+| `suspend fun setSpoolSortOrder(order: SortOrder)` | — | FR-9.2 (spool dropdown). |
+| `suspend fun setFilamentSortOrder(order: SortOrder)` | — | FR-9.2 (filament picker). |
+| `suspend fun setThemeOverride(theme: ThemeOverride)` | — | FR-9.3. Two-state Light/Dark `Switch` on Settings TopAppBar. |
+| `suspend fun setCurrency(currency: Currency)` | — | U9 — `$ Dollar` / `€ Euro` / `¤ Money` segmented row; flips price suffix everywhere. |
 
 v2.1 additions (FR-9.4, NFR-3.4): `addVendorKey`, `removeVendorKey`,
 `vendorKeys: Flow<List<VendorKey>>`, all backed by
@@ -229,16 +231,19 @@ sealed interface CreateAndPairResult {
 @HiltViewModel
 class MainViewModel @Inject constructor(
     private val nfc: NfcRepository,
-    private val spoolman: SpoolmanRepository,
-    private val materials: MaterialBrandRepository,
+    spoolman: SpoolmanRepository,
+    private val settings: SettingsRepository,
+    private val materialBrandRepo: MaterialBrandRepository,
     private val readAndPair: ReadAndPairUseCase,
     private val createAndPair: CreateAndPairUseCase,
-    private val moveOnBind: MoveOnBindUseCase,
     private val twoTag: TwoTagUseCase,
-    private val vendorUidOnly: VendorUidOnlyPairUseCase,
+    private val confirmer: MoveOnBindConfirmer,
     private val rawWrite: RawWriteUseCase,
+    private val vendorUidOnlyPair: VendorUidOnlyPairUseCase,
 ) : ViewModel()
 ```
+
+(`MoveOnBindUseCase` is invoked indirectly through `MoveOnBindConfirmer` and `CreateAndPairUseCase` rather than injected directly into the VM. `SpoolmanRepository` is constructor-only — exposed flows are wired into `MainUiState` and not held as a property.)
 
 | Method / Property | Returns | Purpose |
 |---|---|---|
@@ -246,7 +251,7 @@ class MainViewModel @Inject constructor(
 | `val effects: Flow<UiEffect>` | `Channel<UiEffect>` flow | Q-DP3=C. Transient snackbar / nav events. |
 | `fun onReadTapped()` | — | Triggers `ReadAndPairUseCase`. |
 | `fun onWriteTapped()` | — | Branches by tag classification: blank/OpenSpool → `CreateAndPairUseCase`; vendor → opens `VendorUidOnlyOptInSheet`. |
-| `fun onSpoolSelected(spool: Spool)` | — | FR-3.6 dropdown-driven prefill. |
+| `fun onSpoolSelected(spool: SpoolmanSpool?)` | — | FR-3.6 dropdown-driven prefill. Nullable for clear-selection. |
 | `fun onMaterialChanged(m: Material)` | — | Form edit. |
 | `fun onBrandChanged(b: Brand)` | — | Form edit. |
 | `fun onColorChanged(hex: String)` | — | Form edit. |
@@ -269,12 +274,14 @@ class SettingsViewModel @Inject constructor(
 
 | Method / Property | Returns | Purpose |
 |---|---|---|
-| `val state: StateFlow<SettingsUiState>` | single state | URL field + connectivity + sort + theme. |
-| `val effects: Flow<UiEffect>` | flow | Snackbar for Test-connection result. |
-| `fun onUrlChanged(url: String)` | — | FR-9.1. Saves on focus loss. |
-| `fun onTestConnectionTapped()` | — | Q-CD1.1=A — owns the only refresh action. Calls `spoolman.probe()`. |
-| `fun onSortOrderChanged(order: SortOrder)` | — | FR-9.2. |
-| `fun onThemeOverrideChanged(theme: ThemeOverride)` | — | FR-9.3. |
+| `val state: StateFlow<SettingsUiState>` | single state | URL field + connectivity + sort (spool + filament) + theme + currency. |
+| `val effects: Flow<UiEffect>` | flow | Snackbar for Save / connectivity events. |
+| `fun onUrlChanged(url: String)` | — | FR-9.1. Saved on Save tap. |
+| `fun onSaveTapped()` | — | Persists URL + probes connectivity. (Test connection button removed in U9b — Save is full-width.) |
+| `fun onSpoolSortOrderChanged(order: SpoolSortOrder)` | — | FR-9.2 (spool). |
+| `fun onFilamentSortOrderChanged(order: FilamentSortOrder)` | — | FR-9.2 (filament). |
+| `fun onThemeOverrideChanged(theme: ThemeOverride)` | — | FR-9.3 — Light/Dark `Switch`. |
+| `fun onCurrencyChanged(currency: Currency)` | — | U9 — currency segmented row. |
 
 ### Sheet ViewModels
 

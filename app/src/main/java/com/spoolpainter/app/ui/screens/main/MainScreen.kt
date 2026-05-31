@@ -1,10 +1,13 @@
 package com.spoolpainter.app.ui.screens.main
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -13,7 +16,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Nfc
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenuItem
@@ -24,6 +29,7 @@ import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
@@ -38,6 +44,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
@@ -77,7 +84,11 @@ fun MainScreen(
     val pairAnotherState by remember(state.activeFlow) {
         derivedStateOf {
             (state.activeFlow as? ActiveFlow.PromptingPairAnother)?.let {
-                PairAnotherTagUiState(spoolId = it.spoolId, visible = true)
+                PairAnotherTagUiState(
+                    spoolId = it.spoolId,
+                    visible = true,
+                    isVendorPair = it.isVendorPair,
+                )
             }
         }
     }
@@ -94,9 +105,15 @@ fun MainScreen(
 
     Scaffold(
         snackbarHost = {
+            // Bottom-anchored, lifted enough to clear both the Read FAB
+            // (56dp) and the Save & Write button (48dp inside the form's
+            // scrolling Column) plus column spacing + the system gesture
+            // bar inset. imePadding keeps it visible with the keyboard up.
             SnackbarHost(
                 hostState = snackbarHostState,
-                modifier = Modifier.imePadding(),
+                modifier = Modifier
+                    .imePadding()
+                    .padding(bottom = 160.dp),
             )
         },
         floatingActionButton = {
@@ -131,6 +148,7 @@ fun MainScreen(
                 onPairAnotherDismiss = viewModel::onPairAnotherTagDismissed,
             )
             ReadingHint(state.activeFlow, state.nfc)
+            WritingHint(state.activeFlow, state.nfc)
             if (state.spoolman.urlConfigured) {
                 Card(
                     modifier = Modifier
@@ -151,11 +169,16 @@ fun MainScreen(
                     }
                 }
             }
+            // Vendor chip only on active engagement: post-Read (NfcResult.Success
+            // observed) or user picked a spool from the dropdown. Bare passive
+            // taps stay quiet — the once-per-session snackbar hint covers them.
             VendorTagHint(
                 observed = state.observedTagKind,
                 hasUid = state.observedTagUid != null,
                 urlConfigured = state.spoolman.urlConfigured,
                 alreadyLinked = state.spoolman.selectedSpoolId != null,
+                showChip = state.nfc is com.spoolpainter.app.domain.primitives.NfcResult.Success ||
+                    state.spoolman.selectedSpoolId != null,
             )
             AmbiguityBlock(state.ambiguity)
             Card(
@@ -191,7 +214,6 @@ fun MainScreen(
                                 is FormChange.Variant -> viewModel.onVariantChanged(change.value)
                                 is FormChange.TempRangesChanged -> viewModel.onTempRangesChanged(change.value)
                                 is FormChange.FilamentSelected -> viewModel.onFilamentSelected(change.value)
-                                is FormChange.FilamentSectionToggled -> viewModel.onFilamentSectionToggled()
                                 is FormChange.MoreDetailsToggled -> viewModel.onMoreDetailsToggled()
                                 is FormChange.EmptySpoolWeightChanged -> viewModel.onEmptySpoolWeightChanged(change.value)
                                 is FormChange.PriceChanged -> viewModel.onPriceChanged(change.value)
@@ -235,30 +257,8 @@ fun MainScreen(
                     onClick = viewModel::onWriteTapped,
                 )
             }
-            WritingHint(state.activeFlow, state.nfc)
-            InstructionFooter(state.activeFlow)
         }
     }
-}
-
-/**
- * v1-style instructional footer at the bottom of the screen. Shown only when
- * idle (no read/write in flight) so it doesn't compete with the in-flight
- * hints at the top.
- */
-@Composable
-private fun InstructionFooter(activeFlow: ActiveFlow) {
-    if (activeFlow != ActiveFlow.Idle) return
-    Text(
-        text = "• Tap a tag to read its filament settings\n" +
-            "• Or fill the form, then tap Save & Write to write a fresh tag\n" +
-            "• Press Read tag to scan a tag without filling the form first",
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = 8.dp)
-            .testTag("main-instructions"),
-        style = MaterialTheme.typography.bodySmall,
-    )
 }
 
 @Composable
@@ -333,12 +333,7 @@ private fun ReadingHint(activeFlow: ActiveFlow, nfc: NfcResult) {
     val showHint = activeFlow == ActiveFlow.ReadingForPair &&
         (nfc is NfcResult.Idle || nfc is NfcResult.Reading)
     if (!showHint) return
-    Text(
-        text = "Tap a tag to read…",
-        modifier = Modifier.fillMaxWidth().testTag("main-reading-hint"),
-        style = MaterialTheme.typography.titleMedium,
-        textAlign = TextAlign.Center,
-    )
+    NfcStatusPill(label = "Tap a tag to read", testTag = "main-reading-hint")
 }
 
 @Composable
@@ -346,22 +341,50 @@ private fun WritingHint(activeFlow: ActiveFlow, nfc: NfcResult) {
     val label = when {
         activeFlow is ActiveFlow.WritingSecondTag &&
             (nfc is NfcResult.Idle || nfc is NfcResult.Writing) ->
-            "Tap second tag to write…"
+            "Tap second tag to write"
         activeFlow == ActiveFlow.WritingForPair &&
             (nfc is NfcResult.Idle || nfc is NfcResult.Writing) ->
-            "Tap a tag to write…"
+            "Tap a tag to write"
         (activeFlow == ActiveFlow.WritingForPair ||
             activeFlow is ActiveFlow.WritingSecondTag) &&
-            nfc is NfcResult.Verifying -> "Verifying tag…"
-        activeFlow == ActiveFlow.PairingVendorUidOnly -> "Linking tag to spool…"
+            nfc is NfcResult.Verifying -> "Verifying tag"
+        activeFlow == ActiveFlow.PairingVendorUidOnly -> "Linking tag to spool"
         else -> return
     }
-    Text(
-        text = label,
-        modifier = Modifier.fillMaxWidth().testTag("main-writing-hint"),
-        style = MaterialTheme.typography.titleMedium,
-        textAlign = TextAlign.Center,
-    )
+    NfcStatusPill(label = label, testTag = "main-writing-hint")
+}
+
+@Composable
+private fun NfcStatusPill(label: String, testTag: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(testTag),
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        Surface(
+            shape = RoundedCornerShape(50),
+            color = MaterialTheme.colorScheme.primaryContainer,
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Nfc,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.size(18.dp),
+                )
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                )
+            }
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -492,17 +515,27 @@ private fun AmbiguityBlock(state: AmbiguityState?) {
 private fun ReadFab(isReading: Boolean, onClick: () -> Unit) {
     ExtendedFloatingActionButton(
         onClick = onClick,
-        modifier = Modifier.testTag("main-read-fab"),
+        modifier = Modifier
+            .testTag("main-read-fab")
+            .height(64.dp),
     ) {
-        Text(if (isReading) "Reading…" else "Read tag")
+        Text(
+            text = if (isReading) "Reading…" else "Read tag",
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.padding(horizontal = 8.dp),
+        )
     }
 }
 
 /**
- * Card rendered when the most recent tag observed is vendor-classified
- * (factory-encoded — we can't read its contents, but we can still link its
- * UID to a Spoolman spool per FR-4.9). Save & Write on this state routes
- * through [VendorUidOnlyPairUseCase] (no NDEF write).
+ * Inline info row rendered when the most recent tag observed is
+ * vendor-classified (factory-encoded — we can't read its contents, but we
+ * can still link it to a Spoolman spool per FR-4.9). Save & Write on this
+ * state routes through [VendorUidOnlyPairUseCase] (no NDEF write).
+ *
+ * Visually distinct from form Cards: outlined, tertiary-tinted icon + bold
+ * label + supporting body line. Sits on the screen background, not inside
+ * a Card.
  */
 @Composable
 private fun VendorTagHint(
@@ -510,31 +543,40 @@ private fun VendorTagHint(
     hasUid: Boolean,
     urlConfigured: Boolean,
     alreadyLinked: Boolean,
+    showChip: Boolean,
 ) {
-    if (observed != ObservedTagKind.Vendor || !hasUid) return
-    Card(
-        modifier = Modifier.fillMaxWidth().testTag("main-vendor-tag-hint"),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant,
-            contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-        ),
+    if (!showChip || observed != ObservedTagKind.Vendor || !hasUid) return
+    val body = when {
+        alreadyLinked -> "We can't read this tag's contents. Tap Save to pair it with the selected spool."
+        urlConfigured -> "We can't read this tag's contents. Pick a spool or fill the form, then tap Save to pair it."
+        else -> "We can't read this tag's contents. Configure Spoolman in Settings to pair this tag with a spool."
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("main-vendor-tag-hint")
+            .padding(horizontal = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = androidx.compose.ui.Alignment.Top,
     ) {
-        Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
+        Icon(
+            imageVector = Icons.Filled.Info,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.tertiary,
+            modifier = Modifier.padding(top = 2.dp),
+        )
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
                 text = "Vendor tag",
                 style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.tertiary,
             )
-            val body = when {
-                alreadyLinked -> null
-                urlConfigured -> "Content can't be read. Pick a spool from the dropdown or fill the form, then tap Save & Write to link this tag."
-                else -> "Content can't be read. Configure Spoolman in Settings to link this tag to a spool."
-            }
-            if (body != null) {
-                Text(text = body, style = MaterialTheme.typography.bodySmall)
-            }
+            Text(
+                text = body,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

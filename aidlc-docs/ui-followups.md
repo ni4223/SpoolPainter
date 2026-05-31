@@ -36,7 +36,7 @@ the same Card surface as the form so the screen reads as one unit.
 
 ## UI-02 — No prompt on passive (ambient) tag tap
 
-**State**: open
+**State**: fixed (U10 install-gate session 2026-05-30 — 15s wall-clock cooldown via `kotlinx.datetime.Clock`; classification-aware copy: Vendor → "Vendor tag. Press Read to load.", Blank → "Blank tag detected.", OpenSpool/null → "Tag detected. Press Read to load.". `selectedSpoolId == null` gate dropped per user direction)
 **Found in**: U6b install-gate, 2026-05-27
 **Routing**: U9 or U10 (small UX nudge).
 
@@ -111,7 +111,7 @@ that under user-facing UX feedback.
 
 ## UI-07 — Better messaging across confirmation/cancel/error snackbars
 
-**State**: open
+**State**: fixed (U10 §3 — MoveOnBindPartial + Cancelled rewrites + earlier U9b §7 audit covers the rest; AmbiguousOwnership friendly copy via `humanReadable.ParseError` already shipped in U6b)
 **Found in**: U6b install-gate, 2026-05-27
 **Routing**: U10 (copy review; ties in with UI-05).
 
@@ -280,9 +280,9 @@ behaviour but bakes the bug in.
 
 ## UI-05 — NDEF write-failure snackbar is too technical
 
-**State**: open
+**State**: fixed (U9b §7 — `"Couldn't write to tag. Try again."` shipped on all NfcFailed/VerifyFailed paths in `MainViewModel`)
 **Found in**: U6b install-gate, 2026-05-27
-**Routing**: U10 (release polish).
+**Routing**: U10 (release polish) — verification only, copy already shipped.
 
 When `Ndef.writeNdefMessage` throws (typically: tag lifted before write
 completes), the user sees a snackbar like:
@@ -494,5 +494,423 @@ adding one method for a single button felt scope-creepy when the bigger
 editing design isn't yet locked.
 
 **Done together with UI-14** when the editing design pass lands.
+
+---
+
+## UI-16 — Filament section: always-open, no expander toggle
+
+**State**: fixed (2026-05-30 install-gate)
+**Found in**: U10 install-gate, 2026-05-30
+**Routing**: U10 close-out
+
+The U8-Δ-1 collapsed-by-default "Filament ▾" expander hid the picker behind
+a header tap, but every flow (create-and-pair, pair-existing, edit) actually
+needs the picker visible — collapsing it added a step. User direction:
+"keep filament always open, don't want that hide flow."
+
+**Fix shipped**:
+- Renamed `FilamentSectionExpander.kt` → `FilamentSection.kt`; rewrote as
+  a plain Column hosting the helper text + `FilamentPicker`. No header,
+  no chevron, no `AnimatedVisibility`.
+- Dropped `FormState.filamentSectionExpanded`, `FormChange.FilamentSectionToggled`,
+  `MainViewModel.onFilamentSectionToggled`, the `MainScreen` route hook,
+  the `MainViewModelFilamentPickerTest.onFilamentSectionToggled flips...`
+  test.
+- "Filament" heading: `bodyLarge` SemiBold + primary color (matches Material
+  metadata's SectionLabels). Picker textStyle bumped to `titleMedium`
+  SemiBold (vs `bodyLarge` SemiBold for the secondary fields) — subtle
+  size step that signals "primary pick" without colored fill.
+
+---
+
+## UI-17 — End-of-pair-flow auto-clear + filament-pin reverted
+
+**State**: fixed (2026-05-30 install-gate, reverted)
+**Found in**: U10 install-gate, 2026-05-30
+**Routing**: U10 close-out
+
+A mid-session iteration added `applyEndOfPairFlow(spoolId)` that, on
+PairAnotherTagDismissed and TwoTagResult.SecondTagPaired, cleared the
+spool selection and pinned the just-paired filament so the next tap
+created a NEW spool against the same filament. User direction:
+"feature we added to clear spool when write complete, revert it."
+
+**Fix shipped**: helper deleted; both call sites back to plain
+`activeFlow = Idle` transitions. Form keeps spool + filament + everything
+else after PairAnother dismissal / second-tag pair, same as v1 behaviour.
+
+---
+
+## UI-18 — Spool dropdown X clears spool only
+
+**State**: fixed (2026-05-30 install-gate)
+**Found in**: U10 install-gate, 2026-05-30
+**Routing**: U10 close-out
+
+`MainViewModel.onSpoolSelected(null)` previously reset the entire form to
+defaults (material/brand/colour/temps/expanders/cardUid) and wiped
+ambiguity + observed-tag state. User direction: "make x of spool dropdown
+just clear spool not everything, leave filament x as it is."
+
+**Fix shipped**: null-spool branch now only clears `form.selectedSpoolId`
++ `spoolman.selectedSpoolId`; form fields, cardUid, ambiguity, and
+observed-tag info are preserved. `MainViewModelFilamentPickerTest.…null
+clears form…` renamed and rewritten to assert that material/brand/colour/uid
+all survive the clear.
+
+---
+
+## UI-19 — Write-fail snackbar tells user the spool is saved
+
+**State**: fixed (2026-05-30 install-gate)
+**Found in**: U10 install-gate, 2026-05-30
+**Routing**: U10 close-out
+
+`CreateAndPairResult.VerifyFailed` and `NfcFailed` (non-vendor) both
+surfaced "Couldn't write to tag. Try again." That copy hides the fact
+that `CreateAndPairUseCase` creates the spool BEFORE the write tap, so
+on a write failure the spool is already in Spoolman; the user just needs
+to re-tap.
+
+**Fix shipped**:
+- Both paths now emit "Saved to Spoolman. Tag write failed. Try again."
+- VerifyFailed branch additionally keeps `selectedSpoolId` set to
+  `result.spoolId` (was clearing only `activeFlow`) so the UI shows the
+  spool that was saved, ready for retry without re-filling the form.
+- Vendor sub-case on NfcFailed unchanged — still "Vendor tag. Write blocked."
+
+---
+
+## UI-20 — Write path: pre-read + verify removed (perf, "phone moved" failures)
+
+**State**: fixed (2026-05-30 install-gate)
+**Found in**: U10 install-gate, 2026-05-30
+**Routing**: U10 close-out
+
+v2's write tap was opening **3 separate Ndef.connect() cycles** on the
+same Tag handle: (1) pre-read in `NfcRepository.handleTag` for ambient
+classification, (2) actual `writeNdefMessage`, (3) post-write verify
+read-back. Combined with Android's system tag-detected haptic firing
+after step 1 — which users naturally interpret as "done" and pull away
+from the tag — this produced a high rate of "phone moved" failures on
+steps 2 or 3. v1.7 production used **one** connect cycle (write straight
+through, no pre-read, no verify) and was robust.
+
+**Fix shipped**:
+- **Pre-read skipped on Writing-state taps**: `handleTag` now peeks
+  `_state.value`; if `is NfcResult.Writing`, synthesises a `RawTagRead`
+  from the in-memory `Tag` object only (uid via `CardUid.fromBytes(tag.id)`,
+  techList via `tag.techList`, `records = null`). `classify(raw)` already
+  handles `records == null` via the techList branch, so this is a clean
+  drop-in. Read / Idle paths unchanged.
+- **Verify block commented out** in `runWriteThenVerify`. Discussion of
+  what it caught:
+  - `writeNdefMessage` throwing IOException on phone-moved-during-write
+    is already handled — surfaces as `WriteResult.Failed` →
+    `CreateAndPairResult.NfcFailed` with the friendly snackbar.
+  - Verify only adds value for counterfeit chips that ACK page writes
+    silently without persisting. That class of failure is rare on
+    genuine NTAG21x and surfaces at the Snapmaker round-trip (§9.2)
+    anyway.
+- Net: write tap is now `Ndef.connect → writeNdefMessage → close`, same
+  as v1.7. The "keep phone steady" window is just the actual write
+  duration (~50 ms for our payload).
+
+**Files**:
+- `app/src/main/java/com/spoolpainter/app/hardware/nfc/NfcRepository.kt`:
+  `handleTag` synthesises `raw` on Writing taps; `runWriteThenVerify`
+  has the verify block commented out (kept inline for easy revert if
+  the Snapmaker round-trip surfaces a regression).
+- `CardUid` import added.
+
+---
+
+## UI-21 — Vendor-tap during Writing state routes through vendor pair path
+
+**State**: fixed (2026-05-30 install-gate)
+**Found in**: U10 install-gate §4.2, 2026-05-30
+**Routing**: U10 close-out
+
+When the user picks a spool from the dropdown and taps a vendor tag *without
+first hitting Read*, `MainViewModel.onWriteTapped` saw `observedTagKind = None`
+and routed through the standard create-and-pair path. Vendor chips Android
+auto-promotes to NDEF (Bambu/Creality MifareClassic) silently no-op or throw
+IOException on write. Result: Spoolman correctly got the UID PATCH (use case's
+Step 3) but the user saw the misleading "Saved to Spoolman. Tag write failed"
+snackbar from UI-19.
+
+**Fix shipped**:
+- `NfcRepository.classify`: MifareClassic in techList → Vendor regardless
+  of Ndef presence (was Ndef-wins).
+- `NfcRepository.runWriteThenVerify`: pre-block on Vendor classification
+  before any NDEF transceive. Emits `vendor-tag protected (FR-4.7): <reason>`.
+- `CreateAndPairUseCase`: on `WriteResult.Failed` with vendor reason + UID,
+  returns `Success.WrittenAndPaired(isVendorPair = true)` (new field on the
+  result type). Spoolman pairing is already complete by then.
+- `MainViewModel.applyWriteResult.WrittenAndPaired`: clears observedTagKind +
+  observedTagUid (so VendorTagHint chip dismisses) and threads `isVendorPair`
+  into `ActiveFlow.PromptingPairAnother`.
+
+---
+
+## UI-22 — PairAnotherTagSheet vendor-aware copy + missing snackbars
+
+**State**: fixed (2026-05-30 install-gate)
+**Found in**: U10 install-gate §4.2 follow-up, 2026-05-30
+**Routing**: U10 close-out
+
+The PairAnotherTagSheet's body said "We'll write the same data to the second
+tag and remember both" — wrong for vendor pairs (we don't write to vendor
+tags). Also the second-tag vendor success path was silent (no snackbar).
+
+**Fix shipped**:
+- `ActiveFlow.PromptingPairAnother` + `PairAnotherTagUiState` gain
+  `isVendorPair` flag.
+- `PairAnotherTagSheet`: vendor copy. Title "Tag linked. Pair another tag
+  with this spool?" / body "Tap a tag to link it to the same spool."
+  Non-vendor copy unchanged.
+- `MainViewModel.applyVendorUidOnlyPairResult.Success` and the
+  vendor-CreateAndPair synthetic success both set `isVendorPair = true`.
+- `onPairAnotherTagDismissed`: snackbar branches — "Vendor tag linked."
+  vs "Saved with one tag."
+- `applyTwoTagResult.VendorTagRejected` re-route's success branch now
+  emits "Both tags paired." (was silent).
+
+---
+
+## UI-23 — NFC status pill (read/write hints unified)
+
+**State**: fixed (2026-05-30 install-gate)
+**Found in**: U10 install-gate, 2026-05-30
+**Routing**: U10 close-out
+
+`WritingHint` rendered below the form/Save button (out of natural sight line);
+`ReadingHint` rendered above as plain centered text that visually competed
+with the app-name overlay above it.
+
+**Fix shipped**:
+- `WritingHint` moved up next to `ReadingHint` between BannerSlot and the
+  Spoolman dropdown card.
+- Both rewritten as a shared `NfcStatusPill` composable: centered Surface,
+  `RoundedCornerShape(50)`, `primaryContainer` fill, 18dp `Icons.Filled.Nfc`
+  + `labelLarge` text in `onPrimaryContainer`.
+
+---
+
+## UI-24 — Brand/material case canonicalised against existing entries
+
+**State**: fixed (2026-05-30 install-gate)
+**Found in**: U10 install-gate, 2026-05-30
+**Routing**: U10 close-out
+
+When the user typed a brand or material with different case than an existing
+entry (e.g. `polymaker` vs existing `Polymaker`), Spoolman's
+`resolveOrCreateVendor` / `resolveOrCreateFilament` helpers correctly dedup
+the vendor/material row case-insensitively, so the manufacturer column on the
+filament stays canonical. But the **filament's `name`** field is built in
+`MainViewModel.onWriteTapped` as `"$brand $material $variant"` from the
+*user-typed* string, so the case-only differing user input would leak into
+the filament name (`"polymaker PLA"` instead of `"Polymaker PLA"`).
+
+**Fix shipped**:
+- `MainViewModel.resolveBrandName`: canonicalise raw user input against
+  `brands.value` (presets ∪ Spoolman vendors) — first case-insensitive
+  match wins; otherwise the raw user input is kept (genuinely new brand).
+- `MainViewModel.resolveMaterialName`: symmetric fix against
+  `materials.value`.
+- Net: typing `polymaker` when `Polymaker` already exists yields a filament
+  name `Polymaker PLA`, matching the dedup'd vendor row.
+
+---
+
+## UI-25 — Filament dropdown auto-selects after create
+
+**State**: fixed (2026-05-30 install-gate)
+**Found in**: U10 install-gate §5, 2026-05-30
+**Routing**: U10 close-out
+
+After a successful create-and-pair, `applyWriteResult.WrittenAndPaired` set
+`form.selectedSpoolId` (so the Spool dropdown showed the new spool) but left
+`form.selectedFilamentId` untouched. The Filament dropdown stayed empty even
+though a brand-new filament was just created and linked to the spool.
+
+**Fix shipped**: both `applyWriteResult.WrittenAndPaired` and
+`applyVendorUidOnlyPairResult.UidPaired` now look up the spool's
+`filament.id` from the in-memory `state.spoolman.spools` cache (refreshed by
+`SpoolmanRepository.refreshAfterWrite()` before the use case returns) and
+set `form.selectedFilamentId`. Falls back to the existing
+`form.selectedFilamentId` if the new spool isn't in the cache yet (rare).
+
+---
+
+## UI-26 — Filament `extra.variant` not populated on create-and-pair (verify)
+
+**State**: open (suspected — surfaced by Spoolman spool/76 inspection
+2026-05-30; needs reproduction)
+**Found in**: U10 install-gate §5/§9 cross-check, 2026-05-30
+**Routing**: U10 close-out
+
+Manual `curl /api/v1/spool/76` on the test Spoolman instance returned a
+filament with `extra: {}` — no `variant` key. v2's create flow is supposed
+to write `extra.variant` whenever the form's variant field is non-blank
+(per FR-U6b-Δ-4). Spool 76 was created 2026-04-25, before some of this
+session's edits, so it may simply pre-date the variant-on-create wiring.
+
+**Reproduction needed**:
+1. Pick a fresh form, fill material/brand and a Variant value (e.g.
+   `"Matte"`).
+2. Save & Write to a blank tag.
+3. `curl /api/v1/filament/<new-filament-id>` and confirm
+   `extra.variant == "\"Matte\""` (JSON-encoded string).
+
+If reproducible, route to a §5.2/§5.13 fix; if not, this entry can be
+closed as a stale data point on the dev Spoolman.
+
+---
+
+## UI-27 — Brand defaults to null + canSubmit requires brand
+
+**State**: fixed (2026-05-30 install-gate)
+**Found in**: U10 install-gate, 2026-05-30
+**Routing**: U10 close-out
+
+`FormState.brand` defaulted to `Brand("Generic")` so an accidental Save & Write
+on a fresh form would create a "Generic" vendor row in Spoolman. User wanted
+the button to stay disabled until a brand is explicitly picked.
+
+**Fix shipped**:
+- `FormState.brand` default `null` (was `Brand("Generic")`).
+- `FormState.canSubmit` requires `brand != null` (in addition to material,
+  colour, temps).
+- Removed unused `DEFAULT_BRAND` constant.
+- Defensive `"Generic"` / `"Unknown"` fallbacks in `MainViewModel` left in
+  place — canSubmit prevents reaching them, but keeps the call sites safe.
+
+---
+
+## UI-28 — Read FAB enlarged + Save & Write disabled-state visible
+
+**State**: fixed (2026-05-30 install-gate)
+**Found in**: U10 install-gate, 2026-05-30
+**Routing**: U10 close-out
+
+`Read tag` FAB used default size + bodyMedium label — felt cramped. Save &
+Write button disabled-state was the M3 default (12% alpha background, 38%
+alpha content) which read as a blank card with the `main-form-card`
+surface, making the button look invisible.
+
+**Fix shipped**:
+- `ReadFab`: explicit `Modifier.height(64.dp)` + `titleMedium` text + 8dp
+  horizontal padding around label.
+- `SaveAndWriteButton`: explicit disabled colours — `primary.copy(alpha = 0.5f)`
+  background + full-strength `onPrimary` text. Stays clearly visible (still
+  primary-tinted, just dimmer) while Save is gated.
+
+---
+
+## UI-29 — Bottom instruction footer removed
+
+**State**: fixed (2026-05-30 install-gate)
+**Found in**: U10 install-gate, 2026-05-30
+**Routing**: U10 close-out
+
+The v1-style instruction footer (`InstructionFooter` composable, "• Tap a
+tag to read…" / "• Or fill the form…" / "• Press Read tag…") at the bottom
+of the screen was redundant once the read/write hints moved to top pills
+(UI-23) and the form's own labels speak for themselves.
+
+**Fix shipped**: `InstructionFooter` composable + its call site at
+`MainScreen.kt:260` deleted.
+
+---
+
+## UI-30 — Chain-delete orphan vendor/filament/spool when no UID lands
+
+**State**: fixed (2026-05-30 install-gate)
+**Found in**: U10 install-gate, 2026-05-30
+**Routing**: U10 close-out
+
+`CreateAndPairUseCase` and `VendorUidOnlyPairUseCase` create Spoolman
+records (vendor → filament → spool) **before** the user taps a tag. If the
+user never taps (timeout), declines move-on-bind, or write fails before
+`appendCardUidToSpool` succeeds, the just-created records become orphans
+in Spoolman. Pin-for-retry (UI-19/UI-20 follow-up) only helped if the user
+actually retried; walking away left the orphan forever.
+
+**Fix shipped**:
+- New file `OrphanSpool.kt` — public `OrphanSpool` data class (carries
+  `spoolId`, optional `filamentId`, optional `vendorId`); internal
+  `Resolved<T>(value, wasCreatedFresh)` for resolve-helper return shape;
+  public `NewSpoolBundle` exposing fresh-vs-reused for the chain.
+- `SpoolmanApi`: 3 new endpoints — `@DELETE /api/v1/spool/{id}`,
+  `@DELETE /api/v1/filament/{id}`, `@DELETE /api/v1/vendor/{id}`.
+- `SpoolmanRepository.resolveOrCreateVendor` and `resolveOrCreateFilament`
+  now return `Resolved<T>` instead of bare `T`.
+- New `createSpoolForNewFilamentBundle(req): SpoolmanOutcome<NewSpoolBundle>`
+  threads `wasCreatedFresh` through. Old `createSpoolForNewFilament`
+  preserved as a thin wrapper for callers that don't need orphan info.
+- New `chainDeleteOrphan(orphan): SpoolmanOutcome<Unit>` — best-effort:
+  spool DELETE unconditional; filament DELETE only if its `id` is set on
+  the orphan; vendor DELETE only if its `id` is set. 4xx swallowed with
+  `Log.w` (e.g. filament still referenced by another spool — that's fine).
+  Caches pruned via new `removeSpoolFromCache` / `removeFilamentFromCache`
+  / `removeVendorFromCache` helpers.
+- `CreateAndPairUseCase.lastResolvedOrphan: OrphanSpool?` (replaces the
+  previous `lastResolvedSpoolId`-only field — kept that as a derived
+  getter for the pin-for-retry path). Set in `resolveSpool.Created`,
+  cleared the moment `appendCardUidToSpool` returns Success. The
+  reused-filament-on-fresh-vendor edge collapses correctly: if filament
+  reports `wasCreatedFresh=false`, the bundle treats vendor as reused too.
+- `VendorUidOnlyPairUseCase.lastResolvedOrphan` — same field on the
+  vendor flow's new-spool path.
+- `MainViewModel`: new `fireOrphanCleanup(orphan)` helper +
+  `private val spoolman` (was implicit constructor param). Wired into:
+  - `applyWriteResult.NfcFailed` — chain-delete branch when orphan present;
+    falls back to pin-for-retry when not (existing spool / append succeeded).
+  - `applyWriteResult.Cancelled` — symmetric to NfcFailed; covers the
+    timeout fallback too (Cancelled is what `withTimeoutOrNull` synthesises).
+  - `applyVendorUidOnlyPairResult.SpoolmanFailed` / `.MoveOnBindPartial` /
+    `.Cancelled` — fire cleanup on each failure branch.
+- **NOT triggered on `VerifyFailed`** — UID was already PATCHed to the
+  spool before verify ran, so the spool is real.
+- **NOT triggered on `Success.WrittenAndPaired`** — UID landed.
+
+**Verification**: ran on moto g stylus 2025 — Save & Write with brand-new
+brand+material then walking away (10s timeout) leaves Spoolman counts
+unchanged. Logcat shows three sequential DELETE calls. Existing-brand
+flow only deletes the orphan spool, leaves vendor + filament intact.
+
+**Test gap**: local `./gradlew :app:testDebugUnitTest` is broken
+(JDK reflection issue, separate problem); chain-delete unit coverage
+deferred. Manual verification stands in until the env issue is resolved.
+
+---
+
+## UI-31 — Carry-over: known bug deferred to next session
+
+**State**: open (deferred — next session)
+**Found in**: U10 install-gate, 2026-05-30
+**Routing**: post-commit follow-up
+
+User flagged a remaining bug after UI-30 chain-delete shipped, deferred to
+next session: *"we have some bug but we will get to it next"*. No
+reproduction details captured at commit time. Re-elicit details when
+resuming so this entry can be expanded with a proper `Found in` /
+`Fix scope`.
+
+---
+
+## Known-broken local environment (out-of-band)
+
+**`./gradlew :app:testDebugUnitTest` fails to configure** with
+`DefaultReportContainer … Type T not present` (JDK / generic-types
+reflection issue). `:app:installDebug` and `:app:assembleRelease` are
+unaffected. Tests pending on:
+
+- UI-18 spool-X-clears-spool-only branch rewrite (`MainViewModelTest`).
+- UI-30 chain-delete unit coverage (`CreateAndPairUseCaseTest`,
+  `VendorUidOnlyPairUseCaseTest`, `MainViewModelTest`).
+
+Out of scope of U10 close-out — to be resolved separately.
 
 ---

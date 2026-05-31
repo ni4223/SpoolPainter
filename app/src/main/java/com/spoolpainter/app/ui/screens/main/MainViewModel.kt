@@ -46,12 +46,13 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.datetime.Clock
 import javax.inject.Inject
 
 @HiltViewModel
 class MainViewModel @Inject constructor(
     private val nfc: NfcRepository,
-    spoolman: SpoolmanRepository,
+    private val spoolman: SpoolmanRepository,
     private val settings: SettingsRepository,
     private val materialBrandRepo: MaterialBrandRepository,
     private val readAndPair: ReadAndPairUseCase,
@@ -88,9 +89,11 @@ class MainViewModel @Inject constructor(
     private var readJob: Job? = null
     private var writeJob: Job? = null
     private var priorActiveFlow: ActiveFlow? = null
-    // UI-02 (Q-U9b-3=A): once per ViewModel lifetime, the first ambient (un-prompted)
-    // tap surfaces a hint snackbar so users discover the Read button.
-    private var ambientTapHintShown: Boolean = false
+    // UI-02: passive-tap hint. The hint is suppressed when the user has acted
+    // (Read pressed, spool picked, write started). When the user keeps tapping
+    // without acting, re-fire the hint after a 15s cooldown so the second/third
+    // tap also gets help. Stored as the wall-clock instant of the last hint.
+    private var lastAmbientHintEpochMs: Long = 0L
 
     internal val readTimeoutMs: Long = READ_TIMEOUT_MS_DEFAULT
     internal val writeTimeoutMs: Long = WRITE_TIMEOUT_MS_DEFAULT
@@ -228,20 +231,30 @@ class MainViewModel @Inject constructor(
                         it.copy(observedTagKind = kind, observedTagUid = tag?.uid)
                     }
                 }
-                // UI-02 (Q-U9b-3=A): once-per-session passive-tap hint. Only fires
-                // when the tap is genuinely ambient (no read/write in flight,
-                // no spool already linked) so we don't pile copy on top of the
-                // active-flow hint banners.
+                // UI-02: passive-tap hint with cooldown. Fires when the tap is
+                // genuinely ambient (no read/write in flight). Re-fires on
+                // subsequent taps if 15s have elapsed since the last hint,
+                // so a user who keeps tapping without pressing Read gets help
+                // again. Copy varies by classification.
                 if (
                     tag != null &&
-                    !ambientTapHintShown &&
-                    _state.value.activeFlow == ActiveFlow.Idle &&
-                    _state.value.spoolman.selectedSpoolId == null
+                    _state.value.activeFlow == ActiveFlow.Idle
                 ) {
-                    ambientTapHintShown = true
-                    _effects.trySend(
-                        UiEffect.ShowSnackbar("Tag detected. Press Read tag to load."),
-                    )
+                    val nowMs = Clock.System.now().toEpochMilliseconds()
+                    if (nowMs - lastAmbientHintEpochMs >= AMBIENT_HINT_COOLDOWN_MS) {
+                        lastAmbientHintEpochMs = nowMs
+                        val message = when (tag.classification) {
+                            is TagClassification.Vendor ->
+                                "Vendor tag. Press Read to load."
+                            is TagClassification.Blank ->
+                                "Blank tag detected."
+                            is TagClassification.OpenSpool ->
+                                "Tag detected. Press Read to load."
+                            null ->
+                                "Tag detected. Press Read to load."
+                        }
+                        _effects.trySend(UiEffect.ShowSnackbar(message))
+                    }
                 }
             }
         }
@@ -367,7 +380,10 @@ class MainViewModel @Inject constructor(
             )
             val result = withTimeoutOrNull(writeTimeoutMs) {
                 createAndPair.invoke(input)
-            } ?: CreateAndPairResult.Cancelled("timeout")
+            } ?: CreateAndPairResult.Cancelled(
+                reason = "timeout",
+                spoolId = createAndPair.lastResolvedSpoolId,
+            )
             applyWriteResult(result)
         }
     }
@@ -422,17 +438,16 @@ class MainViewModel @Inject constructor(
     fun onSpoolSelected(spool: SpoolmanSpool?) {
         android.util.Log.d("SpoolmanRepo", "onSpoolSelected: spool.id=${spool?.id}")
         if (spool == null) {
+            // X on the spool dropdown clears ONLY the spool selection. The
+            // user's form entries (material/brand/colour/temps/filament pick)
+            // stay so they can keep editing and write a new spool against
+            // them. Filament dropdown's X still does its own reset.
             _state.update { current ->
                 current.copy(
-                    form = FormState(rawWriteMode = current.form.rawWriteMode),
+                    form = current.form.copy(selectedSpoolId = null),
                     spoolman = current.spoolman.copy(selectedSpoolId = null),
-                    ambiguity = null,
-                    observedTagKind = ObservedTagKind.None,
-                    observedTagUid = null,
                 )
             }
-            _customMaterial.value = ""
-            _customBrand.value = ""
             return
         }
         if (spool.id == _state.value.form.selectedSpoolId) return
@@ -469,7 +484,6 @@ class MainViewModel @Inject constructor(
                 current.copy(
                     form = FormState(
                         rawWriteMode = current.form.rawWriteMode,
-                        filamentSectionExpanded = current.form.filamentSectionExpanded,
                         moreDetailsExpanded = current.form.moreDetailsExpanded,
                     ),
                     spoolman = current.spoolman.copy(selectedSpoolId = null),
@@ -485,7 +499,6 @@ class MainViewModel @Inject constructor(
         _state.update { current ->
             val prefilled = FormMapping.fromFilament(filament, current.form.rawWriteMode).copy(
                 cardUid = current.form.cardUid,
-                filamentSectionExpanded = current.form.filamentSectionExpanded,
                 moreDetailsExpanded = current.form.moreDetailsExpanded,
             )
             current.copy(
@@ -496,10 +509,6 @@ class MainViewModel @Inject constructor(
         }
         _customMaterial.value = ""
         _customBrand.value = ""
-    }
-
-    fun onFilamentSectionToggled() {
-        _state.update { it.copy(form = it.form.copy(filamentSectionExpanded = !it.form.filamentSectionExpanded)) }
     }
 
     fun onMoreDetailsToggled() {
@@ -591,13 +600,24 @@ class MainViewModel @Inject constructor(
     }
 
     private fun resolveMaterialName(material: Material?, custom: String): String {
-        return if (material?.name == "Other" && custom.isNotBlank()) custom
+        val raw = if (material?.name == "Other" && custom.isNotBlank()) custom
         else material?.name ?: ""
+        if (raw.isBlank()) return raw
+        val canonical = materials.value.firstOrNull { it.name.equals(raw, ignoreCase = true) }
+        return canonical?.name ?: raw
     }
 
     private fun resolveBrandName(brand: Brand?, custom: String): String {
-        return if (brand?.name == "Other" && custom.isNotBlank()) custom
+        val raw = if (brand?.name == "Other" && custom.isNotBlank()) custom
         else brand?.name ?: ""
+        if (raw.isBlank()) return raw
+        // Canonicalise against existing brands (presets ∪ Spoolman vendors).
+        // A case-only difference between user input and an existing brand would
+        // otherwise leak into the filament *name* (Spoolman dedups the vendor
+        // row case-insensitively, so the manufacturer column stays correct,
+        // but `derivedName = "$brand $material"` would carry the user's case).
+        val canonical = brands.value.firstOrNull { it.equals(raw, ignoreCase = true) }
+        return canonical ?: raw
     }
 
     private fun applyResult(result: ReadAndPairResult) {
@@ -647,21 +667,22 @@ class MainViewModel @Inject constructor(
                 _customBrand.value = ""
             }
             is ReadAndPairResult.Success.BlankForm -> {
-                // Blank tag with no Spoolman match — keep whatever the user
-                // was typing (material, color, temps, brand, variant) and
-                // just update the UID + clear any prior spool selection.
-                // This matches v1's UX: a Read on a blank tag is treated as
-                // "I want to write this tag with my current form".
+                // v1 parity: a Read on a blank tag clears NOTHING — keep the
+                // form (material/brand/colour/temps), keep the filament
+                // selection if any, keep the spool selection if any. Only
+                // update the cardUid so a subsequent Save & Write knows which
+                // tag to write to. The snackbar tells the user what was
+                // detected; vendor tags surface the chip + don't need extra
+                // snackbar copy.
                 _state.update { current ->
                     current.copy(
-                        form = current.form.copy(
-                            cardUid = result.uid,
-                            selectedSpoolId = null,
-                        ),
-                        spoolman = current.spoolman.copy(selectedSpoolId = null),
+                        form = current.form.copy(cardUid = result.uid),
                         ambiguity = null,
                         activeFlow = ActiveFlow.Idle,
                     )
+                }
+                if (result.classification !is TagClassification.Vendor) {
+                    _effects.trySend(UiEffect.ShowSnackbar("Blank tag detected."))
                 }
             }
             is ReadAndPairResult.Ambiguous -> {
@@ -697,35 +718,104 @@ class MainViewModel @Inject constructor(
                 // separate snackbar would slide up underneath the sheet and be
                 // immediately covered (UI-03).
                 _state.update { current ->
+                    val filamentId = current.spoolman.spools
+                        .firstOrNull { it.id == result.spoolId }?.filament?.id
                     current.copy(
                         form = current.form.copy(
                             cardUid = result.uid,
                             selectedSpoolId = result.spoolId,
+                            selectedFilamentId = filamentId ?: current.form.selectedFilamentId,
                         ),
                         spoolman = current.spoolman.copy(selectedSpoolId = result.spoolId),
-                        activeFlow = ActiveFlow.PromptingPairAnother(spoolId = result.spoolId),
+                        observedTagKind = ObservedTagKind.None,
+                        observedTagUid = null,
+                        activeFlow = ActiveFlow.PromptingPairAnother(
+                            spoolId = result.spoolId,
+                            isVendorPair = result.isVendorPair,
+                        ),
                     )
                 }
             }
             is CreateAndPairResult.VerifyFailed -> {
-                _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
-                _effects.trySend(UiEffect.ShowSnackbar("Couldn't write to tag. Try again."))
+                // Spool exists in Spoolman before the write tap; keep the
+                // selection so retry doesn't re-fill the form.
+                _state.update { current ->
+                    current.copy(
+                        activeFlow = ActiveFlow.Idle,
+                        form = current.form.copy(selectedSpoolId = result.spoolId),
+                        spoolman = current.spoolman.copy(selectedSpoolId = result.spoolId),
+                    )
+                }
+                _effects.trySend(
+                    UiEffect.ShowSnackbar("Saved to Spoolman. Tag write failed. Try again."),
+                )
             }
             is CreateAndPairResult.SpoolmanFailed -> {
                 _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
                 _effects.trySend(UiEffect.ShowSnackbar(humanReadable(result.outcome)))
             }
             is CreateAndPairResult.NfcFailed -> {
-                _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
-                val msg = if (result.reason.contains("vendor-tag", ignoreCase = true)) {
-                    "Vendor tag. Write blocked."
+                // Chain-delete branch: if the use case is holding an orphan
+                // (spool was just created, no UID ever attached), clean it
+                // up in the background. We do NOT pin the spool selection
+                // in that case — the spoolId is about to disappear from
+                // Spoolman, pinning it would break the next tap.
+                val orphan = createAndPair.lastResolvedOrphan
+                if (orphan != null) {
+                    _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
+                    fireOrphanCleanup(orphan)
                 } else {
-                    "Couldn't write to tag. Try again."
+                    // No orphan to clean (existing-spool path or UID was
+                    // already PATCHed). Pin spool/filament so a retry tap
+                    // appends to the existing record instead of duplicating.
+                    _state.update { current ->
+                        val pinSpoolId = result.spoolId
+                        val filamentId = pinSpoolId?.let { id ->
+                            current.spoolman.spools.firstOrNull { it.id == id }?.filament?.id
+                        }
+                        current.copy(
+                            activeFlow = ActiveFlow.Idle,
+                            form = current.form.copy(
+                                selectedSpoolId = pinSpoolId ?: current.form.selectedSpoolId,
+                                selectedFilamentId = filamentId ?: current.form.selectedFilamentId,
+                            ),
+                            spoolman = current.spoolman.copy(
+                                selectedSpoolId = pinSpoolId ?: current.spoolman.selectedSpoolId,
+                            ),
+                        )
+                    }
+                }
+                val msg = when {
+                    result.reason.contains("vendor-tag", ignoreCase = true) ->
+                        "Vendor tag. Write blocked."
+                    else ->
+                        "Saved to Spoolman. Tag write failed. Try again."
                 }
                 _effects.trySend(UiEffect.ShowSnackbar(msg))
             }
             is CreateAndPairResult.Cancelled -> {
-                _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
+                val orphan = createAndPair.lastResolvedOrphan
+                if (orphan != null) {
+                    _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
+                    fireOrphanCleanup(orphan)
+                } else {
+                    _state.update { current ->
+                        val pinSpoolId = result.spoolId
+                        val filamentId = pinSpoolId?.let { id ->
+                            current.spoolman.spools.firstOrNull { it.id == id }?.filament?.id
+                        }
+                        current.copy(
+                            activeFlow = ActiveFlow.Idle,
+                            form = current.form.copy(
+                                selectedSpoolId = pinSpoolId ?: current.form.selectedSpoolId,
+                                selectedFilamentId = filamentId ?: current.form.selectedFilamentId,
+                            ),
+                            spoolman = current.spoolman.copy(
+                                selectedSpoolId = pinSpoolId ?: current.spoolman.selectedSpoolId,
+                            ),
+                        )
+                    }
+                }
                 viewModelScope.launch { nfc.disarm() }
                 // Move-on-bind decline already gave the user explicit choice
                 // via the RepairConfirmSheet; emitting "No tag tapped" here is
@@ -751,12 +841,10 @@ class MainViewModel @Inject constructor(
     }
 
     fun onPairAnotherTagDismissed() {
-        if (_state.value.activeFlow !is ActiveFlow.PromptingPairAnother) return
-        // UI-06 + UI-10: preserve form AND spool selection so the user can see
-        // what they just paired. They can manually clear via the dropdown's
-        // "Clear selection" entry if they want a fresh entry.
+        val current = _state.value.activeFlow as? ActiveFlow.PromptingPairAnother ?: return
         _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
-        _effects.trySend(UiEffect.ShowSnackbar("Saved with one tag"))
+        val msg = if (current.isVendorPair) "Vendor tag linked." else "Saved with one tag."
+        _effects.trySend(UiEffect.ShowSnackbar(msg))
     }
 
     fun onRepairResult(confirm: Boolean) {
@@ -766,8 +854,6 @@ class MainViewModel @Inject constructor(
     private fun applyTwoTagResult(result: TwoTagResult) {
         when (result) {
             is TwoTagResult.Success.SecondTagPaired -> {
-                // UI-06 + UI-10: preserve form AND spool selection so the
-                // dropdown still shows the just-paired spool.
                 _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
                 _effects.trySend(UiEffect.ShowSnackbar("Both tags paired"))
             }
@@ -817,6 +903,7 @@ class MainViewModel @Inject constructor(
                                         observedTagUid = null,
                                     )
                                 }
+                                _effects.trySend(UiEffect.ShowSnackbar("Both tags paired."))
                             }
                             else -> applyVendorUidOnlyPairResult(r)
                         }
@@ -835,8 +922,7 @@ class MainViewModel @Inject constructor(
                 _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
                 _effects.trySend(
                     UiEffect.ShowSnackbar(
-                        "Partial state in Spoolman. UID was removed from spool " +
-                            "#${result.partiallyModifiedSpoolId}. Restore manually if needed.",
+                        "Couldn't finish moving the tag. Spool #${result.partiallyModifiedSpoolId} already released the tag. Re-add it in Spoolman if needed.",
                     ),
                 )
             }
@@ -849,7 +935,7 @@ class MainViewModel @Inject constructor(
                 // Suppress on explicit user decline (RepairConfirmSheet
                 // Cancel). Emit only for genuine timeouts / unknown reasons.
                 if (!result.reason.startsWith("repair declined", ignoreCase = true)) {
-                    _effects.trySend(UiEffect.ShowSnackbar("Second-tag pairing cancelled (${result.reason})"))
+                    _effects.trySend(UiEffect.ShowSnackbar("No second tag tapped. Tap Pair another to retry."))
                 }
             }
         }
@@ -894,23 +980,31 @@ class MainViewModel @Inject constructor(
                 // same spool. observedTagKind cleared so the second-tag flow
                 // routes through the right path based on what's tapped next.
                 _state.update { current ->
+                    val filamentId = current.spoolman.spools
+                        .firstOrNull { it.id == result.spoolId }?.filament?.id
                     current.copy(
                         form = current.form.copy(
                             cardUid = result.uid,
                             selectedSpoolId = result.spoolId,
+                            selectedFilamentId = filamentId ?: current.form.selectedFilamentId,
                         ),
                         spoolman = current.spoolman.copy(selectedSpoolId = result.spoolId),
                         observedTagKind = ObservedTagKind.None,
                         observedTagUid = null,
-                        activeFlow = ActiveFlow.PromptingPairAnother(spoolId = result.spoolId),
+                        activeFlow = ActiveFlow.PromptingPairAnother(
+                            spoolId = result.spoolId,
+                            isVendorPair = true,
+                        ),
                     )
                 }
             }
             is VendorUidOnlyPairResult.SpoolmanFailed -> {
+                fireOrphanCleanup(vendorUidOnlyPair.lastResolvedOrphan)
                 _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
                 _effects.trySend(UiEffect.ShowSnackbar(humanReadable(result.outcome)))
             }
             is VendorUidOnlyPairResult.MoveOnBindPartial -> {
+                fireOrphanCleanup(vendorUidOnlyPair.lastResolvedOrphan)
                 _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
                 _effects.trySend(
                     UiEffect.ShowSnackbar(
@@ -919,6 +1013,7 @@ class MainViewModel @Inject constructor(
                 )
             }
             is VendorUidOnlyPairResult.Cancelled -> {
+                fireOrphanCleanup(vendorUidOnlyPair.lastResolvedOrphan)
                 _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
                 // Suppress on explicit user decline (RepairConfirmSheet Cancel)
                 // — same UI-12 logic as create-and-pair.
@@ -930,6 +1025,13 @@ class MainViewModel @Inject constructor(
                     _effects.trySend(UiEffect.ShowSnackbar("No tag tapped. Try again."))
                 }
             }
+        }
+    }
+
+    private fun fireOrphanCleanup(orphan: com.spoolpainter.app.data.remote.spoolman.OrphanSpool?) {
+        if (orphan == null) return
+        viewModelScope.launch {
+            runCatching { spoolman.chainDeleteOrphan(orphan) }
         }
     }
 
@@ -976,6 +1078,7 @@ class MainViewModel @Inject constructor(
     private companion object {
         const val READ_TIMEOUT_MS_DEFAULT: Long = 10_000L
         const val WRITE_TIMEOUT_MS_DEFAULT: Long = 15_000L
+        const val AMBIENT_HINT_COOLDOWN_MS: Long = 15_000L
     }
 }
 

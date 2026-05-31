@@ -38,7 +38,7 @@ data class MainUiState(
 data class FormState(
     val cardUid: CardUid? = null,
     val material: Material? = DEFAULT_MATERIAL,
-    val brand: Brand? = DEFAULT_BRAND,
+    val brand: Brand? = null,
     val colorHex: String? = DEFAULT_COLOR_HEX,
     val variant: String? = null,
     val tempRanges: TempRanges = DEFAULT_TEMP_RANGES,
@@ -47,7 +47,6 @@ data class FormState(
 
     // U8-Δ-1 — filament picker selection (mutex with selectedSpoolId).
     val selectedFilamentId: Int? = null,
-    val filamentSectionExpanded: Boolean = false,
 
     // U8-Δ-2 — Spool metadata expander state + five overrides. Prefilled with
     // the same defaults the call site would send to Spoolman so the user
@@ -85,6 +84,7 @@ val FormState.canSubmit: Boolean
         val color = colorHex
         val ranges = tempRanges
         if (material == null) return false
+        if (brand == null) return false
         if (color.isNullOrBlank() || !color.matches(HEX6_REGEX)) return false
         if (ranges.extruderMin == null || ranges.extruderMax == null) return false
         if (ranges.extruderMin > ranges.extruderMax) return false
@@ -103,7 +103,6 @@ private val DEFAULT_MATERIAL: Material = Material(
     defaultBedMaxTemp = 65,
     density = 1.24f,
 )
-private val DEFAULT_BRAND: Brand = Brand("Generic")
 private const val DEFAULT_COLOR_HEX: String = "FFFFFF"
 private val DEFAULT_TEMP_RANGES: TempRanges = TempRanges(
     extruderMin = 190,
@@ -135,7 +134,13 @@ sealed interface ActiveFlow {
     data object Idle : ActiveFlow
     data object ReadingForPair : ActiveFlow
     data object WritingForPair : ActiveFlow
-    data class PromptingPairAnother(val spoolId: Int) : ActiveFlow
+    data class PromptingPairAnother(
+        val spoolId: Int,
+        /** True when the just-completed pair was a vendor UID-only pair (no NDEF
+         *  payload was written). The PairAnotherTagSheet uses this to surface
+         *  vendor-appropriate copy instead of "we'll write the same data" copy. */
+        val isVendorPair: Boolean = false,
+    ) : ActiveFlow
     data class WritingSecondTag(val spoolId: Int) : ActiveFlow
     data class AwaitingRepairConfirmation(
         val uid: CardUid,

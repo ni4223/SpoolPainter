@@ -36,11 +36,19 @@ fun PairAnotherTagSheet(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(
-                text = "Saved. Pair another tag with this spool?",
+                text = if (state.isVendorPair) {
+                    "Tag linked. Pair another tag with this spool?"
+                } else {
+                    "Saved. Pair another tag with this spool?"
+                },
                 style = MaterialTheme.typography.titleMedium,
             )
             Text(
-                text = "We'll write the same data to the second tag and remember both.",
+                text = if (state.isVendorPair) {
+                    "Tap a tag to link it to the same spool."
+                } else {
+                    "We'll write the same data to the second tag and remember both."
+                },
                 style = MaterialTheme.typography.bodyMedium,
             )
             Row(

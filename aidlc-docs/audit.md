@@ -1661,3 +1661,85 @@ Also authored Q-U9-10=B requirements delta at `aidlc-docs/inception/requirements
 **Context**: U9b Code Gen Part 1 — all 7 design choices locked.
 
 ---
+
+## Session resumed — U10 per-unit gate open
+**Timestamp**: 2026-05-30T00:00:00Z
+**User Input**: "aidlc continue"
+**AI Response**: Resumed AIDLC. U9b previous-session bookkeeping reconciled: branch `v2` was reported 3 ahead of `origin/v2` in state, but git shows it up to date — close-out commit `4995ca9` and post-close-out fix (now `a9d7a3b`) have been pushed since the previous session ended. State file synced (commit hash + push status corrected). Stray typo `qq---` in retired U9b FD plan reverted to `---`. Opening U10 (v2.0 Release Polish + Play Store Testing-Track Release Prep) per `unit-of-work.md` §U10 — entry criteria met. Authoring per-unit gate next.
+**Context**: Session resume — U9b → U10 transition.
+
+---
+
+## U10 Code Gen Part 1 plan authored
+**Timestamp**: 2026-05-30T00:00:00Z
+**User Input**: "before we start u10 all i wanted to know what all in the plan till release" → "whats in code detas" → "no body is on any build, i havent relased testing branch." → "lets tart u 10 again"
+**AI Response**: Walked the user through the full release-blocking inventory. User confirmed no users on any prior v2 build → U10-Δ-2 (`sortOrder` JSON migration) DROPPED as not-needed (the `coerceInputValues = true` flag handles fresh installs). Verified UI-05 NDEF copy already shipped in U9b (5 sites in `MainViewModel.kt:712,723,845,875,879` use `"Couldn't write to tag. Try again."`); verified UI-07 partial — AmbiguousOwnership friendly copy shipped via `humanReadable.ParseError` (lines 946-973), but `MoveOnBindPartial` (lines 836-841) and `TwoTagResult.Cancelled` (line 852) still leak developer-y copy. Authored `aidlc-docs/construction/plans/u10-release-polish-code-generation-plan.md` with §1-§14 covering: build-config bumps (versionCode 8→100, versionName 1.7→2.0); R8 minify + ProGuard keep rules for Compose/Hilt/Retrofit/Gson/kotlinx-serialization (with R8 `assumenosideeffects` log stripping for NFR-5); UI-07 finalisation (2 string edits); UI-05 verification (already shipped — flip state); doc-drift sync (component-methods.md `OpenSpoolPayloadParser → Codec`, MainViewModel use-case list, type refs; unit-of-work.md §3-U9 wording); manual NFC checklist (§1-§10 with 10 sections + Snapmaker U1 round-trip); tester release notes; testing-track upload checklist; U10 install gate (debug + release smoke + manual matrix + Snapmaker round-trip). Per-unit gate locked: FD/NFR-R/NFR-D/Infra-D SKIP, Code Gen EXECUTE. Awaiting Code Gen Part 1 stage-gate approval.
+**Context**: U10 Code Gen Part 1 — plan authored; awaiting approval.
+
+---
+
+## U10 Code Gen Part 1 plan — README rewrite added
+**Timestamp**: 2026-05-30T00:00:00Z
+**User Input**: "also add updating read me in details: I want to add what are features of v2, how to get it, how to install it and playstore link and features coming, and other read me stuff"
+**AI Response**: Added §5.3 to U10 plan covering full README rewrite with: tagline, project status badge line, screenshots placeholder, "What's new in v2.0" (synced with tester release notes), "How to get it" (3 paths: Play Store testing track [link TBD until upload, marked with HTML TODO comment], sideload signed release APK from GitHub Releases, build from source with JDK 17 note + signing key requirements), "How to install" (5-step numbered list), Spoolman setup pointer (upstream link + cleartext-traffic note), NFC compatibility (NDEF/NTAG21x; vendor classification yes / decoding v2.1), "What's coming next" (v2.1 preview: U11 vendor decode + U12 vendor keys + UI-13/14/15 editing + GPL-3.0 transition), Tech stack, Architecture (3-line summary + diagram pointer), Privacy/data, Contributing (links AIDLC under aidlc-docs/ + CLAUDE.md), License (verify before writing; v2.0 keeps current state, v2.1 transitions to GPL-3.0 per NFR-11), Acknowledgements (Spoolman / OpenSpool / Snapmaker U1 firmware). §12 file estimate bumped: Modified now ~7 (added README.md); deferred fill-in: Play Store link post-upload.
+**Context**: U10 Code Gen Part 1 — README scope folded into plan; awaiting approval.
+
+---
+
+## U10 Code Gen Part 2 — EXECUTED
+**Timestamp**: 2026-05-30T00:00:00Z
+**User Input**: "lets go"
+**AI Response**: Executed U10 Code Gen Part 2 §1-§10 end-to-end. (1) `app/build.gradle.kts`: versionCode 8→100, versionName 1.7→2.0; release block flipped to `isMinifyEnabled = true` + `isShrinkResources = true`. (2) `app/proguard-rules.pro` rewritten with layered keep rules (Compose `@Composable`, Hilt+KSP, Retrofit interfaces + SpoolmanApi + full data/remote/spoolman/**, Gson DTOs in domain/models/**, kotlinx-serialization for data/local/**, domain enums) + `-assumenosideeffects android.util.Log` for NFR-5 release-only log strip. (3) `MainViewModel.kt` two snackbar edits: TwoTagResult.MoveOnBindPartial → `"Couldn't finish moving the tag. Spool #N already released the tag. Re-add it in Spoolman if needed."`; TwoTagResult.Cancelled → `"No second tag tapped. Tap Pair another to retry."`. No test changes needed (existing assertions are `contains("#7")` + state-transition only). (4) `ui-followups.md` UI-05 + UI-07 flipped to `fixed`. (5) Doc drift: `component-methods.md` — all `OpenSpoolPayloadParser → OpenSpoolPayloadCodec`; MainViewModel constructor signature corrected (spoolman / settings / materialBrandRepo + 5 use-cases including confirmer:MoveOnBindConfirmer); SpoolmanRepository flow types updated to `SpoolmanFilament/Spool/Vendor`; SettingsRepository row updated for U9 setter split + Currency; SettingsViewModel onTestConnectionTapped→onSaveTapped; onSpoolSelected nullable. `unit-of-work.md` §3-U9 wording rewritten to match shipped shape with explanatory note for U5 carve-out + U9b reshape. (6) `README.md` full rewrite (43→163 lines) covering features/install (Play Store TBD-link with HTML TODO marker)/v2.1 roadmap/tech stack/architecture/license/acknowledgements. (7) `aidlc-docs/operations/` created with 3 docs: `manual-nfc-checklist.md` (50+ scenarios across 10 sections + Snapmaker U1 round-trip + release smoke + sign-off block), `v2.0-tester-release-notes.md` (what's new + parked + build prereqs + feedback channels + testing focus areas), `testing-track-upload-checklist.md` (pre-flight + build artefacts + track choice + Play Console steps + post-upload + rollback). (8) Build verification: `compileDebugKotlin` ✅ / `testDebugUnitTest` ✅ **362/362** / `assembleDebug` ✅ 64 MB / `assembleRelease` ✅ **6.9 MB** (R8 first-try success, no keep-rule iteration) / `bundleRelease` ✅ 7.6 MB AAB. R8 emitted 7 pre-existing deprecation warnings (unchecked-cast in SpoolmanRepository.kt:352/375; Modifier.menuAnchor() in 6 picker sites; Window.statusBarColor) — none blocking, none introduced by U10. (9) Brownfield invariants: ✅ no `*_modified` / `*_new` / `*.bak` files; ✅ no edits to `.kiro/steering/aws-aidlc-rules/**` or `.kiro/aws-aidlc-rule-details/**`; ✅ all edits in-place; ✅ `aidlc-docs/operations/` created. (10) Plan checkboxes ticked except 6 deferred (4 manual install-gate items + 2 apkanalyzer commands not on PATH). U10 summary at `aidlc-docs/construction/u10-release-polish/code/u10-summary.md`. **Awaiting U10 install gate (manual on-device + Snapmaker U1 round-trip) before close-out commit.**
+**Context**: U10 Code Gen Part 2 complete; install gate + testing-track upload pending.
+
+---
+
+## U10 install-gate iteration session — UI + write-path fixes
+**Timestamp**: 2026-05-30T00:00:00Z
+**User Input**: "aidlc continue" → manual testing pass on debug build → many single-feedback iterations
+**AI Response**: Drove an iterative install-gate session against U10's Code Gen Part 2 output. Net 11 user-feedback rounds + 1 confirmed regression diagnosed:
+
+**1. Vendor-tag chip redesign (UI-07 polish)**. The vendor-tag indicator was a flat `surfaceVariant` Card that read identically to the form Cards on screen — user "doesnt say anything like we decided in past" + "ugly and cant even tell its something different". Reshaped `VendorTagHint` (`MainScreen.kt:507-545`) from a Card into an inline outlined Row with: tertiary-tinted ⓘ Info icon, "Vendor tag" header in tertiary colour SemiBold, supporting body line in onSurfaceVariant. Three body messages (was 2 + a hidden state when `alreadyLinked`):
+  - alreadyLinked → "We can't read this tag's contents. Tap Save to pair it with the selected spool."
+  - urlConfigured (no spool yet) → "We can't read this tag's contents. Pick a spool or fill the form, then tap Save to pair it."
+  - !urlConfigured → "We can't read this tag's contents. Configure Spoolman in Settings to pair this tag with a spool."
+Iterations dropped along the way: "warning" framing (user "seriously? warning?"), "we won't write" wording (user "why even mention write"), pure status-only text. Final wording carries "we can't read" + the action to take. Also added gating per user direction "why vendor tag thing poping up even on passive read" — chip now only appears when `state.nfc is NfcResult.Success` OR `state.spoolman.selectedSpoolId != null` (i.e. user is actively engaged with the tag); passive ambient taps stay quiet at the chip layer.
+
+**2. Passive-tap snackbar — cooldown + classification-aware copy**. Replaced once-per-VM-lifetime gate (`ambientTapHintShown: Boolean`) with a **15-second wall-clock cooldown** (`lastAmbientHintEpochMs: Long` driven off `kotlinx.datetime.Clock.System.now()`). Re-fires on subsequent ambient taps after the cooldown so a user who keeps tapping without acting gets help again. Constant `AMBIENT_HINT_COOLDOWN_MS = 15_000L` in companion object. Also dropped the `selectedSpoolId == null` gate — the snackbar now also fires when a spool is selected (user wanted feedback on every ambient tap regardless). Snackbar copy branches by classification:
+  - Vendor → "Vendor tag. Press Read to load."
+  - Blank → "Blank tag detected."
+  - OpenSpool → "Tag detected. Press Read to load."
+  - null/unknown → "Tag detected. Press Read to load."
+
+**3. Snackbar position — bottom, lifted above buttons**. User reported snackbar covering Save & Write button. First attempt moved SnackbarHost to `Alignment.TopCenter` overlay — user pushed back ("idk if thats right location"), correctly noting top-anchored snackbars fight the system status bar. Reverted to standard bottom anchoring with `padding(bottom = 160.dp)` to clear both the Read FAB (56dp) + the SaveAndWriteButton (48dp inside the scrolling Column) + Column spacing + system gesture bar. `imePadding()` retained.
+
+**4. Post-Read snackbar handling for blank vs vendor**. `applyResult.BlankForm` (`MainViewModel.kt:660-685`) now branches on `result.classification`: Blank → snackbar "Blank tag detected."; Vendor → no snackbar (the chip surfaces all the guidance the user needs once Read is pressed). Replaces uniform "Blank tag detected." that misleadingly fired for vendor too.
+
+**5. End-of-pair-flow pivot — auto-clear spool, pin filament, expand picker**. New helper `MainViewModel.applyEndOfPairFlow(spoolId)` (`MainViewModel.kt:786-810`). Triggered from BOTH `onPairAnotherTagDismissed` (user clicked Done on the sheet) AND `applyTwoTagResult.SecondTagPaired` (second tag completed). Behaviour: looks up the just-paired spool in `state.spoolman.spools` cache, extracts its filament id, then transitions to `ActiveFlow.Idle` while:
+  - Clearing `form.selectedSpoolId` + `state.spoolman.selectedSpoolId` (next tap creates a NEW spool, no UID-append-to-just-paired surprise)
+  - Setting `form.selectedFilamentId` to the resolved filament (so `CreateAndPairUseCase.resolveSpool` line 139 takes the `createSpoolForExistingFilament` branch, no duplicate filament)
+  - Setting `form.filamentSectionExpanded = true` (user *sees* the pinned filament, can clear it via X for a fully fresh start)
+Snackbar copy preserved ("Saved with one tag" / "Both tags paired"). Solves §2.4 manual-test scenario "identical-form double-tap creates 1 filament + 2 spools" cleanly — was previously unreachable in the UI without manually clearing the spool dropdown then navigating to the filament picker.
+
+**6. NFC write robustness — v1 parity in NfcAdapterWrapper.writeViaNdef**. **CONFIRMED REGRESSION**: tag that v1.7 production wrote fine reproducibly failed on v2 with `Ndef.writeNdefMessage IOException` ("payload=216B cap=492B writable=true: no message"). Bisect: NfcRepository + CreateAndPairUseCase byte-identical to U8 close-out, so not a recent regression — a v1↔v2 architectural delta. Comparison of v1's `NfcManager.writeTag` (`main` branch) vs v2's `NfcAdapterWrapper.writeViaNdef`:
+  - v1: `Ndef.get(tag) → connect → writeNdefMessage`. Three round-trips, single try/catch.
+  - v2 (broken): `Ndef.get → connect → maxSize (CC read) → isWritable (CC read) → payloadSize-vs-maxSize → writeNdefMessage`. Five round-trips. The two extra capability-container reads on a marginal tap leave the NTAG21x chip in a state where the subsequent write fails.
+  
+  **Fix**: dropped the pre-flight `isWritable` and `maxSize` round-trips. Write goes straight through (matching v1). On IOException, *then* probe `maxSize` (single round-trip on the failure path only) — if capacity < payload, surface friendly "tag too small: payload XB > capacity YB" (preserves the helpful NTAG213-too-small error); otherwise rethrow with generic message. Also added a NdefFormatable fallback in `writeRecords` for IOException paths where the chip still exposes formattable tech (rare on already-formatted NTAG21x but covers the corrupted-CC case for chips that do).
+  
+  Files: `NfcAdapterWrapper.kt:52-114`. No NfcRepository changes.
+
+**Verification**:
+- `:app:compileDebugKotlin` ✅
+- `:app:installDebug` ✅ (multiple iterations on moto g stylus 2025 / Android 16)
+- Tests not re-run since UI string edits — assertion strings already verified compatible with prior changes.
+
+**Files touched in this session**:
+- `app/src/main/java/com/spoolpainter/app/hardware/nfc/NfcAdapterWrapper.kt` — write-path v1-parity fix
+- `app/src/main/java/com/spoolpainter/app/ui/screens/main/MainScreen.kt` — VendorTagHint redesign + chip gating + snackbar position
+- `app/src/main/java/com/spoolpainter/app/ui/screens/main/MainViewModel.kt` — passive-tap cooldown, classification-aware copy, post-Read branch, applyEndOfPairFlow helper
+
+**Pending after this session**: continue manual matrix §2 (Create-and-pair) → §9 (Snapmaker U1 round-trip). §10 release smoke deferred until v1 production app uninstalled. Unit tests need a re-run; potentially an assertion-string fix on the dropped "Couldn't write to tag. Try again." pre-check error wording.
+**Context**: U10 install-gate iteration — UI + NFC write regressions all addressed; manual matrix in flight.
+
+---

@@ -471,13 +471,15 @@ If the workspace contains uncommitted changes from prior units that were never c
 **Domain**: Settings + UI shell.
 
 **Scope**:
-- `SettingsScreen` Compose — URL field, Test connection button, sort order, theme override, **currency** (S-9.1, S-9.2, S-9.3, S-9.4).
-- `SettingsViewModel` — Test-connection action delegates to `SpoolmanRepository.probe()`. Settings owns the **only** Test-connection action (Q-CD1.1=A — no banner-resident retry; banner is passive).
+- `SettingsScreen` Compose — URL field, Save button (full-width), independent **spool** and **filament** sort order rows, theme override, **currency** (S-9.1, S-9.2, S-9.3, S-9.4). Test connection button removed mid-unit; Save runs the connectivity probe.
+- `SettingsViewModel` — Save runs URL persist → `SpoolmanRepository.probe()` chain. Settings is the only entry point that surfaces probe outcome (Q-CD1.1=A — banner is passive, not action-bearing).
 - `OfflineBanner` finalised — `state.banner` derivation (URL configured AND `connectivity == Unreachable` → show; URL not configured → hide entirely; URL configured AND reachable → hide). Read-only banner; no action.
-- Material 3 theming — dynamic color on Android 12+ (S-12.1); system-follow + Settings override (FR-12.2).
-- UI shell (S-13.1, S-13.2) — confirm `MainScreen` two-action layout; confirm bottom-sheet hosting pattern (sheets already implemented in U6b/U7; this unit verifies the shell shape).
-- **Sort comparator wiring — both spool and filament dropdowns** read the sort order picked in Settings. (Filament-side wiring pulled in from U9b 2026-05-29 per user direction — same comparator factory; no point shipping spool sort without filament sort.)
-- **Currency switcher** — Settings-resident currency picker; persisted to DataStore; bound to the price field suffix in `MoreDetailsExpander` (currently hard-coded `$`). Options scope locked in FD Q-U9-11.
+- Material 3 theming — dynamic color on Android 12+ (S-12.1); system-follow + Settings override (FR-12.2). Implemented as a 2-state Light/Dark `Switch` on the Settings TopAppBar (`ThemeOverride.System` dropped during U9 mid-unit reframe).
+- UI shell (S-13.1, S-13.2) — confirm `MainScreen` two-action layout; confirm bottom-sheet hosting pattern (sheets already implemented in U6b/U7; this unit verifies the shell shape). U9b reshapes the main screen further (logo overlay, per-section Cards) — U9 ships the underlying VM/state plumbing only.
+- **Sort comparator wiring — independent spool and filament dropdowns** each read their own sort order from Settings (`SpoolSortKey { Material, Brand, Id, LastUsed }`, `FilamentSortKey { Material, Brand, Id }` — no LastUsed for filament). Comparator factory in `domain/sort/`; `SpoolmanSpool.last_used` modelled on the wire.
+- **Currency switcher** — segmented row `$ Dollar / € Euro / ¤ Money`; persisted to DataStore; bound to the price field suffix in `MoreDetailsExpander`. Options scope locked in FD Q-U9-11.
+
+> Historical note: U5 shipped a minimal Settings subset (URL field + Save + Refresh) to unblock its install gate; U9 is the canonical Settings unit and reshapes the screen end-to-end. See §3-U5 for the U5 carve-out detail.
 
 **Components produced**:
 - `ui/screens/settings/SettingsScreen.kt`.

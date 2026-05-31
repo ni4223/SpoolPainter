@@ -30,9 +30,9 @@ import com.spoolpainter.app.data.local.SortDirection
 import com.spoolpainter.app.domain.models.SpoolmanFilament
 
 /**
- * Hidden inside FilamentSectionExpander. Lists ALL filaments alphabetically by
- * vendor + name + variant. Tapping a row prefills the form via
- * MainViewModel.onFilamentSelected; the X clears the selection.
+ * Rendered inside the always-open Filament section. Lists ALL filaments
+ * alphabetically by vendor + name + variant. Tapping a row prefills the form
+ * via MainViewModel.onFilamentSelected; the X clears the selection.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -44,6 +44,7 @@ fun FilamentPicker(
     sortDirection: SortDirection,
     onSelect: (SpoolmanFilament?) -> Unit,
     modifier: Modifier = Modifier,
+    prominent: Boolean = false,
 ) {
     var expanded by remember { mutableStateOf(false) }
     val sorted = remember(filaments, sortKey, sortDirection) {
@@ -95,7 +96,11 @@ fun FilamentPicker(
                 .menuAnchor()
                 .fillMaxWidth()
                 .testTag("filament-picker-input"),
-            textStyle = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+            textStyle = if (prominent) {
+                MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
+            } else {
+                MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold)
+            },
             colors = OutlinedTextFieldDefaults.colors(
                 focusedBorderColor = MaterialTheme.colorScheme.primary,
                 unfocusedBorderColor = MaterialTheme.colorScheme.outline,

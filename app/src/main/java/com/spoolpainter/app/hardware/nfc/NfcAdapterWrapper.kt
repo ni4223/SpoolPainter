@@ -52,8 +52,21 @@ open class NfcAdapterWrapper @Inject constructor(
     open suspend fun writeRecords(tag: Tag, records: List<NdefRecordView>) = withContext(dispatcher) {
         val ndef = Ndef.get(tag)
         if (ndef != null) {
-            writeViaNdef(ndef, records)
-            return@withContext
+            try {
+                writeViaNdef(ndef, records)
+                return@withContext
+            } catch (e: java.io.IOException) {
+                // Ndef.writeNdefMessage failed. If the tag also exposes
+                // NdefFormatable, fall through to a fresh format pass —
+                // recovers tags whose capability container ended up in an
+                // inconsistent state from a previous interrupted write.
+                // v1's simpler write path bulldozed past this state on every
+                // attempt; v2 is more careful and so needs a deliberate
+                // recovery hop.
+                val formatable = android.nfc.tech.NdefFormatable.get(tag) ?: throw e
+                writeViaFormatable(formatable, records)
+                return@withContext
+            }
         }
         // Ndef.get returned null. Two cases:
         //   1. Truly non-NDEF tag (factory-locked vendor) → throw NonNdef.
@@ -62,6 +75,13 @@ open class NfcAdapterWrapper @Inject constructor(
         //      surface as NdefFormatable in the techList. Format + write.
         val formatable = android.nfc.tech.NdefFormatable.get(tag)
             ?: throw NonNdefTagException()
+        writeViaFormatable(formatable, records)
+    }
+
+    private fun writeViaFormatable(
+        formatable: android.nfc.tech.NdefFormatable,
+        records: List<NdefRecordView>,
+    ) {
         try {
             formatable.connect()
             val message = records.toNdefMessage()
@@ -88,20 +108,24 @@ open class NfcAdapterWrapper @Inject constructor(
             ndef.connect()
             val message = records.toNdefMessage()
             val payloadSize = message.byteArrayLength
-            val maxSize = ndef.maxSize
-            if (!ndef.isWritable) {
-                throw java.io.IOException("tag is read-only (locked)")
-            }
-            if (payloadSize > maxSize) {
-                throw java.io.IOException(
-                    "tag too small: payload $payloadSize B > capacity $maxSize B",
-                )
-            }
+            // No pre-flight isWritable / maxSize round-trips. Each is a
+            // separate NfcA transceive on the capability container; on
+            // marginal taps those extra read cycles leave the chip in a
+            // state where the subsequent writeNdefMessage fails with a
+            // generic IOException. v1 wrote straight through and was
+            // robust precisely because it didn't pre-check.
+            // On failure, fall back to a single capacity probe so the user
+            // gets a useful message when the tag really IS too small
+            // (NTAG213's 144 B vs our ~216 B payload).
             try {
                 ndef.writeNdefMessage(message)
             } catch (e: java.io.IOException) {
+                val capacityMessage = runCatching { ndef.maxSize }
+                    .getOrNull()
+                    ?.takeIf { it < payloadSize }
+                    ?.let { cap -> "tag too small: payload ${payloadSize}B > capacity ${cap}B" }
                 throw java.io.IOException(
-                    "Ndef.writeNdefMessage IOException (payload=${payloadSize}B cap=${maxSize}B writable=${ndef.isWritable}): ${e.message ?: "no message"}",
+                    capacityMessage ?: "Ndef.writeNdefMessage IOException (payload=${payloadSize}B): ${e.message ?: "no message"}",
                     e,
                 )
             }
