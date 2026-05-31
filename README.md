@@ -15,20 +15,33 @@ SpoolPainter is for 3D printing hobbyists who:
 
 It is a single-user, sideloadable Android app. No accounts, no cloud, no analytics. The Spoolman URL you configure is the only network destination the app talks to.
 
+## Screenshots
+
+| Main screen | Form + filament metadata | Pair another tag |
+|---|---|---|
+| ![Main screen with paired spool](screenshots/01-main.png) | ![Form with metadata expander](screenshots/02-form-expanded.png) | ![Pair another tag sheet](screenshots/03-pair-another.png) |
+
+| Settings | Move-on-bind | Vendor tag chip |
+|---|---|---|
+| ![Settings screen](screenshots/04-settings.png) | ![Move-on-bind confirm](screenshots/05-move-on-bind.png) | ![Vendor tag classification](screenshots/06-vendor-chip.png) |
+
 ## What v2.0 does
 
-- **Read NFC tags** — tap a tag to read the OpenSpool payload and prefill the form. Tags that are not OpenSpool (vendor or non-NDEF) are surfaced as such, not silently rejected.
+- **Read NFC tags** — tap a tag to read the OpenSpool payload and prefill the form. Tags that are not OpenSpool (vendor or non-NDEF) are surfaced as such, not silently rejected. A vendor-tag chip appears with action-oriented copy ("Pick a spool or fill the form, then tap Save to pair it") instead of an opaque error.
+- **NFC status pills** — a status affordance at the top of the screen surfaces "Reading…" / "Writing…" so you always know what state the tap is in.
 - **Create-and-pair** — fill the form, tap a blank tag; the app creates the filament + spool in Spoolman (with `extra.variant` and `extra.card_uids` populated) and writes the OpenSpool payload to the tag in one motion.
-- **Pair another tag** — after the first write, a sheet prompts you to tap a second tag for the same spool. Both UIDs land on the same Spoolman spool.
+- **Pair another tag** — after the first write, a sheet prompts you to tap a second tag for the same spool. Both UIDs land on the same Spoolman spool, so a printer reading either side of a two-sided spool gets the same answer.
 - **Move-on-bind** — if you tap a tag that's already paired with a different spool, the app asks before moving the binding. Confirming sweeps the UID off the source spool(s) and appends it to the target.
 - **Side modes** — Raw write (write a payload to a blank tag without binding to Spoolman) and Vendor UID-only pair (bind a vendor / non-NDEF tag's UID to a spool without writing a payload).
-- **Pickers + filament metadata** — material / variant / colour / brand pickers with custom-entry support, plus a "More details" expander for filament metadata (density, diameter, weight, spool weight, price). Edits to existing filament metadata PATCH back to Spoolman.
+- **Pickers + filament metadata** — material / variant / colour / brand pickers with custom-entry support (the "Other" affordance feels like an action, not a checkbox option), plus a "More details" expander for filament metadata (density, diameter, weight, spool weight, price) with Spoolman-verbatim descriptions on the weight fields. Edits PATCH back to Spoolman.
+- **Auto-cleanup of orphan records** — if a Save & Write fails partway through (NFC timeout, tag pulled too early, write failure), any spool / filament / vendor records the app created in Spoolman before the failure are best-effort cleaned up so your inventory doesn't accumulate orphans.
 - **Settings**
   - Spoolman URL — Save runs a connectivity probe
-  - Independent sort orders for the spool dropdown (Material / Brand / ID / Last Used) and the filament picker (Material / Brand / ID)
-  - Theme: Light or Dark
+  - Independent sort orders for the spool dropdown (Material / Brand / ID / Last Used) and the filament picker (Material / Brand / ID), each with Asc/Desc segmented controls
+  - Theme toggle (Light / Dark) on the Settings top app bar
   - Currency for the price field: $ / € / ¤
 - **Spoolman gating** — the Spoolman-dependent form sections hide entirely when no URL is configured, and disable (still visible) when the URL is configured but the server is unreachable. The temperature section stays usable in all states because temps live on the tag, not in Spoolman.
+- **Keyboard-aware UI** — snackbar messages slide above the IME keyboard so confirmations and errors aren't hidden mid-edit.
 - **In-place v1 → v2 update** — same package id (`com.spoolpainter.app`). v2 installs over v1; no data migration is needed because data lives on tags + Spoolman, not in the app.
 
 ## How to install

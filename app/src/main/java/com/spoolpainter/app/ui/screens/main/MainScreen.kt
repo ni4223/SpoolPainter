@@ -515,14 +515,12 @@ private fun AmbiguityBlock(state: AmbiguityState?) {
 private fun ReadFab(isReading: Boolean, onClick: () -> Unit) {
     ExtendedFloatingActionButton(
         onClick = onClick,
-        modifier = Modifier
-            .testTag("main-read-fab")
-            .height(64.dp),
+        modifier = Modifier.testTag("main-read-fab"),
     ) {
         Text(
             text = if (isReading) "Reading…" else "Read tag",
-            style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.padding(horizontal = 8.dp),
+            style = MaterialTheme.typography.labelLarge,
+            modifier = Modifier.padding(horizontal = 4.dp),
         )
     }
 }

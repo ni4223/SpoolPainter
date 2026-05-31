@@ -96,10 +96,6 @@ fun SettingsScreen(
                 .testTag("settings-screen"),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text(
-                text = "Spoolman URL (e.g. http://nas.local:7912)",
-                style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
-            )
             OutlinedTextField(
                 value = draftUrl,
                 onValueChange = { draftUrl = it },
@@ -108,7 +104,8 @@ fun SettingsScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("settings-url-field"),
-                label = { Text("URL") },
+                label = { Text("Spoolman URL") },
+                placeholder = { Text("http://192.168.1.100:7912") },
             )
             Button(
                 onClick = { viewModel.onUrlSaved(draftUrl) },
