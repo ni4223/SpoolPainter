@@ -888,15 +888,19 @@ deferred. Manual verification stands in until the env issue is resolved.
 
 ## UI-31 — Carry-over: known bug deferred to next session
 
-**State**: open (deferred — next session)
+**State**: closed (re-elicited 2026-05-31; turned out to be the U1 round-trip
+issue tracked as UI-33 below — not a SpoolPainter bug)
 **Found in**: U10 install-gate, 2026-05-30
-**Routing**: post-commit follow-up
+**Routing**: post-commit follow-up → reclassified as UI-33 (printer-side)
 
 User flagged a remaining bug after UI-30 chain-delete shipped, deferred to
-next session: *"we have some bug but we will get to it next"*. No
-reproduction details captured at commit time. Re-elicit details when
-resuming so this entry can be expanded with a proper `Found in` /
-`Fix scope`.
+next session: *"we have some bug but we will get to it next"*. Re-elicited
+2026-05-31 during U10 install-gate Snapmaker U1 round-trip — root cause was
+the U1's `Snapmaker Components > Spoolman Integration` toggle being off
+(printer-side firmware config), not a SpoolPainter app bug. SpoolPainter v2
+writes the OpenSpool JSON correctly; U1's `openspool_tag_processor` parses
+it; spoollink resolves UID → Spoolman → Fluidd once the toggle is on.
+Reclassified to UI-33 below.
 
 ---
 
@@ -941,5 +945,132 @@ was still broken locally — Gradle 8.13 fails to instantiate
 fixture changes prove the use cases compile against the new repo shape,
 but assertions on `chainDeleteOrphanCalls` for the failure paths are
 worth adding next session.
+
+---
+
+## UI-33 — Snapmaker U1 round-trip: external setup gotchas (known limitation, doc-only)
+
+**State**: closed (doc-only; SpoolPainter v2 unaffected)
+**Found in**: U10 install-gate Snapmaker U1 round-trip, 2026-05-31
+**Routing**: known-limitation note — printer-side, not an app bug
+
+Two distinct U1-side gotchas surfaced during the install-gate round-trip;
+both isolated to the printer stack, not the SpoolPainter app.
+
+**(a) Wiped-tag malformed-NDEF state.** A tag wiped with a non-SpoolPainter
+tool (e.g. NFC Tools "Erase") may leave page 4 holding `03 04 D8 00 00 00
+FE 00` — a valid NDEF Message TLV pointing at a 4-byte TNF_EMPTY record,
+with the prior OpenSpool JSON bytes still after the `FE` terminator. U1's
+`openspool_tag_processor` finds the NDEF message but errors with
+`NDEF parsing error -3` because there's no `application/json` MIME record
+inside; falls through `tigertag_tag_processor`; gives up; firmware logs
+`"Detected tag … but failed to read data"`. Slot reads as empty in Fluidd.
+**Workaround**: Save & Write a full SpoolPainter payload to overwrite the
+malformed TLV (rewrites page 4 with the full NDEF MIME record). Re-tap on
+U1 succeeds.
+
+**(b) `Snapmaker Components > Spoolman Integration` toggle off in U1
+firmware config.** Even with a correctly-written full OpenSpool tag and
+the `paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware` PR #491 build
+installed, Fluidd showed only the bare data `openspool_tag_processor`
+parsed (color, hotend min/max, raw `spool_id`) — no Spoolman-derived
+spool name / brand / variant / weight / full temps. Cause: the firmware
+patches install the `spoollink` agent but leave the integration disabled
+by default. Without spoollink, the firmware POSTs to
+`/printer/filament_detect/set` with the bare parsed fields and stops
+there — no Moonraker `CARD_UID` event subscription, no
+`GET /api/v1/spool?limit=1000&allow_archived=true` call to Spoolman, no
+`SET_PRINT_FILAMENT_CONFIG` enrichment.
+**Fix**: Fluidd → Settings → **Snapmaker Components > Spoolman
+Integration**, toggle on, set Spoolman URL. Re-tap. Expected log lines
+post-fix: `urllib3.connectionpool: Starting new HTTP connection: <spoolman
+host>` + `GET /api/v1/spool?…` + spool data filling in to Fluidd.
+
+**SpoolPainter v2 verdict**: writes correct OpenSpool JSON
+(MIME=`application/json`, full envelope per OpenSpool spec); U1's
+processor parses it; spoollink resolves UID via `extra.card_uids` (plural,
+uppercase hex, comma-separated, double-JSON-encoded — matches our
+`ExtraCardUidsCodec`); end-to-end round-trip works once the printer-side
+toggle is on. **No app code change needed.**
+
+**Doc impact**: log both gotchas in `aidlc-docs/operations/manual-nfc-checklist.md`
+§ Snapmaker U1 round-trip as known-environment notes for testers running
+the gate on their own printers.
+
+---
+
+## UI-34 — R8 ParameterizedType crash in release Retrofit calls
+
+**State**: fixed (2026-05-31 install-gate post-build)
+**Found in**: U10 install-gate release-APK on-device smoke (item #2 of the
+install-gate carry-overs), 2026-05-31
+**Routing**: U10 close-out follow-up
+
+First-launch sideload of the signed v2.0 release APK (versionCode 100,
+6.9 MB) crashed on the moto g stylus 2025 / Android 16 the moment the
+app issued its first Spoolman HTTP call:
+
+```
+java.lang.ClassCastException: java.lang.Class cannot be cast to
+    java.lang.reflect.ParameterizedType
+  at $Proxy2.listSpools (Unknown Source)
+  at SpoolmanRepository$findSpoolsByCardUid$$inlined$performHttp$1.invokeSuspend(...)
+```
+
+**Root cause**: R8 full mode (AGP 8+ default) aggressively strips
+`Signature` generic-type metadata from interfaces it considers
+proxy-only. Retrofit reads the response type from a suspend function's
+`Continuation<? super Response<List<SpoolmanSpool>>>` parameter at
+runtime; without the parameterised Signature, Retrofit's call adapter
+sees a raw `Class` where it expects a `ParameterizedType` and throws.
+
+The U10 ProGuard rules already kept `*Annotation*, InnerClasses,
+Signature, Exceptions, EnclosingMethod` via `-keepattributes`, but in
+R8 full mode that alone isn't enough — R8 still re-emits the interface
+without the generic upper bounds. The official `retrofit2`
+`consumer-rules.pro` ships a conditional `-if interface … -keep …
+interface <1>` rule + a `Continuation` keep that we were missing.
+
+**Fix shipped (`app/proguard-rules.pro`)**: replaced the simpler
+Retrofit block with R8-full-mode-safe rules:
+
+- `-if interface * { @retrofit2.http.* <methods>; }` followed by
+  `-keep,allowobfuscation,allowshrinking interface <1>` — preserves
+  every `@GET/@POST/@PATCH/@DELETE`-annotated interface against R8's
+  proxy-only stripping.
+- `-keepclassmembers,allowshrinking,allowobfuscation interface * {
+    @retrofit2.http.* <methods>; }` — preserves the per-method
+  signatures that carry the parameterised return types.
+- `-keep,allowobfuscation,allowshrinking class kotlin.coroutines.Continuation`
+  — keeps the suspend-function Continuation upper-bound generic info
+  Retrofit reads on first invocation.
+- `-keep,allowobfuscation,allowshrinking interface
+    com.spoolpainter.app.data.remote.spoolman.SpoolmanApi { <methods>; }`
+  — belt-and-suspenders explicit keep of our one Retrofit interface.
+- `-dontwarn javax.annotation.**` / `kotlin.Unit` /
+  `retrofit2.KotlinExtensions{,$*}` — silences R8's noise about
+  Retrofit-adjacent classes that aren't on the runtime classpath.
+
+**Verification**:
+- Rebuilt `assembleRelease` ✅ — APK still 6.9 MB unchanged.
+- `adb install -r` on moto g stylus 2025 / Android 16. App PID stable
+  through Settings save → Read FAB → tap OpenSpool tag → Save & Write
+  → tap writable tag → Saved snackbar. Zero `FATAL EXCEPTION`. App
+  process stayed on the same PID throughout.
+- Verified at the same time: NFR-5 logcat zero D/I/W from
+  `com.spoolpainter.app.*` sources during the smoke (5919 total log
+  lines captured; 15 from app PID, all framework-side: InsetsController,
+  ImeTracker, WindowOnBackDispatcher; none from our Kotlin code). The
+  `-assumenosideeffects android.util.Log` rule is doing its job.
+
+**Why this didn't show up in earlier U10 verification**:
+`assembleRelease` builds had been green throughout U10 — but a green
+build only means R8 compiled successfully, not that the resulting
+classes can be reflected on at runtime. This crash only surfaces on
+device the first time the Retrofit proxy is invoked. Items #2 + #3 of
+the U10 install-gate carry-overs (release-APK on-device smoke + NFR-5
+logcat verify) caught it. Future R8 changes should always include an
+on-device smoke before signoff — `assembleRelease` green is necessary
+but not sufficient.
 
 ---
