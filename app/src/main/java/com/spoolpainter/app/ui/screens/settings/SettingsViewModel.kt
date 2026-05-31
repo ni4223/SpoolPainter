@@ -68,7 +68,7 @@ class SettingsViewModel @Inject constructor(
 
     val themeOverride: StateFlow<ThemeOverride> = settings.settings
         .map { it.themeOverride }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, ThemeOverride.Light)
+        .stateIn(viewModelScope, SharingStarted.Eagerly, ThemeOverride.Dark)
 
     fun onThemeToggled() {
         viewModelScope.launch {

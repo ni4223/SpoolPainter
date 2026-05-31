@@ -47,11 +47,25 @@ fun FilamentPicker(
     prominent: Boolean = false,
 ) {
     var expanded by remember { mutableStateOf(false) }
+    val anchor = rememberLazyDropdownAnchor()
     val sorted = remember(filaments, sortKey, sortDirection) {
         filaments.sortedWith(filamentComparator(sortKey, sortDirection))
     }
+    // Cache the per-row display tuple so a recompose doesn't re-run the
+    // string formatters on every entry. ExposedDropdownMenu renders all
+    // items eagerly, so this is per-row work multiplied by N filaments.
+    val rows = remember(sorted) {
+        sorted.map { filament ->
+            FilamentRowDisplay(
+                filament = filament,
+                primary = filament.primaryRowText(),
+                secondary = filament.secondaryRowText(),
+                colorHex = filament.color_hex,
+            )
+        }
+    }
     val selected = sorted.firstOrNull { it.id == selectedFilamentId }
-    val displayValue = selected?.displayString().orEmpty()
+    val displayValue = selected?.selectedDisplay().orEmpty()
 
     ExposedDropdownMenuBox(
         expanded = expanded && enabled,
@@ -95,6 +109,7 @@ fun FilamentPicker(
             modifier = Modifier
                 .menuAnchor()
                 .fillMaxWidth()
+                .then(anchor.modifier)
                 .testTag("filament-picker-input"),
             textStyle = if (prominent) {
                 MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
@@ -108,35 +123,66 @@ fun FilamentPicker(
             shape = RoundedCornerShape(20.dp),
         )
         if (enabled && sorted.isNotEmpty()) {
-            ExposedDropdownMenu(
+            // LazyDropdownMenu (custom) instead of ExposedDropdownMenu —
+            // the latter composes every row eagerly, which lags noticeably
+            // at 50+ filaments. Lazy compose drops first-open work to
+            // O(visible rows).
+            LazyDropdownMenu(
                 expanded = expanded,
-                onDismissRequest = { expanded = false },
-                modifier = Modifier.clip(RoundedCornerShape(20.dp)),
-            ) {
-                sorted.forEach { filament ->
-                    DropdownMenuItem(
-                        text = { Text(filament.displayString()) },
-                        onClick = {
-                            expanded = false
-                            onSelect(filament)
-                        },
-                        modifier = Modifier.testTag("filament-picker-row-${filament.id}"),
+                items = rows,
+                anchor = anchor,
+                onDismiss = { expanded = false },
+                onItemClick = { row ->
+                    expanded = false
+                    onSelect(row.filament)
+                },
+                itemKey = { row -> row.filament.id },
+                itemContent = { row ->
+                    PickerRow(
+                        primary = row.primary,
+                        secondary = row.secondary,
+                        colorHex = row.colorHex,
+                        modifier = Modifier.testTag("filament-picker-row-${row.filament.id}"),
                     )
-                }
-            }
+                },
+            )
         }
     }
 }
 
-private fun SpoolmanFilament.displayString(): String {
-    val vendorName = vendor?.name?.takeIf { it.isNotBlank() } ?: "Unknown"
+@androidx.compose.runtime.Immutable
+private data class FilamentRowDisplay(
+    val filament: SpoolmanFilament,
+    val primary: String,
+    val secondary: String,
+    val colorHex: String?,
+)
+
+/**
+ * Compact text for the picker's text field after selection. User direction:
+ * "on selection just show name and id" — brand + colour + material flow into
+ * the form fields below, so re-stating them in the picker is noise.
+ */
+private fun SpoolmanFilament.selectedDisplay(): String {
     val filamentName = name?.takeIf { it.isNotBlank() } ?: material ?: "Unknown"
-    val variantValue = extra?.get("variant")?.let { decodeJsonString(it) }
-    return if (variantValue.isNullOrBlank()) {
-        "$vendorName · $filamentName"
-    } else {
-        "$vendorName · $filamentName · $variantValue"
-    }
+    return "$filamentName · #$id"
+}
+
+/** Bold first line of the open-dropdown row. */
+internal fun SpoolmanFilament.primaryRowText(): String {
+    val vendorName = vendor?.name?.takeIf { it.isNotBlank() }
+    val filamentName = name?.takeIf { it.isNotBlank() } ?: material ?: "Unknown"
+    return if (vendorName != null) "$vendorName · $filamentName" else filamentName
+}
+
+/** Faded second line: 'Material · Variant · #id' (variant only when set). */
+internal fun SpoolmanFilament.secondaryRowText(): String {
+    val parts = listOfNotNull(
+        material?.takeIf { it.isNotBlank() },
+        extra?.get("variant")?.let { decodeJsonString(it) }?.takeIf { it.isNotBlank() },
+        "#$id",
+    )
+    return parts.joinToString(" · ")
 }
 
 private fun decodeJsonString(raw: String?): String? {

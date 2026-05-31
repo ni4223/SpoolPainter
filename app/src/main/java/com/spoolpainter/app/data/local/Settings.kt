@@ -9,7 +9,7 @@ data class Settings(
     val spoolSortDirection: SortDirection = SortDirection.Desc,
     val filamentSortKey: FilamentSortKey = FilamentSortKey.Id,
     val filamentSortDirection: SortDirection = SortDirection.Desc,
-    val themeOverride: ThemeOverride = ThemeOverride.Light,
+    val themeOverride: ThemeOverride = ThemeOverride.Dark,
     val currency: Currency = Currency.Dollar,
 )
 

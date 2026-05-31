@@ -7,12 +7,13 @@ captures will land here before the Play Store testing-track upload.
 
 | Slot | File | Content |
 |---|---|---|
-| 1 | `01-main.png` | Main screen with a paired spool selected. Logo header + status pill, dropdown showing a real spool, form populated, Read FAB visible. Establishes "what the app looks like in normal use." |
-| 2 | `02-form-expanded.png` | Form with Filament section + Color picker + "More details" expander all open, showing temps + filament metadata fields. Sells the v2 form depth. |
-| 3 | `03-pair-another.png` | "Pair another tag?" sheet shown right after a successful Save & Write. Sells the multi-tag-per-spool flow that's unique to v2. |
-| 4 | `04-settings.png` | Settings screen — Spoolman URL filled, sort dropdowns + segmented Asc/Desc controls, currency segmented row, theme cycle icon visible on the top bar. Sells "configurable, your-Spoolman." |
-| 5 | `05-move-on-bind.png` | Move-on-bind repair-confirm sheet listing a previous owner. Sells the conflict handling. |
-| 6 | `06-vendor-chip.png` | Vendor-tag inline chip ("Vendor tag — we can't read this tag's contents…") with the tertiary-tinted Info icon. Sells the v2 honest UX for tags we can't decode yet. |
+| 1 | `01-main.png` | Main screen with a paired spool selected. Logo header, dropdown showing a real spool, form populated, Read FAB visible. Establishes "what the app looks like in normal use." |
+| 2 | `02-spool-dropdown.png` | Spool dropdown open showing the v2.0.2 rich rows: 24dp colour swatch + bold "Vendor · Name" first line + faded "Material · Variant · #id" second line. Sells the "find your filament fast" inventory browse. |
+| 3 | `03-form-expanded.png` | Form with Filament section + Color picker + "Filament metadata" expander all open, showing temps + Remaining/Measured + filament metadata fields. Sells the v2 form depth. |
+| 4 | `04-pair-another.png` | "Pair another tag?" sheet shown right after a successful Save & Write. Sells the multi-tag-per-spool flow that's unique to v2. |
+| 5 | `05-settings.png` | Settings screen — Spoolman URL filled, sort dropdowns + segmented Asc/Desc controls, currency segmented row, theme toggle visible on the top bar. Sells "configurable, your-Spoolman." |
+| 6 | `06-move-on-bind.png` | Move-on-bind repair-confirm sheet listing a previous owner. Sells the conflict handling. |
+| 7 | `07-vendor-chip.png` | Vendor-tag inline chip ("Vendor tag — we can't read this tag's contents…") with the tertiary-tinted Info icon. Sells the v2 honest UX for tags we can't decode yet. |
 
 ## Capture recipe
 

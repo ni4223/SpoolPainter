@@ -91,15 +91,18 @@ class SettingsViewModelTest {
     }
 
     @Test
-    fun `onThemeToggled flips Light to Dark and back`() = runTest {
+    fun `onThemeToggled flips Dark to Light and back (fresh-install default = Dark)`() = runTest {
+        // v2.0.2 fresh-install default is Dark (per user direction
+        // "device mode or dark by default" — picked Dark for the
+        // simpler 2-state toggle).
         val vm = newVm()
         advanceUntilIdle()
-        assertEquals(ThemeOverride.Light, vm.themeOverride.value)
-        vm.onThemeToggled()
-        advanceUntilIdle()
-        assertEquals(ThemeOverride.Dark, settings.settings.value.themeOverride)
+        assertEquals(ThemeOverride.Dark, vm.themeOverride.value)
         vm.onThemeToggled()
         advanceUntilIdle()
         assertEquals(ThemeOverride.Light, settings.settings.value.themeOverride)
+        vm.onThemeToggled()
+        advanceUntilIdle()
+        assertEquals(ThemeOverride.Dark, settings.settings.value.themeOverride)
     }
 }

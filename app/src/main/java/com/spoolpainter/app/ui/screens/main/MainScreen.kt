@@ -47,6 +47,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -275,12 +276,21 @@ fun MainScreen(
 @Composable
 private fun MainLogoHeader(colorHex: String?, onSettingsClick: () -> Unit) {
     val outline = MaterialTheme.colorScheme.outline
-    val tint = remember(colorHex, outline) {
-        parseLogoColor(colorHex) ?: outline
+    val surface = MaterialTheme.colorScheme.surface
+    val tint = remember(colorHex, outline) { parseLogoColor(colorHex) ?: outline }
+    // When the picked filament colour's luminance is too close to the
+    // surface (near-black on dark theme, near-white on light theme), the
+    // tinted logo silhouette would vanish. Render a silver halo behind
+    // it so the spool shape stays visible while the literal filament
+    // colour is preserved on the front face.
+    val haloColor = remember(tint, surface) {
+        val delta = kotlin.math.abs(tint.luminance() - surface.luminance())
+        if (delta < 0.2f) androidx.compose.ui.graphics.Color(0xFFC0C0C0) else null
     }
     Box(modifier = Modifier.fillMaxWidth()) {
         SpoolPainterLogo(
             color = tint,
+            outlineColor = haloColor,
             modifier = Modifier.fillMaxWidth(),
         )
         IconButton(
@@ -409,14 +419,30 @@ internal fun SpoolmanDropdown(
     onSelect: (SpoolmanSpool?) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val visibleSpools = spools
-        .filterNot { it.archived }
-        .sortedWith(spoolComparator(sortKey, sortDirection))
+    val anchor = com.spoolpainter.app.ui.components.rememberLazyDropdownAnchor()
+    // ExposedDropdownMenu renders every row eagerly (no lazy column), so
+    // every recomposition that re-runs filter+sort+row-string-builder
+    // multiplies by N spools. Cache the sorted list + per-row display
+    // tuple so a tap-toggle isn't paying for the work again.
+    val visibleSpools = remember(spools, sortKey, sortDirection) {
+        spools.filterNot { it.archived }
+            .sortedWith(spoolComparator(sortKey, sortDirection))
+    }
+    val visibleRows = remember(visibleSpools) {
+        visibleSpools.map { spool ->
+            SpoolRowDisplay(
+                spool = spool,
+                primary = spoolPrimaryRow(spool),
+                secondary = spoolSecondaryRow(spool),
+                colorHex = spool.filament.color_hex,
+            )
+        }
+    }
     val selected = spools.firstOrNull { it.id == selectedId }
     val displayText = if (!enabled) {
         "Configure Spoolman URL in Settings"
     } else {
-        selected?.let { spoolDisplayName(it) } ?: "Select a Spoolman spool…"
+        selected?.let { spoolSelectedDisplay(it) } ?: "Select a Spoolman spool…"
     }
 
     ExposedDropdownMenuBox(
@@ -452,7 +478,7 @@ internal fun SpoolmanDropdown(
                     ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
                 }
             },
-            modifier = Modifier.fillMaxWidth().menuAnchor(),
+            modifier = Modifier.fillMaxWidth().menuAnchor().then(anchor.modifier),
             textStyle = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
             colors = OutlinedTextFieldDefaults.colors(
                 focusedBorderColor = MaterialTheme.colorScheme.primary,
@@ -461,29 +487,78 @@ internal fun SpoolmanDropdown(
             shape = RoundedCornerShape(20.dp),
         )
         if (enabled) {
-            // ExposedDropdownMenu (not bare DropdownMenu) auto-scrolls past
-            // its viewport — bare DropdownMenu silently clips long lists, so
-            // recently-created spools (later IDs) drop off the bottom and
-            // appear "missing" even when present in state.
-            ExposedDropdownMenu(
+            // LazyDropdownMenu (custom) instead of ExposedDropdownMenu —
+            // the latter composes every row eagerly. With 50+ spools and
+            // a multi-composable PickerRow per item, that's a half-second
+            // tap-to-open lag. Lazy compose drops first-open work to the
+            // visible row count.
+            com.spoolpainter.app.ui.components.LazyDropdownMenu(
                 expanded = expanded,
-                onDismissRequest = { expanded = false },
-                modifier = Modifier.clip(RoundedCornerShape(20.dp)),
-            ) {
-                visibleSpools.forEach { spool ->
-                    DropdownMenuItem(
-                        text = { Text(spoolDisplayName(spool)) },
-                        onClick = {
-                            onSelect(spool)
-                            expanded = false
-                        },
+                items = visibleRows,
+                anchor = anchor,
+                onDismiss = { expanded = false },
+                onItemClick = { row ->
+                    onSelect(row.spool)
+                    expanded = false
+                },
+                itemKey = { row -> row.spool.id ?: row.primary.hashCode() },
+                itemContent = { row ->
+                    com.spoolpainter.app.ui.components.PickerRow(
+                        primary = row.primary,
+                        secondary = row.secondary,
+                        colorHex = row.colorHex,
                     )
-                }
-            }
+                },
+            )
         }
     }
 }
 
+/** Cached row display tuple — built once per visibleSpools change. */
+@androidx.compose.runtime.Immutable
+private data class SpoolRowDisplay(
+    val spool: SpoolmanSpool,
+    val primary: String,
+    val secondary: String,
+    val colorHex: String?,
+)
+
+/**
+ * Compact text for the Spool picker after selection. User direction:
+ * just name + spool id — material/brand/colour flow into the form so
+ * re-stating them in the picker is noise.
+ */
+internal fun spoolSelectedDisplay(spool: SpoolmanSpool): String {
+    val filamentName = spool.filament.name?.takeIf { it.isNotBlank() }
+        ?: spool.filament.material ?: "Unknown"
+    return "$filamentName · #${spool.id ?: "?"}"
+}
+
+/** Bold first line of the open-dropdown row: 'Vendor · Name'. */
+internal fun spoolPrimaryRow(spool: SpoolmanSpool): String {
+    val vendorName = spool.filament.vendor?.name?.takeIf { it.isNotBlank() }
+    val filamentName = spool.filament.name?.takeIf { it.isNotBlank() }
+        ?: spool.filament.material ?: "Unknown"
+    return if (vendorName != null) "$vendorName · $filamentName" else filamentName
+}
+
+/** Faded second line: 'Material · Variant · #id' (variant only when set). */
+internal fun spoolSecondaryRow(spool: SpoolmanSpool): String {
+    val variant = spool.filament.extra?.get("variant")
+        ?.let { raw ->
+            if (raw.length >= 2 && raw.startsWith("\"") && raw.endsWith("\"")) {
+                raw.substring(1, raw.length - 1)
+            } else raw
+        }?.takeIf { it.isNotBlank() }
+    val parts = listOfNotNull(
+        spool.filament.material?.takeIf { it.isNotBlank() },
+        variant,
+        "#${spool.id ?: "?"}",
+    )
+    return parts.joinToString(" · ")
+}
+
+/** Kept for legacy callers (snackbar/log strings) — verbose format. */
 internal fun spoolDisplayName(spool: SpoolmanSpool): String {
     val parts = listOfNotNull(
         spool.filament.name?.takeIf { it.isNotBlank() },

@@ -17,13 +17,17 @@ It is a single-user, sideloadable Android app. No accounts, no cloud, no analyti
 
 ## Screenshots
 
-| Main screen | Form + filament metadata | Pair another tag |
+| Main screen | Spool dropdown | Form + filament metadata |
 |---|---|---|
-| ![Main screen with paired spool](screenshots/01-main.png) | ![Form with metadata expander](screenshots/02-form-expanded.png) | ![Pair another tag sheet](screenshots/03-pair-another.png) |
+| ![Main screen with paired spool](screenshots/01-main.png) | ![Spool dropdown open with colour swatches](screenshots/02-spool-dropdown.png) | ![Form with metadata expander](screenshots/03-form-expanded.png) |
 
-| Settings | Move-on-bind | Vendor tag chip |
+| Pair another tag | Settings | Move-on-bind |
 |---|---|---|
-| ![Settings screen](screenshots/04-settings.png) | ![Move-on-bind confirm](screenshots/05-move-on-bind.png) | ![Vendor tag classification](screenshots/06-vendor-chip.png) |
+| ![Pair another tag sheet](screenshots/04-pair-another.png) | ![Settings screen](screenshots/05-settings.png) | ![Move-on-bind confirm](screenshots/06-move-on-bind.png) |
+
+| Vendor tag chip | | |
+|---|---|---|
+| ![Vendor tag classification](screenshots/07-vendor-chip.png) | | |
 
 ## What v2.0 does
 

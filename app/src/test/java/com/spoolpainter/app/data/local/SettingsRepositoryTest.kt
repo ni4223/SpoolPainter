@@ -51,7 +51,7 @@ class SettingsRepositoryTest {
             assertEquals(SortDirection.Desc, first.spoolSortDirection)
             assertEquals(FilamentSortKey.Id, first.filamentSortKey)
             assertEquals(SortDirection.Desc, first.filamentSortDirection)
-            assertEquals(ThemeOverride.Light, first.themeOverride)
+            assertEquals(ThemeOverride.Dark, first.themeOverride)
             assertEquals(Currency.Dollar, first.currency)
             cancelAndIgnoreRemainingEvents()
         }
@@ -110,9 +110,9 @@ class SettingsRepositoryTest {
     @Test
     fun `setThemeOverride updates settings flow`() = runTest {
         repository.settings.test {
-            assertEquals(ThemeOverride.Light, awaitItem().themeOverride)
-            repository.setThemeOverride(ThemeOverride.Dark)
             assertEquals(ThemeOverride.Dark, awaitItem().themeOverride)
+            repository.setThemeOverride(ThemeOverride.Light)
+            assertEquals(ThemeOverride.Light, awaitItem().themeOverride)
             cancelAndIgnoreRemainingEvents()
         }
     }

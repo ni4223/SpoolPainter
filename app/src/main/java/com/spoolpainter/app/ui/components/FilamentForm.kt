@@ -183,11 +183,10 @@ private fun VariantField(
     OutlinedTextField(
         value = value.orEmpty(),
         onValueChange = { input ->
-            // v1 sanitisation: alphanumeric + spaces + hyphens, max 25 chars,
-            // first char title-cased.
+            // Sanitisation: alphanumeric + spaces + hyphens, max 25 chars.
+            // No forced casing — user types whatever they want.
             val sanitised = input.filter { it.isLetterOrDigit() || it in " -" }
                 .take(25)
-                .replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
             onChange(sanitised.takeIf { it.isNotBlank() })
         },
         label = { Text("Variant (Wood, Pro, HS, etc.)") },
