@@ -30,9 +30,11 @@ class NfcRepositoryUidExtractionTest {
     }
 
     @Test
-    fun `Success carries canonical lowercase hex UID via fromBytes contract`() = runTest {
+    fun `Success carries canonical uppercase hex UID via fromBytes contract`() = runTest {
+        // CardUid.fromBytes uses "%02X" → uppercase. The test originally
+        // asserted lowercase but that was wrong; production has always been
+        // uppercase. sampleUid() returns the canonical form.
         val wrapper = FakeNfcAdapterWrapper()
-        // sampleUid is already canonical; rely on the U2 contract here.
         wrapper.simulateRead(sampleUid(), null)
         val repo = newRepository(wrapper = wrapper)
 
@@ -40,7 +42,7 @@ class NfcRepositoryUidExtractionTest {
         repo.handleTag(makeTag())
 
         val state = repo.state.value as NfcResult.Success
-        assertEquals(CardUid("04a1b2c3d4e580"), state.uid)
-        assertEquals("04a1b2c3d4e580", state.uid.hex)
+        assertEquals(CardUid("04A1B2C3D4E580"), state.uid)
+        assertEquals("04A1B2C3D4E580", state.uid.hex)
     }
 }

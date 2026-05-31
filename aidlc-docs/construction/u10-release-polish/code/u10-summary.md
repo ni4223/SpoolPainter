@@ -230,7 +230,9 @@ Six in-session fixes against the manual matrix:
     - `MainViewModel.spoolman` promoted from constructor param to `private val`.
     - **Reused-filament-on-fresh-vendor edge**: if filament was matched (not freshly POSTed), the bundle treats vendor as reused too — even if our flow created the vendor moments earlier. Prevents over-deleting in rare ordering races.
 
-23. **Carry-over to next session** (UI-31): user flagged a remaining bug at commit time but deferred details. Captured as UI-31 in `ui-followups.md` for next session re-elicitation. Local `:app:testDebugUnitTest` env issue is also unresolved (separate from U10).
+23. **Carry-over to next session** (UI-31): user flagged a remaining bug at commit time but deferred details. Captured as UI-31 in `ui-followups.md` for next session re-elicitation.
+
+24. **Test env + fixtures** (UI-32, post-commit follow-up). Bumped Gradle wrapper 8.13 → 8.14.3 to fix `DefaultReportContainer … Type T not present` under JDK 24. Updated fixtures: `NfcTestSupport.makeTag()` now provides non-null UID + Ndef techList (UI-20 compat), `sampleUid()` uppercased to match `CardUid.fromBytes`, `FakeSpoolmanApi` gains DELETE overrides, `FakeSpoolmanRepository` adds `createSpoolForNewFilamentBundle` + `chainDeleteOrphan` overrides, brand-default fixtures use `assertNull` (UI-27), ambient snackbar filter lists the new strings, write-fail snackbar assertions match UI-19 copy, verify-mismatch tests rewritten for UI-20 (verify removed). **361 / 361 tests green**. Dedicated chain-delete coverage (UI-30) deferred to a follow-up.
 
 ## Carry-overs to next session
 

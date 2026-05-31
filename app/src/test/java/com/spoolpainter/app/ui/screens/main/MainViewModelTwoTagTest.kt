@@ -92,9 +92,15 @@ class MainViewModelTwoTagTest {
 
     /** See [MainViewModelTest.awaitNonAmbientSnackbar] for rationale. */
     private suspend fun ReceiveTurbine<UiEffect>.awaitNonAmbientSnackbar(): UiEffect.ShowSnackbar {
+        val ambient = setOf(
+            "Tag detected. Press Read tag to load.",
+            "Tag detected. Press Read to load.",
+            "Blank tag detected.",
+            "Vendor tag. Press Read to load.",
+        )
         while (true) {
             val effect = awaitItem() as UiEffect.ShowSnackbar
-            if (effect.message == "Tag detected. Press Read tag to load.") continue
+            if (effect.message in ambient) continue
             return effect
         }
     }
@@ -147,7 +153,7 @@ class MainViewModelTwoTagTest {
         vm.effects.test {
             vm.onPairAnotherTagDismissed()
             val emission = awaitNonAmbientSnackbar()
-            assertEquals("Saved with one tag", emission.message)
+            assertEquals("Saved with one tag.", emission.message)
             cancelAndIgnoreRemainingEvents()
         }
         assertEquals(ActiveFlow.Idle, vm.state.value.activeFlow)

@@ -126,6 +126,39 @@ class FakeSpoolmanApi : SpoolmanApi {
         return Response.success(filament)
     }
 
+    override suspend fun deleteVendor(vendorId: Int): Response<Unit> {
+        callLog += "deleteVendor($vendorId)"
+        val removed = vendorList.firstOrNull { it.id == vendorId }
+        return if (removed != null) {
+            vendorList.remove(removed)
+            Response.success(Unit)
+        } else {
+            Response.error(404, "no such vendor".toResponseBody(null))
+        }
+    }
+
+    override suspend fun deleteFilament(filamentId: Int): Response<Unit> {
+        callLog += "deleteFilament($filamentId)"
+        val removed = filamentList.firstOrNull { it.id == filamentId }
+        return if (removed != null) {
+            filamentList.remove(removed)
+            Response.success(Unit)
+        } else {
+            Response.error(404, "no such filament".toResponseBody(null))
+        }
+    }
+
+    override suspend fun deleteSpool(spoolId: Int): Response<Unit> {
+        callLog += "deleteSpool($spoolId)"
+        val removed = spoolList.firstOrNull { it.id == spoolId }
+        return if (removed != null) {
+            spoolList.remove(removed)
+            Response.success(Unit)
+        } else {
+            Response.error(404, "no such spool".toResponseBody(null))
+        }
+    }
+
     override suspend fun createSpool(body: CreateSpoolRequest): Response<SpoolmanSpool> {
         callLog += "createSpool(filament=${body.filament_id},extra=${body.extra})"
         nextSpoolCreateHttpError?.let { staged ->

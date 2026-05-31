@@ -102,9 +102,18 @@ class MainViewModelTest {
     private suspend fun ReceiveTurbine<UiEffect>.awaitNonAmbientSnackbar(): UiEffect.ShowSnackbar {
         while (true) {
             val effect = awaitItem() as UiEffect.ShowSnackbar
-            if (effect.message == "Tag detected. Press Read tag to load.") continue
+            if (effect.message in AMBIENT_SNACKBARS) continue
             return effect
         }
+    }
+
+    companion object {
+        private val AMBIENT_SNACKBARS = setOf(
+            "Tag detected. Press Read tag to load.",
+            "Tag detected. Press Read to load.",
+            "Blank tag detected.",
+            "Vendor tag. Press Read to load.",
+        )
     }
 
     private fun primeFormForWrite(vm: MainViewModel) {
@@ -219,9 +228,9 @@ class MainViewModelTest {
 
         val s = vm.state.value
         assertEquals(sampleUid, s.form.cardUid)
-        // Form resets to defaults (PLA / Generic), not null.
+        // Form resets to defaults (PLA, no brand post-UI-27), not null.
         assertEquals("PLA", s.form.material?.name)
-        assertEquals("Generic", s.form.brand?.name)
+        assertNull(s.form.brand)
         assertNull(s.form.selectedSpoolId)
     }
 
@@ -471,7 +480,11 @@ class MainViewModelTest {
         vm.effects.test {
             vm.onWriteTapped()
             val emission = awaitNonAmbientSnackbar()
-            assertTrue(emission.message.contains("Couldn't write to tag"))
+            // UI-19: snackbar reframed to surface the spool-was-saved fact.
+            assertTrue(
+                "got '${emission.message}'",
+                emission.message.contains("Saved to Spoolman"),
+            )
             cancelAndIgnoreRemainingEvents()
         }
         // Form preserved.
@@ -508,7 +521,11 @@ class MainViewModelTest {
         vm.effects.test {
             vm.onWriteTapped()
             val emission = awaitNonAmbientSnackbar()
-            assertTrue(emission.message.contains("Couldn't write to tag"))
+            // UI-19: snackbar reframed for non-vendor NfcFailed too.
+            assertTrue(
+                "got '${emission.message}'",
+                emission.message.contains("Saved to Spoolman"),
+            )
             cancelAndIgnoreRemainingEvents()
         }
         assertNotNull(vm.state.value.form.material)

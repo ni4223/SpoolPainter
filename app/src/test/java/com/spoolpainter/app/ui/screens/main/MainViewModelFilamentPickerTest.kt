@@ -110,9 +110,10 @@ class MainViewModelFilamentPickerTest {
         val form = vm.state.value.form
         assertNull(form.selectedFilamentId)
         // Form snaps back to defaults — the prefilled values from the
-        // filament were only meaningful while the link existed.
+        // filament were only meaningful while the link existed. Brand
+        // defaults to null post-UI-27 (Save & Write gated until picked).
         assertEquals("PLA", form.material?.name)
-        assertEquals("Generic", form.brand?.name)
+        assertNull(form.brand)
         assertEquals("FFFFFF", form.colorHex)
     }
 

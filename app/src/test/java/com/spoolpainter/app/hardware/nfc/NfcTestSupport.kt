@@ -5,6 +5,7 @@ import com.spoolpainter.app.di.AppScope
 import com.spoolpainter.app.domain.models.OpenSpoolPayload
 import com.spoolpainter.app.domain.primitives.CardUid
 import com.spoolpainter.app.domain.primitives.OpenSpoolPayloadCodec
+import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -13,7 +14,22 @@ import kotlinx.coroutines.test.UnconfinedTestDispatcher
 
 internal object NfcTestSupport {
 
-    fun makeTag(): Tag = mockk(relaxed = true)
+    /**
+     * Builds a relaxed Tag mock with a non-null UID and an NDEF-capable
+     * techList so the post-UI-20 Writing-state pre-block (which classifies
+     * via `tag.techList` directly when records is null) treats it as Blank
+     * rather than Vendor. Tests that need a vendor tag should pass
+     * [techList] = listOf("android.nfc.tech.MifareClassic").
+     */
+    fun makeTag(
+        idHex: String = "04a1b2c3d4e580",
+        techList: List<String> = listOf("android.nfc.tech.Ndef", "android.nfc.tech.NdefFormatable"),
+    ): Tag {
+        val tag = mockk<Tag>(relaxed = true)
+        every { tag.id } returns idHex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+        every { tag.techList } returns techList.toTypedArray()
+        return tag
+    }
 
     fun samplePayload(spoolId: String? = "42"): OpenSpoolPayload =
         OpenSpoolPayload(
@@ -67,7 +83,9 @@ internal object NfcTestSupport {
         ),
     )
 
-    fun sampleUid(): CardUid = CardUid("04a1b2c3d4e580")
+    /** Uppercase to match `CardUid.fromBytes` output (NfcAdapterWrapper uses
+     *  `"%02X".format`, so all production-derived UIDs are uppercase). */
+    fun sampleUid(): CardUid = CardUid("04A1B2C3D4E580")
 
     @OptIn(ExperimentalCoroutinesApi::class)
     fun newRepository(

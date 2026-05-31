@@ -189,9 +189,11 @@ class FormMappingTest {
     fun `blankForm resets to defaults and preserves cardUid and rawWriteMode`() {
         val form = FormMapping.blankForm(uid, rawWriteMode = true)
         assertEquals(uid, form.cardUid)
-        // Form defaults: PLA / Generic / White. Variant stays null.
+        // Form defaults (UI-27): PLA material, no brand, White colour, no variant.
+        // Brand defaults to null so canSubmit gates Save & Write until the
+        // user explicitly picks/types a brand.
         assertEquals("PLA", form.material?.name)
-        assertEquals("Generic", form.brand?.name)
+        assertNull(form.brand)
         assertEquals("FFFFFF", form.colorHex)
         assertNull(form.variant)
         assertEquals(true, form.rawWriteMode)

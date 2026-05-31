@@ -122,7 +122,13 @@ class NfcRepositoryWriteVerifyTest {
     }
 
     @Test
-    fun `verify mismatch surfaces verify-mismatch error`() = runTest {
+    fun `verify mismatch path removed (UI-20) — write succeeds without verify`() = runTest {
+        // UI-20: post-write verify was disabled because the second Ndef.connect
+        // cycle made "phone moved" failures more frequent than the marginal
+        // counterfeit-chip case it caught. Test asserts the new behaviour:
+        // a write that returns successfully reaches NfcResult.Success even if
+        // a hypothetical verify readback would have mismatched. The Snapmaker
+        // round-trip (§9.2) is the real correctness gate now.
         val wrapper = FakeNfcAdapterWrapper()
         wrapper.simulateRead(sampleUid(), records = null)
         wrapper.simulateReadback(textPlainRecords("garbage"))
@@ -131,8 +137,10 @@ class NfcRepositoryWriteVerifyTest {
         repo.arm(NfcIntent.Write(samplePayload()))
         repo.handleTag(makeTag())
 
-        val err = repo.state.value as NfcResult.Error
-        assertEquals("verify mismatch (readback != written)", err.reason)
+        assertTrue(
+            "expected Success, got ${repo.state.value}",
+            repo.state.value is NfcResult.Success,
+        )
     }
 
     @Test
@@ -158,7 +166,10 @@ class NfcRepositoryWriteVerifyTest {
     }
 
     @Test
-    fun `verify throw surfaces verify-mismatch error with cause`() = runTest {
+    fun `verify-throw no longer fails write (UI-20)`() = runTest {
+        // UI-20: verify readback was commented out, so a hypothetical readback
+        // throw never gets a chance to surface as an error. Write success
+        // path is independent of the readback now.
         val wrapper = FakeNfcAdapterWrapper()
         wrapper.simulateRead(sampleUid(), records = null)
         val cause = IOException("read lost")
@@ -168,9 +179,10 @@ class NfcRepositoryWriteVerifyTest {
         repo.arm(NfcIntent.Write(samplePayload()))
         repo.handleTag(makeTag())
 
-        val err = repo.state.value as NfcResult.Error
-        assertEquals("verify mismatch", err.reason)
-        assertEquals(cause, err.cause)
+        assertTrue(
+            "expected Success, got ${repo.state.value}",
+            repo.state.value is NfcResult.Success,
+        )
     }
 
     @Test

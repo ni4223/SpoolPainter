@@ -2,6 +2,8 @@ package com.spoolpainter.app.support
 
 import com.spoolpainter.app.data.remote.spoolman.ConnectivityState
 import com.spoolpainter.app.data.remote.spoolman.ExpanderOverrides
+import com.spoolpainter.app.data.remote.spoolman.NewSpoolBundle
+import com.spoolpainter.app.data.remote.spoolman.OrphanSpool
 import com.spoolpainter.app.data.remote.spoolman.PatchFilamentBody
 import com.spoolpainter.app.data.remote.spoolman.SpoolmanApi
 import com.spoolpainter.app.data.remote.spoolman.SpoolmanApiFactory
@@ -140,6 +142,41 @@ class FakeSpoolmanRepository(
         return nextCreateSpoolResult
             ?: SpoolmanOutcome.ParseError(IllegalStateException("nextCreateSpoolResult not set"))
     }
+
+    /** Mirror of [createSpoolForNewFilament]; pretends the vendor and filament
+     *  were both freshly POSTed. Tests that need to assert the reused-record
+     *  branch can override [nextCreateSpoolBundleResult] directly. */
+    override suspend fun createSpoolForNewFilamentBundle(
+        req: NewFilamentRequest,
+    ): SpoolmanOutcome<NewSpoolBundle> {
+        createSpoolBundleCalls++
+        nextCreateSpoolBundleResult?.let { return it }
+        return when (val outcome = createSpoolForNewFilament(req)) {
+            is SpoolmanOutcome.Success -> SpoolmanOutcome.Success(
+                NewSpoolBundle(
+                    spool = outcome.data,
+                    filamentWasFresh = true,
+                    vendorWasFresh = true,
+                    filamentId = outcome.data.filament.id,
+                    vendorId = outcome.data.filament.vendor?.id,
+                ),
+            )
+            is SpoolmanOutcome.HttpError -> outcome
+            is SpoolmanOutcome.NetworkError -> outcome
+            is SpoolmanOutcome.ParseError -> outcome
+        }
+    }
+
+    var createSpoolBundleCalls: Int = 0
+    var nextCreateSpoolBundleResult: SpoolmanOutcome<NewSpoolBundle>? = null
+
+    override suspend fun chainDeleteOrphan(orphan: OrphanSpool): SpoolmanOutcome<Unit> {
+        chainDeleteOrphanCalls += orphan
+        return nextChainDeleteOrphanResult ?: SpoolmanOutcome.Success(Unit)
+    }
+
+    val chainDeleteOrphanCalls: MutableList<OrphanSpool> = mutableListOf()
+    var nextChainDeleteOrphanResult: SpoolmanOutcome<Unit>? = null
 
     override suspend fun createSpoolForExistingFilament(
         filamentId: Int,

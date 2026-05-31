@@ -900,17 +900,46 @@ resuming so this entry can be expanded with a proper `Found in` /
 
 ---
 
-## Known-broken local environment (out-of-band)
+## UI-32 — Test env fix + fixture updates for U10 install-gate
 
-**`./gradlew :app:testDebugUnitTest` fails to configure** with
-`DefaultReportContainer … Type T not present` (JDK / generic-types
-reflection issue). `:app:installDebug` and `:app:assembleRelease` are
-unaffected. Tests pending on:
+**State**: fixed (2026-05-30 install-gate post-commit)
+**Found in**: U10 install-gate close-out, 2026-05-30
+**Routing**: U10 close-out (post-commit follow-up)
 
-- UI-18 spool-X-clears-spool-only branch rewrite (`MainViewModelTest`).
-- UI-30 chain-delete unit coverage (`CreateAndPairUseCaseTest`,
-  `VendorUidOnlyPairUseCaseTest`, `MainViewModelTest`).
+After committing U10's main bundle, `./gradlew :app:testDebugUnitTest`
+was still broken locally — Gradle 8.13 fails to instantiate
+`DefaultReportContainer` under JDK 24 with `Type T not present` (Gradle
+8.13 predates JDK 24 reflection support).
 
-Out of scope of U10 close-out — to be resolved separately.
+**Fix shipped**:
+- `gradle/wrapper/gradle-wrapper.properties`: Gradle 8.13 → 8.14.3 (JDK 24
+  reflection compat).
+- Test fixtures updated to match U10 install-gate behaviour:
+  - `NfcTestSupport.makeTag()` returns a Tag with non-null UID + Ndef
+    techList, so UI-20's synthesised RawTagRead on Writing-state taps
+    classifies as Blank instead of Vendor.
+  - `sampleUid()` corrected to uppercase (`"%02X"` output of
+    `CardUid.fromBytes`); the lowercase-asserting test renamed.
+  - `FakeSpoolmanApi` gains DELETE overrides for spool/filament/vendor.
+  - `FakeSpoolmanRepository` overrides `createSpoolForNewFilamentBundle`
+    (default: both fresh) and `chainDeleteOrphan`; adds
+    `chainDeleteOrphanCalls` assertion list.
+  - Brand default `Brand("Generic")` → `null` (UI-27) — fixtures in
+    `FormMappingTest`, `MainViewModelTest`, `MainViewModelFilamentPickerTest`
+    use `assertNull` now.
+  - `awaitNonAmbientSnackbar` filters the new ambient strings (`"Blank tag
+    detected."`, `"Vendor tag. Press Read to load."`).
+  - VerifyFailed / NfcFailed snackbar assertions match UI-19 copy
+    (`"Saved to Spoolman. Tag write failed. Try again."`).
+  - `verify-mismatch` / `verify-throw` tests rewritten for UI-20 (verify
+    block removed; write success no longer depends on readback).
+  - Pair-another dismissed snackbar gains trailing period.
+
+**Verification**: 361 / 361 tests green.
+
+**Note**: dedicated chain-delete unit coverage (UI-30) deferred — the
+fixture changes prove the use cases compile against the new repo shape,
+but assertions on `chainDeleteOrphanCalls` for the failure paths are
+worth adding next session.
 
 ---
