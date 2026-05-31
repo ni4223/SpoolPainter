@@ -2,7 +2,7 @@
 
 Android app for managing 3D printer filament spools via NFC tags. Reads / writes filament metadata in [OpenSpool](https://openspool.io/) format and syncs with a self-hosted [Spoolman](https://github.com/Donkie/Spoolman) inventory.
 
-`v2.0` · `applicationId` `com.spoolpainter.app` · `minSdk 29` (Android 10+) · `targetSdk 36`
+`v2.0.1` · `applicationId` `com.spoolpainter.app` · `minSdk 29` (Android 10+) · `targetSdk 36`
 
 ---
 
@@ -33,7 +33,8 @@ It is a single-user, sideloadable Android app. No accounts, no cloud, no analyti
 - **Pair another tag** — after the first write, a sheet prompts you to tap a second tag for the same spool. Both UIDs land on the same Spoolman spool, so a printer reading either side of a two-sided spool gets the same answer.
 - **Move-on-bind** — if you tap a tag that's already paired with a different spool, the app asks before moving the binding. Confirming sweeps the UID off the source spool(s) and appends it to the target.
 - **Side modes** — Raw write (write a payload to a blank tag without binding to Spoolman) and Vendor UID-only pair (bind a vendor / non-NDEF tag's UID to a spool without writing a payload).
-- **Pickers + filament metadata** — material / variant / colour / brand pickers with custom-entry support (the "Other" affordance feels like an action, not a checkbox option), plus a "More details" expander for filament metadata (density, diameter, weight, spool weight, price) with Spoolman-verbatim descriptions on the weight fields. Edits PATCH back to Spoolman.
+- **Pickers + filament metadata** — material / variant / colour / brand pickers with custom-entry support (the "Other" affordance feels like an action, not a checkbox option), plus a "More details" expander for filament metadata (density, diameter, weight, spool weight, price) with Spoolman-verbatim descriptions on the weight fields.
+- **Edit-on-Save for existing spools** — pick a spool from the dropdown, change the Variant or any filament metadata field, tap Save & Write — the underlying filament gets PATCHed in Spoolman alongside the tag write. Round-trip with no edits is a zero-cost no-op (no spurious patches). Legacy v1 tags whose `subtype` was never written back to Spoolman get promoted into `extra.variant` on the next Save & Write. Editing material / brand / temps / colour is still parked for a future release.
 - **Auto-cleanup of orphan records** — if a Save & Write fails partway through (NFC timeout, tag pulled too early, write failure), any spool / filament / vendor records the app created in Spoolman before the failure are best-effort cleaned up so your inventory doesn't accumulate orphans.
 - **Settings**
   - Spoolman URL — Save runs a connectivity probe

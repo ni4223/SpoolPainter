@@ -156,16 +156,64 @@ open class SpoolmanRepository @Inject constructor(
             }
     }
 
+    /**
+     * Existing-spool path: resolve the spool's filament from the cache (or
+     * the network if not cached) and apply the same expander overrides as
+     * the existing-filament-new-spool path. Used by `CreateAndPairUseCase`
+     * when the user picks an already-paired spool from the dropdown but
+     * has typed new variant / metadata values.
+     *
+     * The same `applyOverridesIfNeeded` + `patchFilament.sparseDiff` chain
+     * runs underneath, so a no-op call (form auto-loaded values, user
+     * didn't edit) collapses to zero HTTP traffic.
+     */
+    open suspend fun applyOverridesToFilamentOfSpool(
+        spoolId: Int,
+        overrides: ExpanderOverrides,
+    ): SpoolmanOutcome<SpoolmanFilament> {
+        if (overrides == ExpanderOverrides.EMPTY) {
+            // Nothing to do — caller can ignore the result.
+            return SpoolmanOutcome.ParseError(IllegalStateException("no overrides"))
+        }
+        val api = cachedApi ?: return urlNotConfigured()
+        val cachedSpool = _spools.value.find { it.id == spoolId }
+        val filamentId = cachedSpool?.filament?.id
+            ?: return performHttp("getSpool") { api.getSpool(spoolId) }
+                .flatMap { spool ->
+                    val fid = spool.filament?.id
+                        ?: return@flatMap SpoolmanOutcome.ParseError(
+                            IllegalStateException("no filament on spool $spoolId"),
+                        )
+                    performHttp("getFilament") { api.getFilament(fid) }
+                        .flatMap { filament -> applyOverridesIfNeeded(filament, overrides) }
+                }
+        return performHttp("getFilament") { api.getFilament(filamentId) }
+            .flatMap { filament -> applyOverridesIfNeeded(filament, overrides) }
+    }
+
     private suspend fun applyOverridesIfNeeded(
         filament: SpoolmanFilament,
         overrides: ExpanderOverrides,
     ): SpoolmanOutcome<SpoolmanFilament> {
+        // Variant is the only "extra"-bound override here. Merge it into the
+        // existing extra map so we don't blow away other custom fields the
+        // user (or another tool) put on the filament. Encoding uses the same
+        // double-JSON-string convention as resolveOrCreateFilament line ~473
+        // so reads via decodeJsonString round-trip cleanly.
+        val variantNormalised = canonVariant(overrides.variant)
+        val mergedExtra: Map<String, String>? = if (variantNormalised == null) {
+            null
+        } else {
+            val current = filament.extra ?: emptyMap()
+            current + ("variant" to GSON.toJson(variantNormalised))
+        }
         val body = PatchFilamentBody(
             density = overrides.density,
             diameter = overrides.diameter,
             weight = overrides.weight,
             spool_weight = overrides.spoolWeight,
             price = overrides.price,
+            extra = mergedExtra,
         )
         if (body.isEmpty()) return SpoolmanOutcome.Success(filament)
         return patchFilament(filament.id, body)

@@ -198,6 +198,27 @@ class FakeSpoolmanRepository(
             ?: SpoolmanOutcome.ParseError(IllegalStateException("nextPatchFilamentResult not set"))
     }
 
+    var applyOverridesToFilamentOfSpoolCalls: Int = 0
+        private set
+    var lastApplyOverridesToFilamentOfSpool: Pair<Int, ExpanderOverrides>? = null
+        private set
+    var nextApplyOverridesToFilamentOfSpoolResult: SpoolmanOutcome<SpoolmanFilament>? = null
+
+    override suspend fun applyOverridesToFilamentOfSpool(
+        spoolId: Int,
+        overrides: ExpanderOverrides,
+    ): SpoolmanOutcome<SpoolmanFilament> {
+        applyOverridesToFilamentOfSpoolCalls++
+        lastApplyOverridesToFilamentOfSpool = spoolId to overrides
+        // Default: pretend the patch succeeded with a stub filament so the
+        // use case continues. Tests that need a specific result can set
+        // nextApplyOverridesToFilamentOfSpoolResult.
+        return nextApplyOverridesToFilamentOfSpoolResult
+            ?: SpoolmanOutcome.Success(
+                SpoolmanFilament(id = 0, vendor = null, color_hex = "FFFFFF", material = null)
+            )
+    }
+
     override suspend fun testConnection(): SpoolmanOutcome<String> =
         nextTestConnectionResult ?: SpoolmanOutcome.Success("test")
 

@@ -35,10 +35,14 @@ data class PatchFilamentBody(
 )
 
 /**
- * Five expander fields routed from the form to either
- * [CreateFilamentRequest] (new-filament path) or [PatchFilamentBody]
- * (existing-filament path). Null = "no override; use stored value or
- * call-site default."
+ * Form fields routed from the UI to either [CreateFilamentRequest]
+ * (new-filament path) or [PatchFilamentBody] (existing-filament path).
+ * Null = "no override; use stored value or call-site default."
+ *
+ * `variant` is included so editing the Variant field on an existing spool
+ * or existing filament cascades a patch to `extra.variant` (UI-13 partial,
+ * v2.0). Empty/blank variant strings are normalised to null at the
+ * applyOverridesIfNeeded boundary so they don't trigger pointless patches.
  */
 data class ExpanderOverrides(
     val density: Float? = null,
@@ -46,6 +50,7 @@ data class ExpanderOverrides(
     val weight: Float? = null,
     val spoolWeight: Float? = null,
     val price: Float? = null,
+    val variant: String? = null,
 ) {
     companion object {
         val EMPTY = ExpanderOverrides()

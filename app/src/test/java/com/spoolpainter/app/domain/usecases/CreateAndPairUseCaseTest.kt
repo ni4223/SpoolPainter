@@ -69,6 +69,63 @@ class CreateAndPairUseCaseTest {
     }
 
     @Test
+    fun `existingSpool with variant typed - patches filament with variant override`() = runTest {
+        spoolman.nextAppendCardUidResult = SpoolmanOutcome.Success(sampleSpool)
+        stageSingleTapSuccess()
+
+        // User picked spool #42, edited the Variant field to "Matte".
+        val result = useCase.invoke(
+            input(baseForm.copy(selectedSpoolId = 42, variant = "Matte")),
+        )
+
+        assertTrue("got $result", result is CreateAndPairResult.Success.WrittenAndPaired)
+        // The variant patch fired exactly once for the existing spool.
+        assertEquals(1, spoolman.applyOverridesToFilamentOfSpoolCalls)
+        // Patch was scoped to the right spool.
+        assertEquals(42, spoolman.lastApplyOverridesToFilamentOfSpool?.first)
+        // Patch carried the typed variant value.
+        assertEquals("Matte", spoolman.lastApplyOverridesToFilamentOfSpool?.second?.variant)
+        // UID still appended after the variant patch — pairing flow not aborted.
+        assertEquals(1, spoolman.appendCalls)
+    }
+
+    @Test
+    fun `existingSpool with no variant typed - still calls overrides patch (sparseDiff filters server-side)`() = runTest {
+        // The use case unconditionally calls applyOverridesToFilamentOfSpool
+        // for any non-EMPTY ExpanderOverrides. The sparseDiff inside
+        // SpoolmanRepository.patchFilament collapses no-op patches to zero
+        // HTTP traffic — so this is cheap on the wire, just visible in the
+        // fake's call counter.
+        spoolman.nextAppendCardUidResult = SpoolmanOutcome.Success(sampleSpool)
+        stageSingleTapSuccess()
+
+        val result = useCase.invoke(
+            input(baseForm.copy(selectedSpoolId = 42)), // variant defaults to null
+        )
+
+        assertTrue("got $result", result is CreateAndPairResult.Success.WrittenAndPaired)
+        assertEquals(1, spoolman.applyOverridesToFilamentOfSpoolCalls)
+        // Variant override is null when user didn't type anything.
+        assertEquals(null, spoolman.lastApplyOverridesToFilamentOfSpool?.second?.variant)
+    }
+
+    @Test
+    fun `newSpool path does NOT invoke applyOverridesToFilamentOfSpool`() = runTest {
+        // The existing-spool variant edit shouldn't run for the new-spool
+        // create path — that path handles variant via createSpoolForNewFilamentBundle
+        // / createSpoolForExistingFilament directly, not through this seam.
+        val newSpool = sampleSpool.copy(id = 99)
+        spoolman.nextCreateSpoolResult = SpoolmanOutcome.Success(newSpool)
+        spoolman.nextAppendCardUidResult = SpoolmanOutcome.Success(newSpool)
+        stageSingleTapSuccess()
+
+        val result = useCase.invoke(input(baseForm.copy(variant = "Matte")))  // selectedSpoolId = null → new-spool path
+
+        assertTrue("got $result", result is CreateAndPairResult.Success.WrittenAndPaired)
+        assertEquals(0, spoolman.applyOverridesToFilamentOfSpoolCalls)
+    }
+
+    @Test
     fun `tapFirst newSpool createsThenWritesAndVerifiesThenAppends`() = runTest {
         val newSpool = sampleSpool.copy(id = 99)
         spoolman.nextCreateSpoolResult = SpoolmanOutcome.Success(newSpool)

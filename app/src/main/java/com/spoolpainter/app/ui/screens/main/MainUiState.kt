@@ -66,6 +66,7 @@ fun FormState.toExpanderOverrides(): ExpanderOverrides = ExpanderOverrides(
     weight = fullSpoolWeightG,
     spoolWeight = emptySpoolWeightG,
     price = priceMajor,
+    variant = variant?.takeIf { it.isNotBlank() },
 )
 
 /**

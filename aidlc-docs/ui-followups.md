@@ -305,9 +305,33 @@ of the phone and try again."
 
 ## UI-13 — Update existing filament metadata when user edits prefilled fields
 
-**State**: open
+**State**: partial — variant + the 5 expander fields shipped in v2.0.1
+(2026-05-31). Temperature ranges + color hex still parked for v2.1.
 **Found in**: U8 install-time UX feedback, 2026-05-28.
-**Routing**: new unit (post-U10) or fold into U10 release polish.
+**Routing**: variant + expander shipped as a v2.0.1 patch on the testing
+track; the rest (temps, color) parked in the post-v2.0 backlog.
+
+**Shipped 2026-05-31 (v2.0.1)**: existing-spool Save & Write now invokes
+`SpoolmanRepository.applyOverridesToFilamentOfSpool(spoolId, overrides)`
+before the UID append. The new field `ExpanderOverrides.variant` carries
+the form's Variant value (blank-stripped), which the repo merges into
+`PatchFilamentBody.extra` as `{"variant": GSON.toJson(value)}` (preserves
+other extra fields the user/another tool may have set). The 5 expander
+fields (density, diameter, weight, spool_weight, price) flow through the
+same patch. `sparseDiff` collapses no-op patches (form auto-loaded,
+nothing edited) to zero HTTP. Failures are logged as warnings but do not
+abort the primary write/UID-append flow — a Spoolman hiccup shouldn't
+break the user's primary pairing action.
+
+Edge case verified: legacy v1 tags with non-`"Basic"` `subtype` get
+*promoted* into Spoolman's `extra.variant` on the first v2 Save & Write
+(form fills from the tag fallback in `MainViewModel.applyResult`, then
+the patch fires because Spoolman's stored extra differs from the merged
+body).
+
+3 new tests in `CreateAndPairUseCaseTest`: existing-spool with variant
+typed, existing-spool with no variant typed (no-op), new-spool path
+(doesn't trigger this seam). Test count **361 → 364**.
 
 Today, when the user picks a spool from the dropdown:
 - Form prefills from Spoolman, including the 5 spool-metadata fields

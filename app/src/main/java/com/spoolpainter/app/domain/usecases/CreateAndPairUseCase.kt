@@ -1,5 +1,6 @@
 package com.spoolpainter.app.domain.usecases
 
+import com.spoolpainter.app.data.remote.spoolman.ExpanderOverrides
 import com.spoolpainter.app.data.remote.spoolman.OrphanSpool
 import com.spoolpainter.app.data.remote.spoolman.SpoolmanOutcome
 import com.spoolpainter.app.data.remote.spoolman.SpoolmanRepository
@@ -75,6 +76,31 @@ open class CreateAndPairUseCase @Inject constructor(
             is ResolvedSpool.Failed -> return resolved.result
         }
         lastResolvedSpoolIdInternal = spoolId
+
+        // 1a. Existing-spool variant edit (UI-13 partial). When the user
+        //     selected an existing spool from the dropdown and typed any
+        //     non-empty Variant value, propagate it to the underlying
+        //     filament's `extra.variant`. The new-spool paths already
+        //     handle this via createSpoolForExistingFilament /
+        //     createSpoolForNewFilamentBundle, but the existing-spool path
+        //     previously dropped form-side variant edits on the floor.
+        //
+        //     `applyOverridesToFilamentOfSpool` collapses to zero HTTP
+        //     when the form auto-loaded variant matches stored — see
+        //     SpoolmanRepository.sparseDiff. So this is a no-op for users
+        //     who don't edit the field. Failures are logged but do NOT
+        //     abort the write/UID-append: a Spoolman-side hiccup
+        //     shouldn't break the primary pairing flow.
+        val overrides = snapshot.form.toExpanderOverrides()
+        if (!isNewSpool && overrides != ExpanderOverrides.EMPTY) {
+            when (val patch = spoolman.applyOverridesToFilamentOfSpool(spoolId, overrides)) {
+                is SpoolmanOutcome.Success -> Unit
+                else -> android.util.Log.w(
+                    "CreateAndPair",
+                    "applyOverridesToFilamentOfSpool failed (non-fatal): $patch",
+                )
+            }
+        }
 
         // 2. Arm Write — NfcRepository writes + verifies on the same physical
         //    tap. The use case accepts whichever tag the user taps; UID-
