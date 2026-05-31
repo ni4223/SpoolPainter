@@ -56,18 +56,60 @@ data class FormState(
     val emptySpoolWeightG: Float? = null,
     val priceMajor: Float? = null,
     val fullSpoolWeightG: Float? = DEFAULT_FILAMENT_WEIGHT_G,
-    val diameterMm: Float? = DEFAULT_DIAMETER_MM,
     val densityGPerCm3: Float? = DEFAULT_PLA_DENSITY,
+
+    // v2.0.2 — spool-scope edit fields with stale-prefill snapshots.
+    // Remaining is the single source of truth; Measured = remaining +
+    // emptySpoolWeightG is computed at the call site. Price is dispatched
+    // to spool.price (decision M); Spoolman stores it on both the spool
+    // and filament records, so the prefill snapshot tracks the spool side.
+    val remainingWeightG: Float? = null,
+    val prefilledRemainingWeightG: Float? = null,
+    val prefilledPriceMajor: Float? = null,
+    val prefilledEmptySpoolWeightG: Float? = null,
 )
 
-fun FormState.toExpanderOverrides(): ExpanderOverrides = ExpanderOverrides(
-    density = densityGPerCm3,
-    diameter = diameterMm,
-    weight = fullSpoolWeightG,
-    spoolWeight = emptySpoolWeightG,
-    price = priceMajor,
-    variant = variant?.takeIf { it.isNotBlank() },
-)
+/**
+ * Decision I/J: when an existing spool OR existing filament is selected,
+ * filament-scope spec fields lock — the override bag carries variant only,
+ * which is the single legitimate filament-record edit on those paths
+ * (defence-in-depth; the use case routes through applyVariantToFilamentOfSpool).
+ *
+ * On the new-filament path, the full override bag flows so a brand-new
+ * filament POST can carry density/weight/spool_weight/price along with the
+ * standard 1.75mm diameter (decision M+N). spoolPrice is set to the same
+ * priceMajor value so the spool record gets per-spool pricing too.
+ */
+fun FormState.toExpanderOverrides(): ExpanderOverrides {
+    // Existing-spool path: variant only. remaining_weight + price +
+    // empty-spool ride patchSpoolFields separately. Filament-spec stays
+    // locked (decision J).
+    if (selectedSpoolId != null) {
+        return ExpanderOverrides(variant = variant?.takeIf { it.isNotBlank() })
+    }
+    // Filament-picker path: filament-spec locked at the UI layer, but the
+    // new spool gets per-spool empty-spool + price set from the form.
+    if (selectedFilamentId != null) {
+        return ExpanderOverrides(
+            spoolWeightForSpool = emptySpoolWeightG,
+            spoolPrice = priceMajor,
+            variant = variant?.takeIf { it.isNotBlank() },
+        )
+    }
+    // New-filament path: full overrides. Empty-spool + price flow to BOTH
+    // the filament record (default for sibling spools) AND the spool record
+    // (per-spool override). Same defensive double-write as price (decision M).
+    return ExpanderOverrides(
+        density = densityGPerCm3,
+        diameter = null,
+        weight = fullSpoolWeightG,
+        spoolWeight = emptySpoolWeightG,
+        spoolWeightForSpool = emptySpoolWeightG,
+        price = priceMajor,
+        spoolPrice = priceMajor,
+        variant = variant?.takeIf { it.isNotBlank() },
+    )
+}
 
 /**
  * True when the form has enough content to issue a write.
@@ -115,8 +157,9 @@ private val DEFAULT_TEMP_RANGES: TempRanges = TempRanges(
 // Spoolman requires density/diameter/weight > 0 on filament create, and PLA
 // density 1.24 g/cm³ is the universal consumer baseline. Empty-spool weight
 // + price stay null because they vary too much to default sensibly.
+// Diameter no longer surfaces in the form (decision N) — always 1.75mm at
+// CreateFilamentRequest time.
 private const val DEFAULT_FILAMENT_WEIGHT_G: Float = 1000f
-private const val DEFAULT_DIAMETER_MM: Float = 1.75f
 private const val DEFAULT_PLA_DENSITY: Float = 1.24f
 
 data class SpoolmanState(

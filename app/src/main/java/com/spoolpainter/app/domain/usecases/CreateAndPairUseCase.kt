@@ -1,7 +1,7 @@
 package com.spoolpainter.app.domain.usecases
 
-import com.spoolpainter.app.data.remote.spoolman.ExpanderOverrides
 import com.spoolpainter.app.data.remote.spoolman.OrphanSpool
+import com.spoolpainter.app.data.remote.spoolman.SpoolPatchBody
 import com.spoolpainter.app.data.remote.spoolman.SpoolmanOutcome
 import com.spoolpainter.app.data.remote.spoolman.SpoolmanRepository
 import com.spoolpainter.app.domain.models.OpenSpoolPayload
@@ -77,28 +77,55 @@ open class CreateAndPairUseCase @Inject constructor(
         }
         lastResolvedSpoolIdInternal = spoolId
 
-        // 1a. Existing-spool variant edit (UI-13 partial). When the user
-        //     selected an existing spool from the dropdown and typed any
-        //     non-empty Variant value, propagate it to the underlying
-        //     filament's `extra.variant`. The new-spool paths already
-        //     handle this via createSpoolForExistingFilament /
-        //     createSpoolForNewFilamentBundle, but the existing-spool path
-        //     previously dropped form-side variant edits on the floor.
+        // 1a. Existing-spool variant edit (UI-13). Variant is the ONE
+        //     filament-scope field still editable on the existing-spool
+        //     path in v2.0.2 (decision K). Density / weight / spool_weight
+        //     / price are locked read-only at the UI layer (decision J)
+        //     and toExpanderOverrides drops them defensively, but we
+        //     route through the narrower applyVariantToFilamentOfSpool
+        //     anyway so the wire surface matches the intent.
         //
-        //     `applyOverridesToFilamentOfSpool` collapses to zero HTTP
-        //     when the form auto-loaded variant matches stored — see
-        //     SpoolmanRepository.sparseDiff. So this is a no-op for users
-        //     who don't edit the field. Failures are logged but do NOT
-        //     abort the write/UID-append: a Spoolman-side hiccup
-        //     shouldn't break the primary pairing flow.
-        val overrides = snapshot.form.toExpanderOverrides()
-        if (!isNewSpool && overrides != ExpanderOverrides.EMPTY) {
-            when (val patch = spoolman.applyOverridesToFilamentOfSpool(spoolId, overrides)) {
+        //     Failures are logged but do NOT abort the write/UID-append:
+        //     a Spoolman-side hiccup shouldn't break the primary pairing.
+        val variant = snapshot.form.variant?.takeIf { it.isNotBlank() }
+        if (!isNewSpool && variant != null) {
+            when (val patch = spoolman.applyVariantToFilamentOfSpool(spoolId, variant)) {
                 is SpoolmanOutcome.Success -> Unit
                 else -> android.util.Log.w(
                     "CreateAndPair",
-                    "applyOverridesToFilamentOfSpool failed (non-fatal): $patch",
+                    "applyVariantToFilamentOfSpool failed (non-fatal): $patch",
                 )
+            }
+        }
+
+        // 1b. Existing-spool spool-scope edits (v2.0.2 — remaining_weight +
+        //     empty-spool). Price is locked on existing-spool (revised
+        //     2026-05-31): set at acquisition, not a moving quote.
+        //     Empty-spool is now spool-scope (verified against Spoolman
+        //     models.py:46+73) and can be back-solved via Measured when
+        //     the inherited filament value is missing. Stale-prefill guard:
+        //     PATCH only when the form value differs from the prefill
+        //     snapshot (printer firmware writes remaining_weight while we
+        //     hold a stale form).
+        if (!isNewSpool) {
+            val rem = snapshot.form.remainingWeightG
+            val remPrefilled = snapshot.form.prefilledRemainingWeightG
+            val empty = snapshot.form.emptySpoolWeightG
+            val emptyPrefilled = snapshot.form.prefilledEmptySpoolWeightG
+            val remDirty = rem != null && rem != remPrefilled
+            val emptyDirty = empty != null && empty != emptyPrefilled
+            if (remDirty || emptyDirty) {
+                val body = SpoolPatchBody(
+                    remaining_weight = rem.takeIf { remDirty },
+                    spool_weight = empty.takeIf { emptyDirty },
+                )
+                when (val patch = spoolman.patchSpoolFields(spoolId, body)) {
+                    is SpoolmanOutcome.Success -> Unit
+                    else -> android.util.Log.w(
+                        "CreateAndPair",
+                        "patchSpoolFields failed (non-fatal): $patch",
+                    )
+                }
             }
         }
 

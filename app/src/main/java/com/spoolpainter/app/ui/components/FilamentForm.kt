@@ -42,13 +42,16 @@ sealed interface FormChange {
     // U8-Δ-1 — filament picker
     data class FilamentSelected(val value: SpoolmanFilament?) : FormChange
 
-    // U8-Δ-2 — More details expander
+    // U8-Δ-2 — More details expander. Diameter dropped in v2.0.2 (decision N).
     data object MoreDetailsToggled : FormChange
     data class EmptySpoolWeightChanged(val value: String) : FormChange
     data class PriceChanged(val value: String) : FormChange
     data class FullSpoolWeightChanged(val value: String) : FormChange
-    data class DiameterChanged(val value: String) : FormChange
     data class DensityChanged(val value: String) : FormChange
+
+    // v2.0.2 — spool-scope edit fields.
+    data class RemainingWeightChanged(val value: String) : FormChange
+    data class MeasuredWeightChanged(val value: String) : FormChange
 }
 
 /**
@@ -63,6 +66,15 @@ fun FilamentForm(
     customMaterial: String,
     customBrand: String,
     enabled: Boolean,
+    /**
+     * v2.0.2 — when true, Material / Brand / Color pickers grey out but
+     * Variant stays editable. Triggered when an existing spool OR existing
+     * filament is selected (decision I — eliminates the tag↔Spoolman
+     * identity desync class). Variant rides the tag write so it's safe to
+     * keep editable; identity fields would silently change the tag's
+     * identity bytes without PATCHing Spoolman.
+     */
+    identityLocked: Boolean,
     spoolmanConfigured: Boolean,
     spoolmanReachable: Boolean,
     filaments: List<SpoolmanFilament>,
@@ -73,6 +85,7 @@ fun FilamentForm(
     onChange: (FormChange) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val identityEnabled = enabled && !identityLocked
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -93,28 +106,37 @@ fun FilamentForm(
         MaterialPicker(
             selected = state.material,
             customName = customMaterial,
-            enabled = enabled,
+            enabled = identityEnabled,
             materials = materials,
             onSelect = { onChange(FormChange.MaterialPicked(it)) },
             onCustomNameChange = { onChange(FormChange.CustomMaterialChanged(it)) },
         )
 
-        VariantField(
-            value = state.variant,
-            enabled = enabled,
-            onChange = { onChange(FormChange.Variant(it)) },
-        )
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            if (identityLocked) {
+                Text(
+                    text = "Editing this updates Spoolman",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            VariantField(
+                value = state.variant,
+                enabled = enabled,
+                onChange = { onChange(FormChange.Variant(it)) },
+            )
+        }
 
         ColorPicker(
             colorHex = state.colorHex,
-            enabled = enabled,
+            enabled = identityEnabled,
             onChange = { onChange(FormChange.ColorHex(it)) },
         )
 
         BrandPicker(
             selected = state.brand,
             customName = customBrand,
-            enabled = enabled,
+            enabled = identityEnabled,
             brands = brands,
             onSelect = { onChange(FormChange.BrandPicked(it)) },
             onCustomNameChange = { onChange(FormChange.CustomBrandChanged(it)) },

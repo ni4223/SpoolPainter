@@ -305,11 +305,39 @@ of the phone and try again."
 
 ## UI-13 — Update existing filament metadata when user edits prefilled fields
 
-**State**: partial — variant + the 5 expander fields shipped in v2.0.1
-(2026-05-31). Temperature ranges + color hex still parked for v2.1.
+**State**: partial — variant editable; remaining_weight + per-spool
+price added in v2.0.2 (2026-05-31). Density / filament weight / spool
+weight / diameter walked back to read-only on existing-spool path; color
+hex + temp ranges still parked for v2.1.
 **Found in**: U8 install-time UX feedback, 2026-05-28.
-**Routing**: variant + expander shipped as a v2.0.1 patch on the testing
-track; the rest (temps, color) parked in the post-v2.0 backlog.
+**Routing**: v2.0.1 shipped variant + 5 spec fields editable on existing
+spool. v2.0.2 (2026-05-31) reframed: identity + spec locked to prevent
+tag↔Spoolman desync; remaining_weight + per-spool price added as the
+genuine spool-scope edit surface. Color + temps stay parked.
+
+**Shipped 2026-05-31 (v2.0.2)**:
+- `SpoolPatchBody.remaining_weight` + `SpoolPatchBody.price` added.
+- `SpoolmanSpool.price` + `CreateSpoolRequest.price` added (Spoolman
+  supports per-spool price; `COALESCE(spool.price, filament.price)`
+  resolution per `spool.py:191`).
+- `SpoolmanRepository.applyVariantToFilamentOfSpool` (narrow sibling)
+  + `SpoolmanRepository.patchSpoolFields` (single-call seam for
+  remaining + price).
+- New form fields: `remainingWeightG` + `prefilledRemainingWeightG` +
+  `prefilledPriceMajor`. Stale-prefill guard via snapshot equality.
+- `MoreDetailsExpander`: new Remaining + Measured row (visible only
+  when `selectedSpoolId != null`); bidirectional `measured = remaining
+  + spool_weight`; "Saved to Spoolman" caption under Weight section.
+- `DecimalField` rewritten with local string state (intermediate
+  `"1."` accepted) + per-field length caps + single-`.` filter.
+- Identity fields (Material / Brand / Color) disabled when existing
+  spool OR existing filament is selected. Filament-spec (density /
+  filament weight / spool weight) disabled on the same trigger.
+- Diameter removed from UI everywhere; defaults to 1.75mm at create
+  time. Existing non-1.75mm filaments preserved as-is.
+- Tests **364 → 376** (Δ +12). Release APK **6.95 MB** /
+  AAB **7.66 MB**. versionCode **101 → 102**, versionName
+  **2.0.1 → 2.0.2**.
 
 **Shipped 2026-05-31 (v2.0.1)**: existing-spool Save & Write now invokes
 `SpoolmanRepository.applyOverridesToFilamentOfSpool(spoolId, overrides)`

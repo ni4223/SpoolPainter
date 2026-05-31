@@ -5,6 +5,12 @@ data class SpoolmanSpool(
     val filament: SpoolmanFilament,
     val remaining_weight: Float? = null,
     val used_weight: Float = 0f,
+    val price: Float? = null,
+    // Spoolman supports spool_weight on both spool + filament records;
+    // the spool-level value overrides the filament default. Server-side
+    // create-time fallback is `spool.spool_weight = filament.spool_weight`
+    // when the request doesn't supply one (database/spool.py:56-58).
+    val spool_weight: Float? = null,
     val location: String? = null,
     val lot_nr: String? = null,
     val archived: Boolean = false,

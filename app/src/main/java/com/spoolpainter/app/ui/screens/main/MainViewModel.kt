@@ -442,9 +442,22 @@ class MainViewModel @Inject constructor(
             // user's form entries (material/brand/colour/temps/filament pick)
             // stay so they can keep editing and write a new spool against
             // them. Filament dropdown's X still does its own reset.
+            //
+            // Spool-scope fields ARE cleared though — those are meaningless
+            // without a target spool: remaining_weight + the dirty-flag
+            // snapshots (otherwise next save would PATCH a spool that no
+            // longer exists / different spool). Display fallback in
+            // MoreDetailsExpander then shows fullSpoolWeightG-derived
+            // previews based on the still-selected filament.
             _state.update { current ->
                 current.copy(
-                    form = current.form.copy(selectedSpoolId = null),
+                    form = current.form.copy(
+                        selectedSpoolId = null,
+                        remainingWeightG = null,
+                        prefilledRemainingWeightG = null,
+                        prefilledPriceMajor = null,
+                        prefilledEmptySpoolWeightG = null,
+                    ),
                     spoolman = current.spoolman.copy(selectedSpoolId = null),
                 )
             }
@@ -518,8 +531,45 @@ class MainViewModel @Inject constructor(
     fun onEmptySpoolWeightChanged(s: String) = updateFloatField(s) { form, v -> form.copy(emptySpoolWeightG = v) }
     fun onPriceChanged(s: String) = updateFloatField(s) { form, v -> form.copy(priceMajor = v) }
     fun onFullSpoolWeightChanged(s: String) = updateFloatField(s) { form, v -> form.copy(fullSpoolWeightG = v) }
-    fun onDiameterChanged(s: String) = updateFloatField(s) { form, v -> form.copy(diameterMm = v) }
     fun onDensityChanged(s: String) = updateFloatField(s) { form, v -> form.copy(densityGPerCm3 = v) }
+    fun onRemainingWeightChanged(s: String) =
+        updateFloatField(s) { form, v -> form.copy(remainingWeightG = v) }
+
+    /**
+     * Measured = remaining + emptySpoolWeightG. Two modes:
+     *
+     *  - emptySpoolWeightG is set → solve for remaining (the normal
+     *    bidirectional case; remaining is the source of truth).
+     *  - emptySpoolWeightG is null → solve for emptySpoolWeightG instead.
+     *    Lets the user back-solve empty-spool from a scale reading +
+     *    known remaining when neither the spool nor filament has one
+     *    set yet. Requires remainingWeightG to be set.
+     *
+     * If the back-solved value would be negative, skip the commit. The
+     * user is mid-typing ("9" before "950"); committing intermediate
+     * states triggers a recompute that resets the local DecimalField
+     * text via `remember(value)`, eating the keystroke. Skipping leaves
+     * the form unchanged so the user can finish typing.
+     */
+    fun onMeasuredWeightChanged(s: String) {
+        if (s.isEmpty()) {
+            _state.update { it.copy(form = it.form.copy(remainingWeightG = null)) }
+            return
+        }
+        val measured = s.toFloatOrNull() ?: return
+        val form = _state.value.form
+        val spoolWeight = form.emptySpoolWeightG
+        if (spoolWeight != null) {
+            val remaining = measured - spoolWeight
+            if (remaining < 0f) return
+            _state.update { it.copy(form = it.form.copy(remainingWeightG = remaining)) }
+        } else {
+            val remaining = form.remainingWeightG ?: return
+            val emptySpool = measured - remaining
+            if (emptySpool < 0f) return
+            _state.update { it.copy(form = it.form.copy(emptySpoolWeightG = emptySpool)) }
+        }
+    }
 
     /**
      * Empty string -> null override; non-numeric -> keep prior value (no

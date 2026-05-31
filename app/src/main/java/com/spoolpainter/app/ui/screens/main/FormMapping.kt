@@ -32,6 +32,15 @@ internal object FormMapping {
             SpoolmanUidSource.FromCardUidsOrClear ->
                 ExtraCardUidsCodec.decode(spool.extra?.get("card_uids") ?: "").firstOrNull()
         }
+        // Decision M: spool's own price preferred; filament price is
+        // fallback for legacy data without per-spool prices, and matches
+        // Spoolman's COALESCE(spool.price, filament.price) sort behaviour.
+        val effectivePrice = spool.price ?: spool.filament.price
+        // Same shape for empty-spool: spool.spool_weight overrides
+        // filament.spool_weight (Spoolman create-time inheritance from
+        // database/spool.py:56-58 — spools default to filament's
+        // spool_weight at create unless explicitly set).
+        val effectiveSpoolWeight = spool.spool_weight ?: spool.filament.spool_weight
         return FormState(
             cardUid = resolvedUid,
             material = materialData,
@@ -53,12 +62,20 @@ internal object FormMapping {
             rawWriteMode = rawWriteMode,
             // Spool metadata pulled from the parent filament record (Spoolman
             // stores these on the filament, not the spool). Null = field is
-            // unset on Spoolman; expander shows blank.
+            // unset on Spoolman; expander shows blank. Diameter no longer
+            // round-trips through the form (decision N).
             densityGPerCm3 = spool.filament.density,
-            diameterMm = spool.filament.diameter,
             fullSpoolWeightG = spool.filament.weight,
-            emptySpoolWeightG = spool.filament.spool_weight,
-            priceMajor = spool.filament.price,
+            emptySpoolWeightG = effectiveSpoolWeight,
+            priceMajor = effectivePrice,
+            // v2.0.2 — spool-scope prefill snapshots. The use case
+            // compares form values against these to decide whether
+            // patchSpoolFields fires. Snapshot must match what the form
+            // shows on initial prefill so an untouched save is a no-op.
+            remainingWeightG = spool.remaining_weight,
+            prefilledRemainingWeightG = spool.remaining_weight,
+            prefilledPriceMajor = effectivePrice,
+            prefilledEmptySpoolWeightG = effectiveSpoolWeight,
         )
     }
 
@@ -154,7 +171,6 @@ internal object FormMapping {
             selectedFilamentId = filament.id,
             rawWriteMode = rawWriteMode,
             densityGPerCm3 = filament.density,
-            diameterMm = filament.diameter,
             fullSpoolWeightG = filament.weight,
             emptySpoolWeightG = filament.spool_weight,
             priceMajor = filament.price,

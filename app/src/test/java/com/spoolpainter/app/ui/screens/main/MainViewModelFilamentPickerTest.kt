@@ -95,7 +95,6 @@ class MainViewModelFilamentPickerTest {
         assertEquals("Polymaker", form.brand?.name)
         assertEquals("FF0000", form.colorHex)
         assertEquals(1.30f, form.densityGPerCm3)
-        assertEquals(1.75f, form.diameterMm)
         assertEquals(1000f, form.fullSpoolWeightG)
         assertEquals(200f, form.emptySpoolWeightG)
     }

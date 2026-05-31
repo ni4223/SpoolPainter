@@ -197,6 +197,8 @@ fun MainScreen(
                         customMaterial = customMaterial,
                         customBrand = customBrand,
                         enabled = state.activeFlow == ActiveFlow.Idle,
+                        identityLocked = state.form.selectedSpoolId != null ||
+                            state.form.selectedFilamentId != null,
                         spoolmanConfigured = state.spoolman.urlConfigured,
                         spoolmanReachable = state.spoolman.reachable,
                         filaments = filaments,
@@ -218,32 +220,41 @@ fun MainScreen(
                                 is FormChange.EmptySpoolWeightChanged -> viewModel.onEmptySpoolWeightChanged(change.value)
                                 is FormChange.PriceChanged -> viewModel.onPriceChanged(change.value)
                                 is FormChange.FullSpoolWeightChanged -> viewModel.onFullSpoolWeightChanged(change.value)
-                                is FormChange.DiameterChanged -> viewModel.onDiameterChanged(change.value)
                                 is FormChange.DensityChanged -> viewModel.onDensityChanged(change.value)
+                                is FormChange.RemainingWeightChanged -> viewModel.onRemainingWeightChanged(change.value)
+                                is FormChange.MeasuredWeightChanged -> viewModel.onMeasuredWeightChanged(change.value)
                             }
                         },
                     )
                 }
+            }
+            val measuredWeightG = state.form.remainingWeightG?.let { rem ->
+                state.form.emptySpoolWeightG?.let { spool -> rem + spool }
             }
             MoreDetailsExpander(
                 expanded = state.form.moreDetailsExpanded,
                 enabled = state.activeFlow == ActiveFlow.Idle,
                 spoolmanConfigured = state.spoolman.urlConfigured,
                 spoolmanReachable = state.spoolman.reachable,
+                filamentSpecLocked = state.form.selectedSpoolId != null ||
+                    state.form.selectedFilamentId != null,
+                showSpoolScopeFields = state.form.selectedSpoolId != null,
                 tempRanges = state.form.tempRanges,
                 emptySpoolWeightG = state.form.emptySpoolWeightG,
                 priceMajor = state.form.priceMajor,
                 priceSuffix = state.priceSuffix,
                 fullSpoolWeightG = state.form.fullSpoolWeightG,
-                diameterMm = state.form.diameterMm,
                 densityGPerCm3 = state.form.densityGPerCm3,
+                remainingWeightG = state.form.remainingWeightG,
+                measuredWeightG = measuredWeightG,
                 onToggle = viewModel::onMoreDetailsToggled,
                 onTempRangesChange = viewModel::onTempRangesChanged,
                 onEmptySpoolWeightChange = viewModel::onEmptySpoolWeightChanged,
                 onPriceChange = viewModel::onPriceChanged,
                 onFullSpoolWeightChange = viewModel::onFullSpoolWeightChanged,
-                onDiameterChange = viewModel::onDiameterChanged,
                 onDensityChange = viewModel::onDensityChanged,
+                onRemainingChange = viewModel::onRemainingWeightChanged,
+                onMeasuredChange = viewModel::onMeasuredWeightChanged,
             )
             if (state.activeFlow == ActiveFlow.Idle) {
                 SaveAndWriteButton(

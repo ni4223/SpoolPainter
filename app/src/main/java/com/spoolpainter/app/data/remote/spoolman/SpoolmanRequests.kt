@@ -49,7 +49,9 @@ data class ExpanderOverrides(
     val diameter: Float? = null,
     val weight: Float? = null,
     val spoolWeight: Float? = null,
+    val spoolWeightForSpool: Float? = null,
     val price: Float? = null,
+    val spoolPrice: Float? = null,
     val variant: String? = null,
 ) {
     companion object {
@@ -59,11 +61,16 @@ data class ExpanderOverrides(
 
 data class CreateSpoolRequest(
     val filament_id: Int,
+    val price: Float? = null,
+    val spool_weight: Float? = null,
     val extra: Map<String, String>? = null,
 )
 
 data class SpoolPatchBody(
     val extra: Map<String, String>? = null,
+    val remaining_weight: Float? = null,
+    val price: Float? = null,
+    val spool_weight: Float? = null,
 )
 
 data class ExtraFieldDef(

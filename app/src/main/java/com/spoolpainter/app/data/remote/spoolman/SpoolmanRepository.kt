@@ -147,7 +147,14 @@ open class SpoolmanRepository @Inject constructor(
         val api = cachedApi ?: return urlNotConfigured()
         return performHttp("getFilament") { api.getFilament(filamentId) }
             .flatMap { filament -> applyOverridesIfNeeded(filament, expanderOverrides) }
-            .flatMap { filament -> createSpoolStep(api, filament) }
+            .flatMap { filament ->
+                createSpoolStep(
+                    api,
+                    filament,
+                    spoolPrice = expanderOverrides.spoolPrice,
+                    spoolWeight = expanderOverrides.spoolWeightForSpool,
+                )
+            }
             .also { outcome ->
                 if (outcome is SpoolmanOutcome.Success) {
                     prependSpool(outcome.data)
@@ -157,15 +164,52 @@ open class SpoolmanRepository @Inject constructor(
     }
 
     /**
-     * Existing-spool path: resolve the spool's filament from the cache (or
-     * the network if not cached) and apply the same expander overrides as
-     * the existing-filament-new-spool path. Used by `CreateAndPairUseCase`
-     * when the user picks an already-paired spool from the dropdown but
-     * has typed new variant / metadata values.
+     * Existing-spool variant edit (UI-13 partial). Narrow sibling of the
+     * old applyOverridesToFilamentOfSpool — handles ONLY variant. Density
+     * / weight / spool_weight / price are locked read-only on the
+     * existing-spool path in v2.0.2 (decision J), so this is the single
+     * legitimate filament-record edit from that path.
      *
-     * The same `applyOverridesIfNeeded` + `patchFilament.sparseDiff` chain
-     * runs underneath, so a no-op call (form auto-loaded values, user
-     * didn't edit) collapses to zero HTTP traffic.
+     * Reuses the existing extra-merge encoding so other extra fields the
+     * user (or another tool) put on the filament are preserved.
+     */
+    open suspend fun applyVariantToFilamentOfSpool(
+        spoolId: Int,
+        variant: String,
+    ): SpoolmanOutcome<SpoolmanFilament> {
+        val canon = canonVariant(variant)
+            ?: return SpoolmanOutcome.ParseError(IllegalStateException("blank variant"))
+        val api = cachedApi ?: return urlNotConfigured()
+        val cachedSpool = _spools.value.find { it.id == spoolId }
+        val filamentId = cachedSpool?.filament?.id
+            ?: return performHttp("getSpool") { api.getSpool(spoolId) }
+                .flatMap { spool ->
+                    val fid = spool.filament?.id
+                        ?: return@flatMap SpoolmanOutcome.ParseError(
+                            IllegalStateException("no filament on spool $spoolId"),
+                        )
+                    performHttp("getFilament") { api.getFilament(fid) }
+                        .flatMap { filament -> patchVariantIfChanged(filament, canon) }
+                }
+        return performHttp("getFilament") { api.getFilament(filamentId) }
+            .flatMap { filament -> patchVariantIfChanged(filament, canon) }
+    }
+
+    private suspend fun patchVariantIfChanged(
+        filament: SpoolmanFilament,
+        canonVariant: String,
+    ): SpoolmanOutcome<SpoolmanFilament> {
+        val storedVariant = decodeJsonString(filament.extra?.get("variant"))
+        if (storedVariant == canonVariant) return SpoolmanOutcome.Success(filament)
+        val mergedExtra = (filament.extra ?: emptyMap()) +
+            ("variant" to GSON.toJson(canonVariant))
+        return patchFilament(filament.id, PatchFilamentBody(extra = mergedExtra))
+    }
+
+    /**
+     * Existing-filament-new-spool path: resolve the filament from the cache
+     * (or the network if not cached) and apply expander overrides before
+     * spool create. Still used by [createSpoolForExistingFilament].
      */
     open suspend fun applyOverridesToFilamentOfSpool(
         spoolId: Int,
@@ -189,6 +233,27 @@ open class SpoolmanRepository @Inject constructor(
                 }
         return performHttp("getFilament") { api.getFilament(filamentId) }
             .flatMap { filament -> applyOverridesIfNeeded(filament, overrides) }
+    }
+
+    /**
+     * Single seam for spool-level PATCH. Carries `remaining_weight` and
+     * `price` together when both are dirty — one HTTP request.
+     *
+     * `extra: null` is safe — Spoolman PATCH treats omitted fields as
+     * "don't change" and Gson omits null fields from the body.
+     */
+    open suspend fun patchSpoolFields(
+        spoolId: Int,
+        body: SpoolPatchBody,
+    ): SpoolmanOutcome<SpoolmanSpool> {
+        val api = cachedApi ?: return urlNotConfigured()
+        return performHttp("patchSpool") { api.patchSpool(spoolId, body) }
+            .also { o ->
+                if (o is SpoolmanOutcome.Success) {
+                    replaceSpoolInCache(o.data)
+                    refreshAfterWrite()
+                }
+            }
     }
 
     private suspend fun applyOverridesIfNeeded(
@@ -358,7 +423,12 @@ open class SpoolmanRepository @Inject constructor(
             .flatMap { resolvedVendor ->
                 resolveOrCreateFilament(api, resolvedVendor.value, materialName, req)
                     .flatMap { resolvedFilament ->
-                        createSpoolStep(api, resolvedFilament.value).map { spool ->
+                        createSpoolStep(
+                            api,
+                            resolvedFilament.value,
+                            spoolPrice = req.expanderOverrides.spoolPrice,
+                            spoolWeight = req.expanderOverrides.spoolWeightForSpool,
+                        ).map { spool ->
                             NewSpoolBundle(
                                 spool = spool,
                                 filamentWasFresh = resolvedFilament.wasCreatedFresh,
@@ -555,9 +625,18 @@ open class SpoolmanRepository @Inject constructor(
     internal suspend fun createSpoolStep(
         api: SpoolmanApi,
         filament: SpoolmanFilament,
+        spoolPrice: Float? = null,
+        spoolWeight: Float? = null,
     ): SpoolmanOutcome<SpoolmanSpool> {
         return performHttp("createSpool") {
-            api.createSpool(CreateSpoolRequest(filament_id = filament.id, extra = null))
+            api.createSpool(
+                CreateSpoolRequest(
+                    filament_id = filament.id,
+                    price = spoolPrice,
+                    spool_weight = spoolWeight,
+                    extra = null,
+                ),
+            )
         }
     }
 

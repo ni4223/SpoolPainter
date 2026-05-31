@@ -73,12 +73,17 @@ fun BrandPicker(
                 readOnly = true,
                 enabled = enabled,
                 label = { Text("Brand") },
-                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                trailingIcon = if (enabled) {
+                    { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) }
+                } else null,
                 modifier = Modifier.menuAnchor().fillMaxWidth(),
                 textStyle = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = MaterialTheme.colorScheme.primary,
                     unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+                    disabledTextColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                    disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    disabledBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.7f),
                 ),
                 shape = RoundedCornerShape(20.dp),
             )

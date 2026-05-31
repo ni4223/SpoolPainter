@@ -5,6 +5,7 @@ import com.spoolpainter.app.data.remote.spoolman.ExpanderOverrides
 import com.spoolpainter.app.data.remote.spoolman.NewSpoolBundle
 import com.spoolpainter.app.data.remote.spoolman.OrphanSpool
 import com.spoolpainter.app.data.remote.spoolman.PatchFilamentBody
+import com.spoolpainter.app.data.remote.spoolman.SpoolPatchBody
 import com.spoolpainter.app.data.remote.spoolman.SpoolmanApi
 import com.spoolpainter.app.data.remote.spoolman.SpoolmanApiFactory
 import com.spoolpainter.app.data.remote.spoolman.SpoolmanOutcome
@@ -216,6 +217,45 @@ class FakeSpoolmanRepository(
         return nextApplyOverridesToFilamentOfSpoolResult
             ?: SpoolmanOutcome.Success(
                 SpoolmanFilament(id = 0, vendor = null, color_hex = "FFFFFF", material = null)
+            )
+    }
+
+    var applyVariantToFilamentOfSpoolCalls: Int = 0
+        private set
+    var lastApplyVariantToFilamentOfSpool: Pair<Int, String>? = null
+        private set
+    var nextApplyVariantToFilamentOfSpoolResult: SpoolmanOutcome<SpoolmanFilament>? = null
+
+    override suspend fun applyVariantToFilamentOfSpool(
+        spoolId: Int,
+        variant: String,
+    ): SpoolmanOutcome<SpoolmanFilament> {
+        applyVariantToFilamentOfSpoolCalls++
+        lastApplyVariantToFilamentOfSpool = spoolId to variant
+        return nextApplyVariantToFilamentOfSpoolResult
+            ?: SpoolmanOutcome.Success(
+                SpoolmanFilament(id = 0, vendor = null, color_hex = "FFFFFF", material = null)
+            )
+    }
+
+    var patchSpoolFieldsCalls: Int = 0
+        private set
+    var lastPatchSpoolFields: Pair<Int, SpoolPatchBody>? = null
+        private set
+    var nextPatchSpoolFieldsResult: SpoolmanOutcome<SpoolmanSpool>? = null
+
+    override suspend fun patchSpoolFields(
+        spoolId: Int,
+        body: SpoolPatchBody,
+    ): SpoolmanOutcome<SpoolmanSpool> {
+        patchSpoolFieldsCalls++
+        lastPatchSpoolFields = spoolId to body
+        return nextPatchSpoolFieldsResult
+            ?: SpoolmanOutcome.Success(
+                SpoolmanSpool(
+                    id = spoolId,
+                    filament = SpoolmanFilament(id = 0, vendor = null, color_hex = "FFFFFF", material = null),
+                ),
             )
     }
 

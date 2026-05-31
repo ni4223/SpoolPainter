@@ -118,7 +118,9 @@ fun ColorPicker(
                     NoColorIcon(size = 24.dp)
                 }
             },
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            trailingIcon = if (enabled) {
+                { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) }
+            } else null,
             modifier = Modifier
                 .menuAnchor()
                 .fillMaxWidth(),
@@ -126,6 +128,10 @@ fun ColorPicker(
             colors = OutlinedTextFieldDefaults.colors(
                 focusedBorderColor = MaterialTheme.colorScheme.primary,
                 unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+                disabledTextColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                disabledBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.7f),
+                disabledLeadingIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
             ),
             shape = RoundedCornerShape(20.dp),
         )
@@ -238,7 +244,7 @@ private fun ColorWheelDialog(
                 .fillMaxWidth(),
             shape = RoundedCornerShape(28.dp),
             elevation = CardDefaults.cardElevation(defaultElevation = 16.dp),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.7f)),
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
             ),
