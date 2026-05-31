@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools">
 
     <style name="Theme.SpoolPainter"
         parent="Theme.Material3.DayNight.NoActionBar">
@@ -9,11 +9,14 @@
     <style name="Theme.SpoolPainter.Splash"
         parent="Theme.Material3.DayNight.NoActionBar">
 
-        <item name="android:windowSplashScreenBackground">
+        <!-- Splash screen attributes are API 31+. Older versions
+             silently ignore them; the AndroidX SplashScreen library
+             handles the pre-31 fallback via postSplashScreenTheme. -->
+        <item name="android:windowSplashScreenBackground" tools:targetApi="31">
             @color/splash_bg
         </item>
 
-        <item name="android:windowSplashScreenAnimatedIcon">
+        <item name="android:windowSplashScreenAnimatedIcon" tools:targetApi="31">
             @drawable/ic_splash_logo
         </item>
 

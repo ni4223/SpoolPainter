@@ -48,11 +48,11 @@ It is a single-user, sideloadable Android app. No accounts, no cloud, no analyti
 
 ### From the Play Store testing track
 
-v2.0 ships first to a Play Store testing track. The invite link will be added here once the upload is live.
+v2.0 is on the Play Store **open testing track** — anyone with the link below can opt in.
 
-<!-- TODO: replace this placeholder with the testing-track invite link after upload -->
+[Join the testing program](https://play.google.com/apps/testing/com.spoolpainter.app)
 
-[Join the testing program](TBD)
+Once you've joined, the app shows up in the Play Store like any other install. You'll get v2.0 updates as testing-track releases land.
 
 ### Build from source
 
