@@ -25,6 +25,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.datetime.Clock
 import javax.inject.Inject
 import javax.inject.Singleton
+import com.spoolpainter.app.data.local.SettingsRepository
 
 @Singleton
 open class NfcRepository internal constructor(
@@ -32,6 +33,7 @@ open class NfcRepository internal constructor(
     private val scope: CoroutineScope,
     private val ioDispatcher: CoroutineDispatcher,
     private val clock: Clock,
+    private val settingsRepository: SettingsRepository,
     private val ttlMs: Long,
 ) {
 
@@ -41,7 +43,8 @@ open class NfcRepository internal constructor(
         @AppScope scope: CoroutineScope,
         @IoDispatcher ioDispatcher: CoroutineDispatcher,
         clock: Clock,
-    ) : this(wrapper, scope, ioDispatcher, clock, TTL_MS_DEFAULT)
+        settingsRepository: SettingsRepository,
+    ) : this(wrapper, scope, ioDispatcher, clock, settingsRepository, TTL_MS_DEFAULT)
 
     private val _state = MutableStateFlow<NfcResult>(NfcResult.Idle)
     open val state: StateFlow<NfcResult> = _state.asStateFlow()
@@ -145,7 +148,18 @@ open class NfcRepository internal constructor(
                 return
             }
         }
-        val classification = classify(raw)
+        val classification = if (isWriting) {
+            classify(raw)
+        } else {
+            val bSalt = settingsRepository.settings.value.bambuSalt
+            val smSalt = SNAPMAKER_KEY_SALT
+            val parsedPayload = tryReadAndParseWithKeys(tag, raw.records, bSalt, smSalt)
+            if (parsedPayload != null) {
+                TagClassification.OpenSpool(parsedPayload)
+            } else {
+                classify(raw)
+            }
+        }
         val now = clock.now().toEpochMilliseconds()
         _lastSeenTag.value = TagBuffer(raw.uid, classification, now)
 
@@ -336,6 +350,28 @@ open class NfcRepository internal constructor(
                 payload = json.toByteArray(Charsets.UTF_8),
             ),
         )
+    }
+
+    private fun tryReadAndParseWithKeys(
+        tag: Tag,
+        ndefRecords: List<NdefRecordView>?,
+        bambuSalt: String,
+        snapmakerSalt: String
+    ): OpenSpoolPayload? {
+        return when {
+            bambuSalt.isNotBlank() && snapmakerSalt.isNotBlank() -> {
+                TagFormatParser.parseWithBothKeys(tag, ndefRecords, bambuSalt, snapmakerSalt)
+            }
+            bambuSalt.isNotBlank() -> {
+                TagFormatParser.parseWithBambuKeys(tag, ndefRecords, bambuSalt)
+            }
+            snapmakerSalt.isNotBlank() -> {
+                TagFormatParser.parseWithSnapmakerKeys(tag, ndefRecords, snapmakerSalt)
+            }
+            else -> {
+                TagFormatParser.parseDefault(tag, ndefRecords)
+            }
+        }
     }
 
     private suspend fun transition(block: () -> NfcResult) {

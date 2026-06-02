@@ -12,4 +12,5 @@ data class SettingsUiState(
     val filamentSortKey: FilamentSortKey = FilamentSortKey.Id,
     val filamentSortDirection: SortDirection = SortDirection.Desc,
     val currency: Currency = Currency.Dollar,
+    val bambuSalt: String = "",
 )

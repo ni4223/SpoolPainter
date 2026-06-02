@@ -60,6 +60,7 @@ fun SettingsScreen(
     }
 
     var draftUrl by rememberSaveable(state.url) { mutableStateOf(state.url) }
+    var draftBambuSalt by rememberSaveable(state.bambuSalt) { mutableStateOf(state.bambuSalt) }
 
     Scaffold(
         topBar = {
@@ -114,6 +115,24 @@ fun SettingsScreen(
                     .testTag("settings-save"),
             ) {
                 Text("Save")
+            }
+            OutlinedTextField(
+                value = draftBambuSalt,
+                onValueChange = { draftBambuSalt = it },
+                singleLine = true,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("settings-bambu-salt-field"),
+                label = { Text("Bambu HKDF Salt (hex)") },
+                placeholder = { Text("Leave blank to skip Bambu auth") },
+            )
+            Button(
+                onClick = { viewModel.onBambuSaltSaved(draftBambuSalt) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("settings-bambu-salt-save"),
+            ) {
+                Text("Save Bambu Salt")
             }
             OutlinedButton(
                 onClick = viewModel::onRefreshTapped,

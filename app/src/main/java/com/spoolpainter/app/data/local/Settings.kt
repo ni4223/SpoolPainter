@@ -11,6 +11,7 @@ data class Settings(
     val filamentSortDirection: SortDirection = SortDirection.Desc,
     val themeOverride: ThemeOverride = ThemeOverride.Dark,
     val currency: Currency = Currency.Dollar,
+    val bambuSalt: String = "",
 )
 
 @Serializable

@@ -38,6 +38,7 @@ class SettingsViewModel @Inject constructor(
                 filamentSortKey = it.filamentSortKey,
                 filamentSortDirection = it.filamentSortDirection,
                 currency = it.currency,
+                bambuSalt = it.bambuSalt,
             )
         }
         .stateIn(
@@ -89,6 +90,13 @@ class SettingsViewModel @Inject constructor(
             val normalised = normaliseUrl(url)
             settings.setUrl(normalised)
             _effects.trySend(UiEffect.ShowSnackbar("URL saved"))
+        }
+    }
+
+    fun onBambuSaltSaved(salt: String) {
+        viewModelScope.launch {
+            settings.setBambuSalt(salt.trim())
+            _effects.trySend(UiEffect.ShowSnackbar("Bambu salt saved"))
         }
     }
 
