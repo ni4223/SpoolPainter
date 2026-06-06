@@ -36,6 +36,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -68,6 +69,7 @@ import com.spoolpainter.app.ui.components.sheets.PairAnotherTagUiState
 import com.spoolpainter.app.ui.components.sheets.RepairConfirmViewModel
 import com.spoolpainter.app.ui.components.spoolComparator
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
     viewModel: MainViewModel = hiltViewModel(),
@@ -81,6 +83,7 @@ fun MainScreen(
     val filaments by viewModel.filaments.collectAsStateWithLifecycle()
     val materials by viewModel.materials.collectAsStateWithLifecycle()
     val brands by viewModel.brands.collectAsStateWithLifecycle()
+    val isSpoolmanRefreshing by viewModel.isSpoolmanRefreshing.collectAsStateWithLifecycle()
     val repairConfirmState by repairConfirmViewModel.uiState.collectAsStateWithLifecycle()
     val pairAnotherState by remember(state.activeFlow) {
         derivedStateOf {
@@ -124,10 +127,23 @@ fun MainScreen(
             )
         },
     ) { padding ->
+        // F-6 (v2.0.3): pull-to-refresh wrapping the entire scroll content.
+        // Standard Material 3 PullToRefreshBox; gesture lives at the top of
+        // the page (consistent with Gmail/Twitter). Triggers a force-refresh
+        // (bypasses the throttle since this is explicitly user-initiated).
+        // No-op when Spoolman URL is not configured — viewModel's handler
+        // returns early on UrlNotConfigured outcome and the spinner just
+        // dismisses without doing real work.
+        PullToRefreshBox(
+            isRefreshing = isSpoolmanRefreshing,
+            onRefresh = viewModel::onPullToRefresh,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding),
+        ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
                 .imePadding()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 8.dp, vertical = 4.dp)
@@ -269,6 +285,7 @@ fun MainScreen(
                     onClick = viewModel::onWriteTapped,
                 )
             }
+        }
         }
     }
 }

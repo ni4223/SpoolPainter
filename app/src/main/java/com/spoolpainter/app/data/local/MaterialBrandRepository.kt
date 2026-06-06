@@ -57,6 +57,9 @@ open class MaterialBrandRepository @Inject constructor(
     )
 
     companion object {
+        // F-2 (v2.0.3): alphabetise the merged list case-insensitively, with
+        // "Other" pinned at the top as an actionable affordance (more
+        // discoverable than buried at the bottom of an A-Z scroll).
         internal fun mergeMaterials(
             presets: List<Material>,
             spoolmanMaterialNames: List<String>,
@@ -66,12 +69,17 @@ open class MaterialBrandRepository @Inject constructor(
                 .filter { it.isNotBlank() }
                 .filter { seenUpper.add(it.uppercase()) }
                 .map { name -> Material(name, 200, 220, 50, 70, density = null) }
-            return presets + derived
+            val (other, rest) = (presets + derived).partition { it.name == "Other" }
+            return other + rest.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
         }
 
         internal fun mergeBrands(
             presets: List<String>,
             vendors: List<String>,
-        ): List<String> = (presets + vendors).distinctBy { it.lowercase() }
+        ): List<String> {
+            val all = (presets + vendors).distinctBy { it.lowercase() }
+            val (other, rest) = all.partition { it == "Other" }
+            return other + rest.sortedWith(String.CASE_INSENSITIVE_ORDER)
+        }
     }
 }

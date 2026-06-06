@@ -1767,3 +1767,68 @@ Snackbar copy preserved ("Saved with one tag" / "Both tags paired"). Solves §2.
 **Context**: v2.0.1 testing-track patch — variant edit on existing filament. Awaiting commit + push + Play Console upload.
 
 ---
+
+## Tester-feedback planning session — Cluster B locked
+**Timestamp**: 2026-06-05T00:00:00Z
+**User Input**: "aidlc continue" → "We are going to work on bugs and feedback" → "New tester feedback (paste it in)" → "These are not just bugs we are working on more like things we will talk and plan, i will paste raw data" → "Weight feilds on already created feilds do not work at all" → "just collect data we talk more later" → "Can you please alphabetize the list of brands and list of materials? When reading a tag, report the tag status as blank if the tag contains no info (a blank tag). Allow app to erase a tag completely, we might not be working on all, specially erasing" → [pasted Discord chat with Proto verbatim] → "lets talk and plan" → [Cluster B drill-down: combo flow / vendor + write / UID timing / read button location / save host / save label / save enabled / after save / outer card / read label] → "save details, we will continue later tomorow"
+
+**AI Response**: Captured 15 raw feedback items (F-1..F-15) in `aidlc-docs/operations/v2.0.2-feedback-raw.md`: F-1 weight fields regression, F-2 alphabetize brand/material, F-3 blank-tag classification, F-4 erase tag, F-5 remove-tag-from-spool (closed by move-on-bind), F-6 refresh near dropdown, F-7 pair-another read mode visibility, F-8 failed-pair-another tooltip references missing button, F-9 Save & Write overloaded (heart of conversation), F-10 X behaviour asymmetry on dropdowns (intentional), F-11 Read FAB in the way, F-12 read timeout cancelable + maybe no auto-timeout, F-13 weight finnicky / Spoolman-style picker (overlaps F-1), F-14 vendor tags need explicit Save, F-15 multi-vendor decode (Proto offering Kotlin PR).
+
+Triaged into clusters: A=regression triage (F-1/F-13), B=architectural action split (F-9/F-11/F-14 + side effects), C=pair-another polish (F-7/F-8/F-12), D=quick wins (F-2/F-3/F-6), E=discoverability (F-5/F-10), F=already-roadmapped (F-4/F-15).
+
+**Cluster B locked via 9 design questions**: (1) two separate buttons no combo, (2) Save = Spoolman-only no tag (UID timing pivot — user challenged "how will save even have uid?" forcing the cleaner split), (3) Write disabled until form saved or spool selected, (4) vendor-tag Write disabled with caption, (5) Save lives at bottom of an outer Card wrapping all three sub-Cards (reverses U9b's three-independent-Cards decision), (6) Save label = "Save to Spoolman", (7) Save enabled when form has changes vs prefilled state, (8) Save success = snackbar + form stays + dropdown auto-selects + Write enabled, (9) Pair-another keeps PairAnotherTagSheet, (10) Read↔Cancel toggle with 10s safety-net timeout. Resolves F-6/F-7/F-8/F-9/F-11/F-12/F-14 fully or partially. Routes as new construction unit **U13 — Action split: Save vs Write** (not v2.0.x patch).
+
+State.md "Current Stage" updated to reflect tomorrow's resume options (Cluster A triage, Cluster D plan, F-7/F-8 polish, U13 spec authoring). Branch `v2` clean — no code changes this session.
+
+**Context**: Tester-feedback planning session — Cluster B (action split) locked; pause for tomorrow.
+
+---
+
+## Tester-feedback planning session — Cluster A triage (F-1/F-13 weight fields)
+**Timestamp**: 2026-06-06T00:00:00Z
+**User Input**: "aidlc continue" → [picked "Cluster A triage (F-1/F-13)" from the resume-path question] → "Defer all of it to U13" [picked from scope question]
+**AI Response**: Code-walked v2.0.2 weight wiring — `MoreDetailsExpander.kt` gates (`spoolmanFieldsEnabled` / `filamentSpecLocked` / `showSpoolScopeFields`) + `MainViewModel.onMeasuredWeightChanged` + `MainViewModel.onSpoolSelected` + `FormMapping.fromSpoolman` + `CreateAndPairUseCase` §1b spool-scope PATCH block + `SpoolmanRepository.patchSpoolFields` + `FormState.canSubmit`. Findings:
+
+  1. **Real silent-write bug** — `onMeasuredWeightChanged` back-solve branch (when `emptySpoolWeightG == null`) falls through to `val remaining = form.remainingWeightG ?: return`. When both empty-spool and remaining are null on an existing spool (very real case for spools with no weight set in Spoolman), each Measured keystroke updates the local `DecimalField` text via `var text by remember(value)` so the user *sees* the number appear, but the VM never commits. Save & Write fires with `remDirty=false / emptyDirty=false` → no `patchSpoolFields` PATCH → Spoolman never updated. Matches Proto's "i haven't been able to set the weight at all" verbatim. Plan §D originally specified `"Set spool weight first"` helper text on Measured when `spool_weight` is null; that helper was replaced mid-stage by the back-solve mode and never landed (`MoreDetailsExpander.kt:180-191` — `supportingText = null`).
+
+  2. **UX gap** — `filamentSpecLocked` greys filament weight + density on existing-spool path with no supportingText pointing the user to where they CAN edit weight (Remaining/Measured/Empty spool). Save & Write button label doesn't reflect that only Spoolman fields are dirty — Proto: "button then says save and write so i guess it's not saving that to spoolman?"
+
+**Routing decision (locked 2026-06-06)**: BOTH issues deferred to U13. No v2.0.3 weight hotfix. Rationale — the radio-style gross/measured/remaining picker Proto requested (Spoolman parity) eliminates the silent-keystroke bug by construction (single source of truth, no back-solve branch) AND lands naturally on U13's form-area reshape. Shipping a tactical disable + helper-text patch first would just be churn before U13 redoes the whole section.
+
+`aidlc-docs/operations/v2.0.2-feedback-raw.md` updated: F-1 + F-13 entries got Triage 2026-06-06 sections capturing the root cause + routing; "Items NOT resolved" section reclassified F-1/F-13 from "Cluster A separate triage" to "folded into U13"; new U13 scope-additions block added under Routing capturing the radio picker + caption + Save-button-truthfulness asks.
+
+Branch `v2` clean — no code changes this session. State.md "Current Stage" to be updated to remove F-1/F-13 from "Cluster A pending" and reflect U13 scope expansion.
+
+**Context**: Cluster A triage; F-1/F-13 routed into U13.
+
+---
+
+## Cluster D code generation — F-2 alphabetize + F-3 close + F-6 refresh staleness
+**Timestamp**: 2026-06-06T00:00:00Z
+**User Input**: [picked "Cluster D plan (v2.0.3 candidate)" from resume options] → "Yes — Other at top, rest alphabetized" (F-2 confirm) → "Already works — close F-3" → [F-6 multi-select: foreground + PTR + blank-tap] → "PTR on MainScreen content (Recommended)" → [picked "Continue to code generation" on the v2.0.3 plan approval] → "tested all works, also why you increased version i qont release till we have all" (after manual install + on-device verify on moto g stylus 2025 / Android 16) → [picked "Commit code as-is, no version bump yet"]
+**AI Response**: Drafted v2.0.3 Cluster D plan at `aidlc-docs/construction/plans/v2.0.3-cluster-d-plan.md`. Generated code:
+
+  - **F-2** (alphabetize): `MaterialBrandRepository.mergeMaterials/mergeBrands` companions now partition out "Other", alphabetise the rest case-insensitive (`String.CASE_INSENSITIVE_ORDER`), prepend "Other" back as actionable affordance. Single source of truth — pickers consume the ordered flow as-is. Updated `MaterialBrandRepositoryTest` (3 cases adjusted for Other-pinned-top + new "alphabetised including spoolman-derived" case + 2 new brands cases). Net 5 test cases adjusted/added.
+  - **F-3** (blank-tag report): closed in `feedback-raw.md` with triage note pointing at the existing `NfcRepository.kt:280-310` classifier + `MainViewModel.kt:250` (ambient) + `MainViewModel.kt:735` (post-Read) snackbar wiring. No code change.
+  - **F-6** (refresh staleness): three-path layered refresh.
+    - `SpoolmanRepository.refreshIfStale(force = false)` — Mutex-serialised, 5s wall-clock throttle via `kotlinx.datetime.Clock`, wraps existing `refresh()`. `force=true` bypasses throttle for user-initiated PTR. Bails early on null `cachedApi` (URL not configured → no mutex, no work).
+    - `MainActivity.onResume` — fires `lifecycleScope.launch { refreshIfStale() }` after the existing `nfcRepository.attach(this)`. Adds `@Inject lateinit var spoolmanRepository: SpoolmanRepository`.
+    - `MainViewModel.onReadTapped` — fires parallel `refreshIfStale()` (force=false) before arming the NFC tap, fire-and-forget. Comment block in code explains the race-collapsing behaviour.
+    - `MainViewModel.onPullToRefresh()` + `isSpoolmanRefreshing: StateFlow<Boolean>` — flips spinner true while in-flight, clears in `finally` so failures don't strand the UI.
+    - `MainScreen` — wraps the existing scroll Column in Material 3 `PullToRefreshBox` (Compose BOM 2024.09.00 ships M3 1.3+). `@OptIn(ExperimentalMaterial3Api::class)` added to `MainScreen` (was previously only on the dropdown helper at line 427).
+    - `FakeSpoolmanRepository` — overrides `refreshIfStale` with explicit call counters (`refreshIfStaleCalls` + `refreshIfStaleForceCalls`) + `nextRefreshIfStaleResult` so MainViewModel-side tests can verify routing without driving real HTTP through the FakeSpoolmanApi.
+  - New tests:
+    - `SpoolmanRepositoryRefreshIfStaleTest` (6 cases): first-call runs refresh, within-throttle suppress, force=true bypass, concurrent calls collapse via Mutex (3 awaitAll), no-URL returns NetworkError without HTTP, failed refresh doesn't stamp lastRefreshEpochMs (retry runs).
+    - `MainViewModelRefreshTest` (5 cases): onPullToRefresh fires force=true, re-entrancy gate, isSpoolmanRefreshing clears on success, isSpoolmanRefreshing clears on failure, onReadTapped fires force=false.
+
+Build matrix: `compileDebugKotlin` ✅ (only pre-existing warnings); `testDebugUnitTest` ✅ **390 / 390** (Δ +14 vs v2.0.2's 376; plan target ~386); `assembleDebug` ✅ 64 MB; `assembleRelease` ✅ **7.0 MB** (R8 minify, no keep-rule iteration); `bundleRelease` ✅ 7.7 MB AAB.
+
+Manual install on moto g stylus 2025 / Android 16 via `installDebug` + `am start`. User verified F-2 on Material + Brand pickers (Other at top, rest alphabetised case-insensitive), F-6 PTR (spinner shows + dismisses, double-pull within 5s force-bypass works), F-6 foreground (spool created in Spoolman web → Home → reopen app → spool in dropdown), F-6 blank-tap silent refresh (Read arm → no PTR spinner but fresh data). Quote: "tested all works".
+
+Version bump 103 → 104 / 2.0.2 → 2.0.3 was applied during code gen but **REVERTED** per user direction "qont release till we have all" — bump deferred until F-7/F-8 (or U13) also lands. Cluster D code is shippable but waits for the next testing-track release window.
+
+Branch `v2` will get a single bundled commit covering: 8 prod files modified (`MaterialBrandRepository`, `SpoolmanRepository`, `MainActivity`, `MainScreen`, `MainViewModel`) + 4 test files (`MaterialBrandRepositoryTest`, `FakeSpoolmanRepository`, new `SpoolmanRepositoryRefreshIfStaleTest`, new `MainViewModelRefreshTest`) + 2 docs (`feedback-raw.md` F-1/F-3/F-13 triage updates, `aidlc-state.md` Current Stage refresh) + 1 plan artefact (`v2.0.3-cluster-d-plan.md`) + audit.md entries.
+
+**Context**: v2.0.3 Cluster D code generation; on-device verified; version bump deferred; awaiting close-out commit.
+
+---

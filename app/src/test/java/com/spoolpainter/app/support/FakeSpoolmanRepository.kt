@@ -238,6 +238,22 @@ class FakeSpoolmanRepository(
             )
     }
 
+    // F-6 (v2.0.3) — refreshIfStale call counters for test assertions.
+    // Tracks force=true vs force=false separately so PTR vs foreground/Read
+    // paths can be verified independently without relying on the real
+    // refresh() implementation (which needs a configured URL + factory).
+    var refreshIfStaleCalls: Int = 0
+        private set
+    var refreshIfStaleForceCalls: Int = 0
+        private set
+    var nextRefreshIfStaleResult: SpoolmanOutcome<Unit> = SpoolmanOutcome.Success(Unit)
+
+    override suspend fun refreshIfStale(force: Boolean): SpoolmanOutcome<Unit> {
+        refreshIfStaleCalls++
+        if (force) refreshIfStaleForceCalls++
+        return nextRefreshIfStaleResult
+    }
+
     var patchSpoolFieldsCalls: Int = 0
         private set
     var lastPatchSpoolFields: Pair<Int, SpoolPatchBody>? = null

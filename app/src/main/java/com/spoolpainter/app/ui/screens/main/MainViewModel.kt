@@ -116,6 +116,13 @@ class MainViewModel @Inject constructor(
             (brand?.name != "Other" || customBr.isNotBlank())
     }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
+    // F-6 (v2.0.3): drives the MainScreen PullToRefreshBox spinner. Flips
+    // true while a user-initiated refresh is in flight, false when it
+    // returns (success or failure). Internal-throttled refreshes (foreground,
+    // Read-arm) don't surface here — those are silent.
+    private val _isSpoolmanRefreshing = MutableStateFlow(false)
+    val isSpoolmanRefreshing: StateFlow<Boolean> = _isSpoolmanRefreshing.asStateFlow()
+
     init {
         viewModelScope.launch {
             nfc.state.collect { value ->
@@ -302,6 +309,26 @@ class MainViewModel @Inject constructor(
         }
     }
 
+    /**
+     * F-6 (v2.0.3) — explicit user-initiated pull-to-refresh on MainScreen.
+     * Forces a refresh (bypasses the 5s throttle) and surfaces the in-flight
+     * state through [isSpoolmanRefreshing] so the Material 3 PullToRefreshBox
+     * spinner stays visible until the refresh returns. Quiet on failure —
+     * the user already gets banner-level feedback through the
+     * `state.spoolman.reachable` / `state.banner` channels.
+     */
+    fun onPullToRefresh() {
+        if (_isSpoolmanRefreshing.value) return
+        viewModelScope.launch {
+            _isSpoolmanRefreshing.value = true
+            try {
+                runCatching { spoolman.refreshIfStale(force = true) }
+            } finally {
+                _isSpoolmanRefreshing.value = false
+            }
+        }
+    }
+
     fun onReadTapped() {
         if (_state.value.activeFlow != ActiveFlow.Idle) return
         readJob?.let { job ->
@@ -309,6 +336,15 @@ class MainViewModel @Inject constructor(
                 job.cancel()
                 viewModelScope.launch { nfc.disarm() }
             }
+        }
+        // F-6 (v2.0.3): kick a Spoolman refresh in parallel with the NFC arm
+        // so a spool created in the web UI between the last refresh and this
+        // tap is in the cache by the time the tag prefill resolves. Throttled
+        // (5s) and Mutex-serialised inside the repo, so a Read+resume race
+        // collapses to a single refresh. Fire-and-forget — Read doesn't gate
+        // on refresh success.
+        viewModelScope.launch {
+            runCatching { spoolman.refreshIfStale() }
         }
         _state.update { it.copy(activeFlow = ActiveFlow.ReadingForPair) }
         readJob = viewModelScope.launch {

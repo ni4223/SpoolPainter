@@ -43,21 +43,40 @@ class MaterialBrandRepositoryTest {
         )
     }
 
-    @Test fun `materials presets only — 10 entries (incl Other)`() = runTest {
+    @Test fun `materials presets only — 10 entries with Other pinned top`() = runTest {
         val list = build().materials.first()
         assertEquals(10, list.size)
-        assertEquals("PLA", list.first().name)
-        assertTrue(list.any { it.name.equals("Other", ignoreCase = true) })
+        // F-2 (v2.0.3): "Other" is pinned at the top as actionable
+        // affordance; the rest sorts case-insensitive alphabetical.
+        assertEquals("Other", list.first().name)
+        val rest = list.drop(1)
+        assertEquals(rest.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name }), rest)
     }
 
     @Test fun `materials union spoolman filaments — case-insensitive dedup`() = runTest {
         val list = build(spoolmanFilamentMaterials = listOf("pla", "PA-CF", "PLA")).materials.first()
         // 10 presets + PA-CF (PLA dup eliminated)
         assertEquals(11, list.size)
-        // Preset PLA wins (presets enumerate first).
+        // Preset PLA wins (presets enumerate first; merge dedups before sort).
         val pla = list.first { it.name.equals("PLA", ignoreCase = true) }
         assertEquals("PLA", pla.name)
         assertEquals(190, pla.defaultMinTemp)
+    }
+
+    @Test fun `materials sorted alphabetically including spoolman-derived`() = runTest {
+        // F-2 (v2.0.3): the merge alphabetises across presets + Spoolman-
+        // derived names, so a custom material from Spoolman lands in its
+        // case-insensitive slot.
+        val list = build(spoolmanFilamentMaterials = listOf("PA-CF", "carbon-fiber"))
+            .materials.first()
+        val names = list.map { it.name }
+        // "Other" pinned top, then alphabetised.
+        assertEquals("Other", names.first())
+        // ABS < PA-CF < PETG < PLA etc. — case-insensitive.
+        val rest = names.drop(1)
+        assertEquals(rest.sortedWith(String.CASE_INSENSITIVE_ORDER), rest)
+        assertTrue(rest.contains("PA-CF"))
+        assertTrue(rest.contains("carbon-fiber"))
     }
 
     @Test fun `brands union spoolman vendors — preset spelling wins on collision`() = runTest {
@@ -87,5 +106,28 @@ class MaterialBrandRepositoryTest {
         val list = build(spoolmanFilamentMaterials = listOf("", "  ")).materials.first()
         assertEquals(MaterialPresetSource.PRESETS.size, list.size)
         assertFalse(list.any { it.name.isBlank() })
+    }
+
+    // F-2 (v2.0.3) — alphabetise + Other-pin-top for brands.
+
+    @Test fun `brands presets only — Other pinned top, rest alphabetical`() = runTest {
+        val list = build().brands.first()
+        assertEquals("Other", list.first())
+        val rest = list.drop(1)
+        assertEquals(rest.sortedWith(String.CASE_INSENSITIVE_ORDER), rest)
+    }
+
+    @Test fun `brands union vendors — alphabetised case-insensitive`() = runTest {
+        val list = build(spoolmanVendors = listOf("3DJake", "Anycubic", "yousu"))
+            .brands.first()
+        // "Other" pinned top.
+        assertEquals("Other", list.first())
+        val rest = list.drop(1)
+        // Case-insensitive ordering — "yousu" lands at the end (Y), not in
+        // a separate lowercase block.
+        assertEquals(rest.sortedWith(String.CASE_INSENSITIVE_ORDER), rest)
+        assertTrue(rest.contains("3DJake"))
+        assertTrue(rest.contains("Anycubic"))
+        assertTrue(rest.contains("yousu"))
     }
 }

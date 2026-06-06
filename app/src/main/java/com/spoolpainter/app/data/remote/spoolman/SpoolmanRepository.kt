@@ -24,7 +24,10 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.datetime.Clock
 import retrofit2.Response
 import java.io.IOException
 import java.util.concurrent.CancellationException
@@ -353,6 +356,35 @@ open class SpoolmanRepository @Inject constructor(
                     }
                 }
             }
+        }
+    }
+
+    // F-6 (v2.0.3): throttled refresh used by app-foreground hook + Read-arm
+    // path + pull-to-refresh. Mutex serialises concurrent calls so a stale
+    // foreground hook + a Read-tap landing within the same tick collapse
+    // into one refresh. force=true bypasses the throttle for explicit
+    // user-initiated PTR.
+    private val refreshMutex = Mutex()
+    @Volatile
+    private var lastRefreshEpochMs: Long? = null
+    private val MIN_REFRESH_INTERVAL_MS = 5_000L
+
+    open suspend fun refreshIfStale(force: Boolean = false): SpoolmanOutcome<Unit> {
+        // Without a configured URL there's nothing to refresh — bail before
+        // taking the mutex so PTR / foreground / Read paths are all no-ops
+        // when the user hasn't set up Spoolman yet.
+        cachedApi ?: return urlNotConfigured()
+        return refreshMutex.withLock {
+            val now = Clock.System.now().toEpochMilliseconds()
+            val last = lastRefreshEpochMs
+            if (!force && last != null && now - last < MIN_REFRESH_INTERVAL_MS) {
+                return@withLock SpoolmanOutcome.Success(Unit)
+            }
+            val outcome = refresh()
+            if (outcome is SpoolmanOutcome.Success) {
+                lastRefreshEpochMs = Clock.System.now().toEpochMilliseconds()
+            }
+            outcome
         }
     }
 
