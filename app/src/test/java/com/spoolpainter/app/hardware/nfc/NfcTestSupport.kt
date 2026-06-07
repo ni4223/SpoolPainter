@@ -93,11 +93,13 @@ internal object NfcTestSupport {
         clock: MutableClock = MutableClock(0L),
         ttlMs: Long = NfcRepository.TTL_MS_DEFAULT,
         scope: CoroutineScope = TestScope(UnconfinedTestDispatcher()),
+        settingsRepository: com.spoolpainter.app.data.local.SettingsRepository = mockk(relaxed = true),
     ): NfcRepository = NfcRepository(
         wrapper = wrapper,
         scope = scope,
         ioDispatcher = UnconfinedTestDispatcher(),
         clock = clock,
+        settingsRepository = settingsRepository,
         ttlMs = ttlMs,
     )
 }

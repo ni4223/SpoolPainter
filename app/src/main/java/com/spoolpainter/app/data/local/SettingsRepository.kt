@@ -18,6 +18,7 @@ interface SettingsRepository {
     suspend fun setFilamentSortDirection(direction: SortDirection)
     suspend fun setThemeOverride(theme: ThemeOverride)
     suspend fun setCurrency(currency: Currency)
+    suspend fun setBambuSalt(salt: String)
 }
 
 @Singleton
@@ -58,5 +59,9 @@ class SettingsRepositoryImpl @Inject constructor(
 
     override suspend fun setCurrency(currency: Currency) {
         store.updateData { it.copy(currency = currency) }
+    }
+
+    override suspend fun setBambuSalt(salt: String) {
+        store.updateData { it.copy(bambuSalt = salt) }
     }
 }
