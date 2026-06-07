@@ -996,19 +996,35 @@ class MainViewModel @Inject constructor(
                 // The user is signalling "I want to map this tag" — the
                 // previously-selected spool is stale (it doesn't own this
                 // UID). Clear it so the user picks a target deliberately.
-                val isVendor = result.classification is TagClassification.Vendor
+                val vendor = result.classification as? TagClassification.Vendor
+                val isVendor = vendor != null
+                val parsedHint = vendor?.parsedHint
                 _state.update { current ->
-                    current.copy(
-                        form = current.form.copy(
+                    val nextForm = if (parsedHint != null) {
+                        // Vendor tag with a successful Bambu/Snapmaker parse:
+                        // prefill the form from the parsed payload so the user
+                        // sees the chip's real metadata. selectedSpoolId stays
+                        // null — the user picks the Spoolman target deliberately,
+                        // then Save+Map-tag pairs it via U13's vendor write path.
+                        FormMapping.fromOpenSpool(result.uid, parsedHint, current.form.rawWriteMode)
+                    } else {
+                        current.form.copy(
                             cardUid = result.uid,
                             selectedSpoolId = if (isVendor) null else current.form.selectedSpoolId,
-                        ),
+                        )
+                    }
+                    current.copy(
+                        form = nextForm,
                         spoolman = if (isVendor) {
                             current.spoolman.copy(selectedSpoolId = null)
                         } else current.spoolman,
                         ambiguity = null,
                         activeFlow = ActiveFlow.Idle,
                     )
+                }
+                if (parsedHint != null) {
+                    _customMaterial.value = ""
+                    _customBrand.value = ""
                 }
                 if (!isVendor) {
                     _effects.trySend(UiEffect.ShowSnackbar("Blank tag detected."))
@@ -1187,10 +1203,14 @@ class MainViewModel @Inject constructor(
                         spoolman = current.spoolman.copy(selectedSpoolId = result.spoolId),
                     )
                 }
-                val msg = if (result.isNewSpool) {
-                    "Saved spool #${result.spoolId}. Tap Write to pair a tag."
-                } else {
-                    "Updated spool #${result.spoolId}."
+                val isVendor = _state.value.observedTagKind == ObservedTagKind.Vendor
+                val msg = when {
+                    result.isNewSpool && isVendor ->
+                        "Saved spool #${result.spoolId}. Finish with Map tag."
+                    result.isNewSpool ->
+                        "Saved spool #${result.spoolId}. Use Write to finish."
+                    else ->
+                        "Updated spool #${result.spoolId}."
                 }
                 _effects.trySend(UiEffect.ShowSnackbar(msg))
             }

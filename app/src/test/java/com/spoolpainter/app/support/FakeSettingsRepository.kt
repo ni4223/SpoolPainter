@@ -45,6 +45,10 @@ class FakeSettingsRepository(initial: Settings = Settings()) : SettingsRepositor
         _settings.update { it.copy(currency = currency) }
     }
 
+    override suspend fun setBambuSalt(salt: String) {
+        _settings.update { it.copy(bambuSalt = salt) }
+    }
+
     fun pushSettings(value: Settings) {
         _settings.value = value
     }

@@ -18,6 +18,7 @@ class FakeNfcRepository : NfcRepository(
     scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
     ioDispatcher = Dispatchers.Unconfined,
     clock = Clock.System,
+    settingsRepository = FakeSettingsRepository(),
     ttlMs = 5_000L,
 ) {
 

@@ -43,6 +43,17 @@ inclusion: always
 - `release` — signed with local keystore at `~/spoolpainter-release-key.jks`
   (password from env `KEYSTORE_PASSWORD` or `~/spoolpainter-keystore.pwd`)
 
+## Local toolchain
+- `adb` lives at
+  `/opt/homebrew/share/android-commandlinetools/platform-tools/adb`
+  (installed via `brew install --cask android-commandlinetools`). Already
+  on PATH via `~/.zshrc`. Install-gate flow:
+  ```bash
+  ./gradlew installDebug                         # builds + installs com.spoolpainter.app.debug
+  adb shell monkey -p com.spoolpainter.app.debug -c android.intent.category.LAUNCHER 1
+  adb logcat | grep spoolpainter                 # watch for write/read log lines
+  ```
+
 ## Conventions
 - Package: `com.spoolpainter.app.*`
 - Compose previews live next to components (`@Preview` annotations)

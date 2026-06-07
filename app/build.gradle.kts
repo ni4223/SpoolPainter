@@ -17,8 +17,8 @@ android {
         applicationId = "com.spoolpainter.app"
         minSdk = 29
         targetSdk = 36
-        versionCode = 103
-        versionName = "2.0.2"
+        versionCode = 104
+        versionName = "2.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

@@ -148,17 +148,21 @@ open class NfcRepository internal constructor(
                 return
             }
         }
-        val classification = if (isWriting) {
-            classify(raw)
-        } else {
+        // Vendor (Bambu/Snapmaker) parsing is gated to explicit Reads only —
+        // it does HKDF + multi-sector MifareClassic auth that costs hundreds
+        // of ms of phone-on-tag time. Ambient/idle taps must stay fast.
+        val isReading = _state.value is NfcResult.Reading
+        val baseClassification = classify(raw)
+        val classification = if (isReading && baseClassification is TagClassification.Vendor) {
             val bSalt = settingsRepository.settings.value.bambuSalt
-            val smSalt = SNAPMAKER_KEY_SALT
-            val parsedPayload = tryReadAndParseWithKeys(tag, raw.records, bSalt, smSalt)
+            val parsedPayload = TagFormatParser.parseVendor(tag, bSalt, SNAPMAKER_KEY_SALT)
             if (parsedPayload != null) {
-                TagClassification.OpenSpool(parsedPayload)
+                TagClassification.Vendor(baseClassification.reason, parsedHint = parsedPayload)
             } else {
-                classify(raw)
+                baseClassification
             }
+        } else {
+            baseClassification
         }
         val now = clock.now().toEpochMilliseconds()
         _lastSeenTag.value = TagBuffer(raw.uid, classification, now)
@@ -350,28 +354,6 @@ open class NfcRepository internal constructor(
                 payload = json.toByteArray(Charsets.UTF_8),
             ),
         )
-    }
-
-    private fun tryReadAndParseWithKeys(
-        tag: Tag,
-        ndefRecords: List<NdefRecordView>?,
-        bambuSalt: String,
-        snapmakerSalt: String
-    ): OpenSpoolPayload? {
-        return when {
-            bambuSalt.isNotBlank() && snapmakerSalt.isNotBlank() -> {
-                TagFormatParser.parseWithBothKeys(tag, ndefRecords, bambuSalt, snapmakerSalt)
-            }
-            bambuSalt.isNotBlank() -> {
-                TagFormatParser.parseWithBambuKeys(tag, ndefRecords, bambuSalt)
-            }
-            snapmakerSalt.isNotBlank() -> {
-                TagFormatParser.parseWithSnapmakerKeys(tag, ndefRecords, snapmakerSalt)
-            }
-            else -> {
-                TagFormatParser.parseDefault(tag, ndefRecords)
-            }
-        }
     }
 
     private suspend fun transition(block: () -> NfcResult) {

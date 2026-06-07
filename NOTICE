@@ -1,0 +1,27 @@
+SpoolPainter
+Copyright (C) 2025-2026 ni4223 and contributors
+
+This program is free software: you can redistribute it and/or modify it
+under the terms of the GNU General Public License as published by the
+Free Software Foundation, either version 3 of the License, or (at your
+option) any later version. See LICENSE for the full text.
+
+== Third-party attribution ==
+
+Snapmaker tag format support
+----------------------------
+The Snapmaker MifareClassic tag format spec, the HKDF salt constant
+(`SNAPMAKER_KEY_SALT`), and the ten RSA-2048 public keys embedded in
+`app/src/main/java/com/spoolpainter/app/hardware/nfc/SnapmakerFormat.kt`
+were derived from the openspool_tag_processor module of Snapmaker U1
+Klipper:
+
+  https://github.com/Snapmaker/u1-klipper
+
+Snapmaker/u1-klipper is published under GPL-3.0. SpoolPainter inherits
+GPL-3.0 as a result of bundling this material.
+
+PR contribution
+---------------
+The initial vendor-tag read implementation (PR #3) was contributed by
+Fabio De Simone <me@fabiodesim.one> (GitHub @ProtoxiDe22).

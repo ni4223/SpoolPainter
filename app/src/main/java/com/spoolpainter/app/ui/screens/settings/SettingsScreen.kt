@@ -30,7 +30,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -39,6 +42,10 @@ import com.spoolpainter.app.data.local.FilamentSortKey
 import com.spoolpainter.app.data.local.SpoolSortKey
 import com.spoolpainter.app.ui.common.UiEffect
 import com.spoolpainter.app.ui.components.ThemeToggleSwitch
+
+// TODO(open-test-only): remove the Send feedback row + this URL before promoting
+//   to production. Tester feedback channel; not for general release.
+private const val FEEDBACK_URL = "https://forms.gle/Yx94vLHCSaBWRL1m9"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -59,7 +66,7 @@ fun SettingsScreen(
     }
 
     var draftUrl by rememberSaveable(state.url) { mutableStateOf(state.url) }
-    var draftBambuSalt by rememberSaveable(state.bambuSalt) { mutableStateOf(state.bambuSalt) }
+    val context = LocalContext.current
 
     Scaffold(
         topBar = {
@@ -115,24 +122,6 @@ fun SettingsScreen(
             ) {
                 Text("Save")
             }
-            OutlinedTextField(
-                value = draftBambuSalt,
-                onValueChange = { draftBambuSalt = it },
-                singleLine = true,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("settings-bambu-salt-field"),
-                label = { Text("Bambu HKDF Salt (hex)") },
-                placeholder = { Text("Leave blank to skip Bambu auth") },
-            )
-            Button(
-                onClick = { viewModel.onBambuSaltSaved(draftBambuSalt) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("settings-bambu-salt-save"),
-            ) {
-                Text("Save Bambu Salt")
-            }
             OutlinedButton(
                 onClick = viewModel::onRefreshTapped,
                 modifier = Modifier
@@ -166,6 +155,26 @@ fun SettingsScreen(
                 onSelect = viewModel::onCurrencyChanged,
                 testTag = "settings-currency",
             )
+            SettingsVendorSection(
+                bambuSalt = state.bambuSalt,
+                onBambuSaltSaved = viewModel::onBambuSaltSaved,
+                testTag = "settings-vendor",
+            )
+            androidx.compose.foundation.layout.Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
+            ) {
+                androidx.compose.material3.TextButton(
+                    onClick = {
+                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(FEEDBACK_URL))
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        context.startActivity(intent)
+                    },
+                    modifier = Modifier.testTag("settings-feedback"),
+                ) {
+                    Text("Send feedback")
+                }
+            }
         }
     }
 }

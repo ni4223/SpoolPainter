@@ -1234,3 +1234,35 @@ filament-record unlock + currency dropdown. Tester turnaround on a
 v2.0.3 testing-track upload is more valuable than batching archive
 into the same release. Carve as a v2.1.x patch after the v2.0.3
 push lands.
+
+## UI-37 — Send feedback row in Settings (open-test only)
+
+**State**: open (intentional, must remove before prod promotion)
+**Found in**: U14 close-out, 2026-06-07
+**Routing**: remove before promoting v2.1 from Open testing to
+production track.
+
+A "Send feedback" `OutlinedButton` was added to the bottom of
+Settings as part of v2.1, opening a Google Form
+(`https://forms.gle/Yx94vLHCSaBWRL1m9`) via `Intent.ACTION_VIEW`.
+Purpose: give Open testing-track testers a one-tap channel back to
+the maintainer.
+
+**Code location**: `app/src/main/java/com/spoolpainter/app/ui/screens/settings/SettingsScreen.kt`
+- `FEEDBACK_URL` const (file-private, marked `TODO(open-test-only)`)
+- `OutlinedButton` rendered after `SettingsVendorSection`
+- Test tag: `settings-feedback`
+
+**Why this needs to come out before prod**:
+- The form URL is a personal Google Form tied to a specific account.
+  Production users hitting it create noise + can't be triaged at scale.
+- "Send feedback" implies a support channel SpoolPainter doesn't have.
+  Removing the row keeps user expectations honest.
+- The TODO marker in code is the durable reminder; this entry is the
+  "don't lose this" record.
+
+**To remove**:
+1. Delete the `FEEDBACK_URL` const + the `OutlinedButton` block.
+2. Drop the `LocalContext` + `Intent` + `Uri` imports if no other
+   call site needs them (currently the only consumer in this file).
+3. Drop the test-tag from any test that asserts on it (none today).

@@ -2,7 +2,7 @@
 
 Android app for managing 3D printer filament spools via NFC tags. Reads / writes filament metadata in [OpenSpool](https://openspool.io/) format and syncs with a self-hosted [Spoolman](https://github.com/Donkie/Spoolman) inventory.
 
-`v2.0.2` · `applicationId` `com.spoolpainter.app` · `minSdk 29` (Android 10+) · `targetSdk 36`
+`v2.1` · `applicationId` `com.spoolpainter.app` · `minSdk 29` (Android 10+) · `targetSdk 36`
 
 ---
 
@@ -23,11 +23,19 @@ It is a single-user, sideloadable Android app. No accounts, no cloud, no analyti
 
 | Pair another tag | Settings | Move-on-bind |
 |---|---|---|
-| ![Pair another tag sheet](screenshots/04-pair-another.png) | ![Settings screen](screenshots/05-settings.png) | ![Move-on-bind confirm](screenshots/06-move-on-bind.png) |
+| ![Pair another tag sheet](screenshots/04-pair-another.png) | ![Settings screen with Advanced section](screenshots/05-settings.png) | ![Move-on-bind confirm](screenshots/06-move-on-bind.png) |
 
-| Vendor tag chip | | |
+| Vendor tag chip | Vendor tag prefilled | Weight: Remaining / Measured |
 |---|---|---|
-| ![Vendor tag classification](screenshots/07-vendor-chip.png) | | |
+| ![Vendor tag classification](screenshots/07-vendor-chip.png) | ![Snapmaker tag prefilled](screenshots/08-vendor-read.png) | ![Weight radio with Measured selected](screenshots/09-weight-radio.png) |
+
+## What's new in v2.1
+
+- **Save and Write are separate buttons.** Save commits the form to Spoolman (no NFC). Write does the tag pairing in a second tap. Either button flips to a full-width Cancel during its own tag-waiting flow.
+- **Vendor tag read.** Snapmaker tags decode out of the box. Settings → Advanced takes an optional tag key for additional vendor formats. Decoded tags prefill the form like OpenSpool tags; pairing then runs the standard "Map tag" flow (UID-only, no NDEF write to the chip).
+- **Radio weight picker.** Remaining and Measured are now mutually-exclusive options on a segmented row. The active method's input field renders below; the inactive one is hidden. No more silent keystroke loss when the form was missing an empty-spool weight.
+- **Edit more on existing spools.** Color, density, filament weight, temperatures, and per-spool price are now editable on the existing-spool path; Save patches the underlying filament record. Material and brand stay locked (changing those means you picked the wrong filament — pick a different one instead).
+- **22-currency dropdown** in Settings (was 3 segmented options).
 
 ## What v2.0 does
 
@@ -38,14 +46,15 @@ It is a single-user, sideloadable Android app. No accounts, no cloud, no analyti
 - **Move-on-bind** — if you tap a tag that's already paired with a different spool, the app asks before moving the binding. Confirming sweeps the UID off the source spool(s) and appends it to the target.
 - **Side modes** — Raw write (write a payload to a blank tag without binding to Spoolman) and Vendor UID-only pair (bind a vendor / non-NDEF tag's UID to a spool without writing a payload).
 - **Pickers + filament metadata** — material / variant / colour / brand pickers with custom-entry support (the "Other" affordance feels like an action, not a checkbox option), plus a "Filament metadata" expander for filament weight, empty spool weight, density, and price. Diameter defaults to 1.75mm at create — no UI surface (edit non-1.75mm filaments via Spoolman web). Variant lives on the main form because it also rides the tag write.
-- **Edit a paired spool** (v2.0.2) — pick a spool from the dropdown, edit Remaining weight or per-spool Price / Empty spool, tap Save & Write. The spool record gets PATCHed in Spoolman alongside the tag write; identity fields (Material / Brand / Colour / filament-spec) are locked to prevent silent tag↔Spoolman desync. **Bidirectional Remaining + Measured row** — type either one and the other recomputes from the empty-spool weight; back-solve mode lets you fill an unknown empty-spool weight by typing a scale reading + known remaining. Stale-prefill guard: opening an aged form and saving without edits never overwrites Spoolman's fresher value (printer firmware decrements remaining_weight in the background). Legacy v1 tags whose `subtype` was never written back get promoted into `extra.variant` on the next Save & Write.
-- **Per-spool price + empty-spool override** — Spoolman supports both at the spool record level (overriding the filament default per `COALESCE(spool.price, filament.price)` semantics). v2.0.2 wires this end-to-end: editable when creating a new spool, locked on existing-spool path because price is set at acquisition (use Spoolman web to fix mistakes). Empty-spool override is editable everywhere a spool exists, including back-solving via Measured.
+- **Edit a paired spool** — pick a spool from the dropdown, edit weight + metadata, tap Save (and Write to push to the tag if needed). The spool / filament records get PATCHed in Spoolman; the **stale-prefill guard** ensures opening an aged form and saving without edits never overwrites Spoolman's fresher value (printer firmware decrements remaining_weight in the background). Legacy v1 tags whose `subtype` was never written back get promoted into `extra.variant` on the next Write.
+- **Per-spool price + empty-spool override** — Spoolman supports both at the spool record level (overriding the filament default per `COALESCE(spool.price, filament.price)` semantics). Editable when creating a new spool; the existing-spool path also unlocks price as a per-spool override (v2.1).
 - **Auto-cleanup of orphan records** — if a Save & Write fails partway through (NFC timeout, tag pulled too early, write failure), any spool / filament / vendor records the app created in Spoolman before the failure are best-effort cleaned up so your inventory doesn't accumulate orphans.
 - **Settings**
   - Spoolman URL — Save runs a connectivity probe
   - Independent sort orders for the spool dropdown (Material / Brand / ID / Last Used) and the filament picker (Material / Brand / ID), each with Asc/Desc segmented controls
   - Theme toggle (Light / Dark) on the Settings top app bar
-  - Currency for the price field: $ / € / ¤
+  - Currency for the price field — 22-entry dropdown
+  - **Advanced** (collapsed by default) — optional tag key for additional vendor tag formats
 - **Spoolman gating** — the Spoolman-dependent form sections hide entirely when no URL is configured, and disable (still visible) when the URL is configured but the server is unreachable. The temperature section stays usable in all states because temps live on the tag, not in Spoolman.
 - **Keyboard-aware UI** — snackbar messages slide above the IME keyboard so confirmations and errors aren't hidden mid-edit.
 - **In-place v1 → v2 update** — same package id (`com.spoolpainter.app`). v2 installs over v1; no data migration is needed because data lives on tags + Spoolman, not in the app.
@@ -92,7 +101,7 @@ For release builds (signed APK / AAB), you also need a local keystore at `~/spoo
 ## NFC compatibility
 
 - **Tag types**: NDEF-formattable tags. NTAG215 / NTAG216 give the most headroom; NTAG213 works but is tighter.
-- **Vendor / non-NDEF tags**: in v2.0 these are *classified* (the app surfaces them as vendor tags rather than crashing) but their content is not decoded. Decoding vendor-encoded content (Bambu / Creality / etc.) is planned for v2.1.
+- **Vendor / non-NDEF tags**: read-only support since v2.1. Snapmaker decodes out of the box. Other vendor formats can be unlocked by supplying a tag key in Settings → Advanced (the app does not bundle vendor keys). Decoded tags prefill the form; pairing then runs the standard UID-only "Map tag" flow (no NDEF write to a vendor chip — those chips can't accept one). Decoding only runs on an explicit Read tap, not on passive ambient taps.
 
 ## Privacy
 
@@ -101,13 +110,11 @@ For release builds (signed APK / AAB), you also need a local keystore at `~/spoo
 - The Spoolman URL you configure in Settings is the only network destination. The app uses HTTP (cleartext) by default because Spoolman is typically self-hosted on a LAN.
 - Tag data is read / written directly between the phone and the NFC tag — nothing else sees it.
 
-## What's coming next (v2.1, planned)
+## What's coming next (v2.1.x, planned)
 
-- Vendor tag content decoding (Bambu / Creality / Anycubic / Snapmaker / TigerTag etc. read directly without re-pairing).
-- Per-vendor key list in Settings with keystore-backed encrypted storage.
-- Re-pair flow for changing a spool's material / brand / colour after pairing (today these are locked on existing-spool to prevent tag↔Spoolman desync; v2.1 will let you re-pair the spool to a different filament).
-- Edit temperature ranges + colour on existing spools.
-- Archive a spool from the app.
+- Re-pair flow for changing a spool's material / brand after pairing (today material + brand are locked on existing-spool because changing them means "wrong filament picked"; a re-pair flow lets you switch to a different filament cleanly).
+- Archive a spool / filament from the app (today archiving requires the Spoolman web UI).
+- Additional vendor tag formats on the same opt-in key model.
 
 ## Tech stack (developer notes)
 
@@ -141,7 +148,8 @@ Bug reports and testing feedback welcome — open a GitHub issue. PRs against th
 
 ## License
 
-A LICENSE file will be added in a future revision.
+GPL-3.0 — see [LICENSE](LICENSE) for the full text and [NOTICE](NOTICE)
+for third-party attribution.
 
 ## Acknowledgements
 

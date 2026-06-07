@@ -58,6 +58,13 @@ internal class FakeNfcAdapterWrapper : NfcAdapterWrapper(adapter = null, dispatc
         nextRead = { RawTagRead(uid, records, listOf("android.nfc.tech.NdefFormatable")) }
     }
 
+    fun simulateRead(uid: CardUid, records: List<NdefRecordView>?, techList: List<String>) {
+        // Vendor-classification tests need to drive techList directly so the
+        // classifier sees MifareClassic / no-Ndef / etc. without going through
+        // the simulateRead default.
+        nextRead = { RawTagRead(uid, records, techList) }
+    }
+
     fun simulateReadThrow(throwable: Throwable) {
         nextRead = { throw throwable }
     }

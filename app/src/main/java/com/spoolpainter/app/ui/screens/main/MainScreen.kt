@@ -194,6 +194,10 @@ fun MainScreen(
                 onPairAnotherAccept = viewModel::onPairAnotherTagAccepted,
                 onPairAnotherDismiss = viewModel::onPairAnotherTagDismissed,
             )
+            val parsedVendor = (state.nfc as? com.spoolpainter.app.domain.primitives.NfcResult.Success)
+                ?.classification
+                ?.let { it as? com.spoolpainter.app.domain.primitives.TagClassification.Vendor }
+                ?.parsedHint != null
             VendorTagHint(
                 observed = state.observedTagKind,
                 hasUid = state.observedTagUid != null,
@@ -201,6 +205,7 @@ fun MainScreen(
                 alreadyLinked = state.spoolman.selectedSpoolId != null,
                 showChip = state.nfc is com.spoolpainter.app.domain.primitives.NfcResult.Success ||
                     state.spoolman.selectedSpoolId != null,
+                parsed = parsedVendor,
             )
             AmbiguityBlock(state.ambiguity)
 
@@ -936,6 +941,7 @@ private fun VendorTagHint(
     urlConfigured: Boolean,
     alreadyLinked: Boolean,
     showChip: Boolean,
+    parsed: Boolean,
 ) {
     if (!showChip || observed != ObservedTagKind.Vendor || !hasUid) return
     val body = when {
@@ -964,11 +970,13 @@ private fun VendorTagHint(
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.tertiary,
             )
-            Text(
-                text = body,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            if (!parsed) {
+                Text(
+                    text = body,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }
