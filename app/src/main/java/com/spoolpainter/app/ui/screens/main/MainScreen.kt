@@ -1,14 +1,24 @@
 package com.spoolpainter.app.ui.screens.main
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -25,7 +35,6 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -62,7 +71,7 @@ import com.spoolpainter.app.ui.common.UiEffect
 import com.spoolpainter.app.ui.components.FilamentForm
 import com.spoolpainter.app.ui.components.FormChange
 import com.spoolpainter.app.ui.components.MoreDetailsExpander
-import com.spoolpainter.app.ui.components.SaveAndWriteButton
+import com.spoolpainter.app.ui.components.SaveToSpoolmanButton
 import com.spoolpainter.app.ui.components.SpoolPainterLogo
 import com.spoolpainter.app.ui.components.sheets.BottomSheetHost
 import com.spoolpainter.app.ui.components.sheets.PairAnotherTagUiState
@@ -79,7 +88,10 @@ fun MainScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val customMaterial by viewModel.customMaterial.collectAsStateWithLifecycle()
     val customBrand by viewModel.customBrand.collectAsStateWithLifecycle()
+    val canSave by viewModel.canSave.collectAsStateWithLifecycle()
     val canWrite by viewModel.canWrite.collectAsStateWithLifecycle()
+    val isReadInFlight by viewModel.isReadInFlight.collectAsStateWithLifecycle()
+    val isWriteCancellable by viewModel.isWriteCancellable.collectAsStateWithLifecycle()
     val filaments by viewModel.filaments.collectAsStateWithLifecycle()
     val materials by viewModel.materials.collectAsStateWithLifecycle()
     val brands by viewModel.brands.collectAsStateWithLifecycle()
@@ -107,26 +119,46 @@ fun MainScreen(
         }
     }
 
+    val configuration = androidx.compose.ui.platform.LocalConfiguration.current
+    val snackbarLift = (configuration.screenHeightDp * 0.25f).dp
     Scaffold(
         snackbarHost = {
-            // Bottom-anchored, lifted enough to clear both the Read FAB
-            // (56dp) and the Save & Write button (48dp inside the form's
-            // scrolling Column) plus column spacing + the system gesture
-            // bar inset. imePadding keeps it visible with the keyboard up.
+            // Lifted into the lower-middle of the screen (about 18% above
+            // the bottom inset) so important transient messages don't hug
+            // the gesture bar. Custom Snackbar with bodyLarge text +
+            // generous padding for legibility.
             SnackbarHost(
                 hostState = snackbarHostState,
                 modifier = Modifier
                     .imePadding()
-                    .padding(bottom = 160.dp),
-            )
-        },
-        floatingActionButton = {
-            ReadFab(
-                isReading = state.activeFlow == ActiveFlow.ReadingForPair,
-                onClick = viewModel::onReadTapped,
+                    .navigationBarsPadding()
+                    .padding(bottom = snackbarLift, start = 16.dp, end = 16.dp),
+                snackbar = { data ->
+                    Surface(
+                        shape = RoundedCornerShape(20.dp),
+                        color = MaterialTheme.colorScheme.inverseSurface,
+                        contentColor = MaterialTheme.colorScheme.inverseOnSurface,
+                        tonalElevation = 6.dp,
+                        shadowElevation = 8.dp,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(
+                            text = data.visuals.message,
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
+                        )
+                    }
+                },
             )
         },
     ) { padding ->
+        // Box stacks: page content underneath, centered NFC status overlay
+        // on top while a tag-waiting flow is running.
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding),
+        ) {
         // F-6 (v2.0.3): pull-to-refresh wrapping the entire scroll content.
         // Standard Material 3 PullToRefreshBox; gesture lives at the top of
         // the page (consistent with Gmail/Twitter). Triggers a force-refresh
@@ -137,9 +169,7 @@ fun MainScreen(
         PullToRefreshBox(
             isRefreshing = isSpoolmanRefreshing,
             onRefresh = viewModel::onPullToRefresh,
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
+            modifier = Modifier.fillMaxSize(),
         ) {
         Column(
             modifier = Modifier
@@ -164,31 +194,6 @@ fun MainScreen(
                 onPairAnotherAccept = viewModel::onPairAnotherTagAccepted,
                 onPairAnotherDismiss = viewModel::onPairAnotherTagDismissed,
             )
-            ReadingHint(state.activeFlow, state.nfc)
-            WritingHint(state.activeFlow, state.nfc)
-            if (state.spoolman.urlConfigured) {
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("main-spoolman-card"),
-                    shape = RoundedCornerShape(20.dp),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 5.dp),
-                ) {
-                    Column(modifier = Modifier.padding(10.dp)) {
-                        SpoolmanDropdown(
-                            spools = state.spoolman.spools,
-                            sortKey = state.spoolSortKey,
-                            sortDirection = state.spoolSortDirection,
-                            selectedId = state.spoolman.selectedSpoolId,
-                            enabled = state.activeFlow == ActiveFlow.Idle && state.spoolman.reachable,
-                            onSelect = viewModel::onSpoolSelected,
-                        )
-                    }
-                }
-            }
-            // Vendor chip only on active engagement: post-Read (NfcResult.Success
-            // observed) or user picked a spool from the dropdown. Bare passive
-            // taps stay quiet — the once-per-session snackbar hint covers them.
             VendorTagHint(
                 observed = state.observedTagKind,
                 hasUid = state.observedTagUid != null,
@@ -198,96 +203,336 @@ fun MainScreen(
                     state.spoolman.selectedSpoolId != null,
             )
             AmbiguityBlock(state.ambiguity)
+
+            // U13 §1.3 — single outer Card wrapping the three editable
+            // sections (Spoolman dropdown / FilamentForm / MoreDetailsExpander)
+            // plus the Save button. Inner sections render as elevation-0 Cards
+            // with a thin surfaceVariant border (Q-U13-3=B) — preserves
+            // visual section separation while signalling "all in one
+            // container that saves together."
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .testTag("main-form-card"),
+                    .testTag("main-outer-card"),
                 shape = RoundedCornerShape(20.dp),
                 elevation = CardDefaults.cardElevation(defaultElevation = 5.dp),
             ) {
                 Column(
                     modifier = Modifier.padding(10.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    FilamentForm(
-                        state = state.form,
-                        customMaterial = customMaterial,
-                        customBrand = customBrand,
-                        enabled = state.activeFlow == ActiveFlow.Idle,
-                        identityLocked = state.form.selectedSpoolId != null ||
-                            state.form.selectedFilamentId != null,
-                        spoolmanConfigured = state.spoolman.urlConfigured,
-                        spoolmanReachable = state.spoolman.reachable,
-                        filaments = filaments,
-                        materials = materials,
-                        brands = brands,
-                        filamentSortKey = state.filamentSortKey,
-                        filamentSortDirection = state.filamentSortDirection,
-                        onChange = { change ->
-                            when (change) {
-                                is FormChange.MaterialPicked -> viewModel.onMaterialPicked(change.value)
-                                is FormChange.CustomMaterialChanged -> viewModel.onCustomMaterialChanged(change.value)
-                                is FormChange.BrandPicked -> viewModel.onBrandPicked(change.value)
-                                is FormChange.CustomBrandChanged -> viewModel.onCustomBrandChanged(change.value)
-                                is FormChange.ColorHex -> viewModel.onColorHexChanged(change.value)
-                                is FormChange.Variant -> viewModel.onVariantChanged(change.value)
-                                is FormChange.TempRangesChanged -> viewModel.onTempRangesChanged(change.value)
-                                is FormChange.FilamentSelected -> viewModel.onFilamentSelected(change.value)
-                                is FormChange.MoreDetailsToggled -> viewModel.onMoreDetailsToggled()
-                                is FormChange.EmptySpoolWeightChanged -> viewModel.onEmptySpoolWeightChanged(change.value)
-                                is FormChange.PriceChanged -> viewModel.onPriceChanged(change.value)
-                                is FormChange.FullSpoolWeightChanged -> viewModel.onFullSpoolWeightChanged(change.value)
-                                is FormChange.DensityChanged -> viewModel.onDensityChanged(change.value)
-                                is FormChange.RemainingWeightChanged -> viewModel.onRemainingWeightChanged(change.value)
-                                is FormChange.MeasuredWeightChanged -> viewModel.onMeasuredWeightChanged(change.value)
+                    if (state.spoolman.urlConfigured) {
+                        InnerSectionCard(testTag = "main-spoolman-card") {
+                            SpoolmanDropdown(
+                                spools = state.spoolman.spools,
+                                sortKey = state.spoolSortKey,
+                                sortDirection = state.spoolSortDirection,
+                                selectedId = state.spoolman.selectedSpoolId,
+                                enabled = state.activeFlow == ActiveFlow.Idle && state.spoolman.reachable,
+                                onSelect = viewModel::onSpoolSelected,
+                            )
+                        }
+                    }
+                    InnerSectionCard(testTag = "main-form-card") {
+                        FilamentForm(
+                            state = state.form,
+                            customMaterial = customMaterial,
+                            customBrand = customBrand,
+                            enabled = state.activeFlow == ActiveFlow.Idle,
+                            identityLocked = state.form.selectedSpoolId != null ||
+                                state.form.selectedFilamentId != null,
+                            spoolmanConfigured = state.spoolman.urlConfigured,
+                            spoolmanReachable = state.spoolman.reachable,
+                            filaments = filaments,
+                            materials = materials,
+                            brands = brands,
+                            filamentSortKey = state.filamentSortKey,
+                            filamentSortDirection = state.filamentSortDirection,
+                            onChange = { change ->
+                                when (change) {
+                                    is FormChange.MaterialPicked -> viewModel.onMaterialPicked(change.value)
+                                    is FormChange.CustomMaterialChanged -> viewModel.onCustomMaterialChanged(change.value)
+                                    is FormChange.BrandPicked -> viewModel.onBrandPicked(change.value)
+                                    is FormChange.CustomBrandChanged -> viewModel.onCustomBrandChanged(change.value)
+                                    is FormChange.ColorHex -> viewModel.onColorHexChanged(change.value)
+                                    is FormChange.Variant -> viewModel.onVariantChanged(change.value)
+                                    is FormChange.TempRangesChanged -> viewModel.onTempRangesChanged(change.value)
+                                    is FormChange.FilamentSelected -> viewModel.onFilamentSelected(change.value)
+                                    is FormChange.MoreDetailsToggled -> viewModel.onMoreDetailsToggled()
+                                    is FormChange.EmptySpoolWeightChanged -> viewModel.onEmptySpoolWeightChanged(change.value)
+                                    is FormChange.PriceChanged -> viewModel.onPriceChanged(change.value)
+                                    is FormChange.FullSpoolWeightChanged -> viewModel.onFullSpoolWeightChanged(change.value)
+                                    is FormChange.DensityChanged -> viewModel.onDensityChanged(change.value)
+                                    is FormChange.WeightMethodPicked -> viewModel.onWeightMethodPicked(change.value)
+                                    is FormChange.ActiveWeightChanged -> viewModel.onActiveWeightChanged(change.value)
+                                }
+                            },
+                        )
+                    }
+                    val activeWeightValueG = when (state.form.weightMethod) {
+                        WeightMethod.Remaining -> state.form.remainingWeightG
+                        WeightMethod.Measured -> state.form.measuredEntry
+                            ?: state.form.remainingWeightG?.let { rem ->
+                                state.form.emptySpoolWeightG?.let { empty -> rem + empty }
                             }
-                        },
+                    }
+                    InnerSectionCard(testTag = "main-more-details-card") {
+                        MoreDetailsExpander(
+                            expanded = state.form.moreDetailsExpanded,
+                            enabled = state.activeFlow == ActiveFlow.Idle,
+                            spoolmanConfigured = state.spoolman.urlConfigured,
+                            spoolmanReachable = state.spoolman.reachable,
+                            // v2.1 — filament-spec edits unlocked on existing-spool path
+                            // (Save PATCHes filament via sparseDiff). Filament-picker
+                            // path keeps the lock: a new sibling spool of an existing
+                            // filament inherits its parent's spec (decision K).
+                            filamentSpecLocked = state.form.selectedSpoolId == null &&
+                                state.form.selectedFilamentId != null,
+                            showSpoolScopeFields = state.form.selectedSpoolId != null,
+                            tempRanges = state.form.tempRanges,
+                            emptySpoolWeightG = state.form.emptySpoolWeightG,
+                            priceMajor = state.form.priceMajor,
+                            priceSuffix = state.priceSuffix,
+                            fullSpoolWeightG = state.form.fullSpoolWeightG,
+                            densityGPerCm3 = state.form.densityGPerCm3,
+                            weightMethod = state.form.weightMethod,
+                            activeWeightValueG = activeWeightValueG,
+                            onWeightMethodPicked = viewModel::onWeightMethodPicked,
+                            onActiveWeightChange = viewModel::onActiveWeightChanged,
+                            onToggle = viewModel::onMoreDetailsToggled,
+                            onTempRangesChange = viewModel::onTempRangesChanged,
+                            onEmptySpoolWeightChange = viewModel::onEmptySpoolWeightChanged,
+                            onPriceChange = viewModel::onPriceChanged,
+                            onFullSpoolWeightChange = viewModel::onFullSpoolWeightChanged,
+                            onDensityChange = viewModel::onDensityChanged,
+                        )
+                    }
+                    // Save to Spoolman lives at the bottom of the outer Card —
+                    // signals "everything in here saves together". Hidden in
+                    // RawNoUrl mode (no Spoolman target).
+                    if (state.writeMode == WriteMode.Spoolman) {
+                        SaveToSpoolmanButton(
+                            enabled = canSave,
+                            onClick = viewModel::onSaveTapped,
+                            label = if (canSave) {
+                                computeSaveLabel(
+                                    selectedSpoolId = state.spoolman.selectedSpoolId,
+                                    selectedFilamentId = state.form.selectedFilamentId,
+                                )
+                            } else {
+                                "Save to Spoolman"
+                            },
+                        )
+                    }
+                    // Read/Write demoted to inline text buttons under Save.
+                    // Save is the primary commit; tag I/O is a secondary
+                    // step. Each button toggles to "Cancel" while its own
+                    // tag-waiting flow is in flight.
+                    InlineReadWriteRow(
+                        isReadInFlight = isReadInFlight,
+                        isWriteCancellable = isWriteCancellable,
+                        canRead = state.activeFlow == ActiveFlow.Idle ||
+                            state.activeFlow == ActiveFlow.ReadingForPair,
+                        canWrite = canWrite,
+                        writeMode = state.writeMode,
+                        observedTagKind = state.observedTagKind,
+                        writeHint = computeWriteHint(
+                            activeFlow = state.activeFlow,
+                            selectedSpoolId = state.spoolman.selectedSpoolId,
+                            selectedFilamentId = state.form.selectedFilamentId,
+                            observed = state.observedTagKind,
+                            writeMode = state.writeMode,
+                        ),
+                        onRead = viewModel::onReadTapped,
+                        onWrite = viewModel::onWriteTapped,
                     )
                 }
             }
-            val measuredWeightG = state.form.remainingWeightG?.let { rem ->
-                state.form.emptySpoolWeightG?.let { spool -> rem + spool }
-            }
-            MoreDetailsExpander(
-                expanded = state.form.moreDetailsExpanded,
-                enabled = state.activeFlow == ActiveFlow.Idle,
-                spoolmanConfigured = state.spoolman.urlConfigured,
-                spoolmanReachable = state.spoolman.reachable,
-                filamentSpecLocked = state.form.selectedSpoolId != null ||
-                    state.form.selectedFilamentId != null,
-                showSpoolScopeFields = state.form.selectedSpoolId != null,
-                tempRanges = state.form.tempRanges,
-                emptySpoolWeightG = state.form.emptySpoolWeightG,
-                priceMajor = state.form.priceMajor,
-                priceSuffix = state.priceSuffix,
-                fullSpoolWeightG = state.form.fullSpoolWeightG,
-                densityGPerCm3 = state.form.densityGPerCm3,
-                remainingWeightG = state.form.remainingWeightG,
-                measuredWeightG = measuredWeightG,
-                onToggle = viewModel::onMoreDetailsToggled,
-                onTempRangesChange = viewModel::onTempRangesChanged,
-                onEmptySpoolWeightChange = viewModel::onEmptySpoolWeightChanged,
-                onPriceChange = viewModel::onPriceChanged,
-                onFullSpoolWeightChange = viewModel::onFullSpoolWeightChanged,
-                onDensityChange = viewModel::onDensityChanged,
-                onRemainingChange = viewModel::onRemainingWeightChanged,
-                onMeasuredChange = viewModel::onMeasuredWeightChanged,
-            )
-            if (state.activeFlow == ActiveFlow.Idle) {
-                SaveAndWriteButton(
-                    label = when {
-                        state.observedTagKind == ObservedTagKind.Vendor &&
-                            state.writeMode == WriteMode.Spoolman -> "Save & Map"
-                        state.writeMode == WriteMode.RawNoUrl -> "Write to NFC"
-                        else -> "Save & Write"
-                    },
-                    canSave = canWrite,
-                    onClick = viewModel::onWriteTapped,
-                )
-            }
         }
+        }
+        // Centered NFC status overlay. Pinned to the middle of the screen
+        // while a tag-waiting flow is in flight. Big, easy to read, doesn't
+        // move with scroll. Pointer-passthrough so the form underneath
+        // remains scrollable; tapping the overlay does nothing — Cancel
+        // lives in the inline row.
+        NfcStatusOverlay(
+            label = computeStatusLabel(state.activeFlow, state.nfc),
+        )
         }
     }
+}
+
+/**
+ * U13 §1.3 — inner section helper. Tonal Surface in `surfaceContainerHigh`
+ * (Q-U13-3 revised: 2026-06-06 picked M3 tonal-palette container token over
+ * the dated `surfaceVariant`). Sits inside the outer Card to give each
+ * section a subtle color block without competing with the outer
+ * elevation-5 lift.
+ */
+@Composable
+private fun InnerSectionCard(testTag: String, content: @Composable () -> Unit) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(testTag),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    ) {
+        Column(modifier = Modifier.padding(10.dp)) {
+            content()
+        }
+    }
+}
+
+/**
+ * Inline Read/Write row. Sits inside the outer Card just under
+ * SaveToSpoolmanButton (Save is now primary; tag I/O is secondary —
+ * 2026-06-06 reframe). When ANY tag-waiting flow is in flight (Read,
+ * standard NDEF Write, or pair-another second tag), the two buttons
+ * collapse into a single full-width Cancel. Non-Save HTTP-only flows
+ * (vendor UID-only pair) leave the row in its idle shape with both
+ * buttons disabled — no Cancel surface, ~250ms HTTP completes itself.
+ */
+@Composable
+private fun InlineReadWriteRow(
+    isReadInFlight: Boolean,
+    isWriteCancellable: Boolean,
+    canRead: Boolean,
+    canWrite: Boolean,
+    writeMode: WriteMode,
+    observedTagKind: ObservedTagKind,
+    writeHint: String?,
+    onRead: () -> Unit,
+    onWrite: () -> Unit,
+) {
+    val inFlight = isReadInFlight || isWriteCancellable
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("main-inline-actions"),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        if (inFlight) {
+            // Shared Cancel — single full-width button. Whichever flow is
+            // running owns the cancel; routes to the right VM handler.
+            // Status text lives on the centered NfcStatusOverlay (above the
+            // page), not here — the Cancel button stays minimal.
+            androidx.compose.material3.OutlinedButton(
+                onClick = if (isReadInFlight) onRead else onWrite,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("main-inline-cancel"),
+            ) {
+                Text(
+                    text = "Cancel",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Medium,
+                )
+            }
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                androidx.compose.material3.OutlinedButton(
+                    onClick = onRead,
+                    enabled = canRead,
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("main-inline-read"),
+                ) {
+                    Text(
+                        text = "Read tag",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Medium,
+                    )
+                }
+                val writeLabel = when {
+                    writeMode == WriteMode.Spoolman && observedTagKind == ObservedTagKind.Vendor -> "Map tag"
+                    writeMode == WriteMode.RawNoUrl -> "Write to NFC"
+                    else -> "Write tag"
+                }
+                androidx.compose.material3.OutlinedButton(
+                    onClick = onWrite,
+                    enabled = canWrite,
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("main-inline-write"),
+                ) {
+                    Text(
+                        text = writeLabel,
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Medium,
+                    )
+                }
+            }
+            // Supporting text under the Write half only — visually attached
+            // to the disabled button it's about. Uses an empty Spacer in
+            // the Read half (weight=1f) so the hint sits in the right half
+            // matching the button width above it.
+            writeHint?.let { hint ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Spacer(modifier = Modifier.weight(1f))
+                    Text(
+                        text = hint,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("main-inline-write-hint"),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * State-aware hint rendered as supporting text under the Write button while
+ * Write is disabled. Pairs with the Save button's current label so the
+ * user reads label + hint as a two-step instruction.
+ *
+ *  - Spool selected               → no hint (Write is enabled).
+ *  - Vendor tag, no spool         → "Create a spool to map this tag."
+ *  - Filament selected, no spool  → "Create spool first."
+ *  - Nothing selected             → "Create filament and spool first."
+ *
+ * Returns null in non-blocking states so no caption renders.
+ */
+private fun computeWriteHint(
+    activeFlow: ActiveFlow,
+    selectedSpoolId: Int?,
+    selectedFilamentId: Int?,
+    observed: ObservedTagKind,
+    writeMode: WriteMode,
+): String? {
+    if (activeFlow != ActiveFlow.Idle) return null
+    if (writeMode == WriteMode.RawNoUrl) return null
+    if (selectedSpoolId != null) return null
+    if (observed == ObservedTagKind.Vendor) return "Create a spool to map this tag."
+    if (selectedFilamentId != null) return "Create spool first."
+    return "Create filament and spool first."
+}
+
+/**
+ * State-aware Save button label. Save is form-HTTP only (no UID work).
+ * Vendor UID mapping moved off Save and onto Write 2026-06-06.
+ *
+ *  - Spool selected:    "Update" (PATCH form edits).
+ *  - Filament selected: "Create spool" (POST spool against existing filament).
+ *  - Nothing selected:  "Create filament and spool" (POST both).
+ */
+private fun computeSaveLabel(
+    selectedSpoolId: Int?,
+    selectedFilamentId: Int?,
+): String = when {
+    selectedSpoolId != null -> "Update"
+    selectedFilamentId != null -> "Create spool"
+    else -> "Create filament and spool"
 }
 
 @Composable
@@ -366,64 +611,124 @@ private fun BannerSlot(banner: BannerState) {
     }
 }
 
+/**
+ * Centered NFC status overlay. Pinned to the middle of the screen while a
+ * tag-waiting flow is running. Big, easy to read, doesn't move with
+ * scroll. Pointer-passthrough on the surrounding Box so the form
+ * underneath stays scrollable; Cancel lives in the inline row inside the
+ * outer Card, not on this overlay.
+ */
 @Composable
-private fun ReadingHint(activeFlow: ActiveFlow, nfc: NfcResult) {
-    val showHint = activeFlow == ActiveFlow.ReadingForPair &&
-        (nfc is NfcResult.Idle || nfc is NfcResult.Reading)
-    if (!showHint) return
-    NfcStatusPill(label = "Tap a tag to read", testTag = "main-reading-hint")
-}
-
-@Composable
-private fun WritingHint(activeFlow: ActiveFlow, nfc: NfcResult) {
-    val label = when {
-        activeFlow is ActiveFlow.WritingSecondTag &&
-            (nfc is NfcResult.Idle || nfc is NfcResult.Writing) ->
-            "Tap second tag to write"
-        activeFlow == ActiveFlow.WritingForPair &&
-            (nfc is NfcResult.Idle || nfc is NfcResult.Writing) ->
-            "Tap a tag to write"
-        (activeFlow == ActiveFlow.WritingForPair ||
-            activeFlow is ActiveFlow.WritingSecondTag) &&
-            nfc is NfcResult.Verifying -> "Verifying tag"
-        activeFlow == ActiveFlow.PairingVendorUidOnly -> "Linking tag to spool"
-        else -> return
-    }
-    NfcStatusPill(label = label, testTag = "main-writing-hint")
-}
-
-@Composable
-private fun NfcStatusPill(label: String, testTag: String) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .testTag(testTag),
-        horizontalArrangement = Arrangement.Center,
+private fun BoxScope.NfcStatusOverlay(label: String?) {
+    androidx.compose.animation.AnimatedVisibility(
+        visible = label != null,
+        enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.scaleIn(initialScale = 0.85f),
+        exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.scaleOut(targetScale = 0.85f),
+        modifier = Modifier.align(Alignment.Center),
     ) {
         Surface(
-            shape = RoundedCornerShape(50),
+            shape = RoundedCornerShape(28.dp),
             color = MaterialTheme.colorScheme.primaryContainer,
+            tonalElevation = 6.dp,
+            shadowElevation = 8.dp,
+            modifier = Modifier.testTag("main-status-overlay"),
         ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            Column(
+                modifier = Modifier.padding(horizontal = 32.dp, vertical = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Icon(
-                    imageVector = Icons.Filled.Nfc,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                    modifier = Modifier.size(18.dp),
+                RadiatingWavesIndicator(
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.size(72.dp),
                 )
                 Text(
-                    text = label,
-                    style = MaterialTheme.typography.labelLarge,
+                    text = label ?: "",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    textAlign = TextAlign.Center,
                 )
             }
         }
     }
 }
+
+/**
+ * Three concentric circles pulsing outward from a center dot — the universal
+ * "tap your phone here" sign. Each ring is phase-offset by 1/3 of the cycle
+ * so a new ring starts as the previous fades. Fully Compose-side; no
+ * drawables needed.
+ */
+@Composable
+private fun RadiatingWavesIndicator(
+    color: androidx.compose.ui.graphics.Color,
+    modifier: Modifier = Modifier,
+) {
+    val transition = rememberInfiniteTransition(label = "nfc-waves")
+    val cycleMs = 1800
+    val phases = listOf(0f, 1f / 3f, 2f / 3f)
+    val animations = phases.map { phase ->
+        transition.animateFloat(
+            initialValue = phase,
+            targetValue = phase + 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = cycleMs, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart,
+            ),
+            label = "nfc-wave-$phase",
+        )
+    }
+    Canvas(modifier = modifier) {
+        val cx = size.width / 2f
+        val cy = size.height / 2f
+        val maxRadius = size.minDimension / 2f
+        drawCircle(
+            color = color,
+            radius = maxRadius * 0.12f,
+            center = Offset(cx, cy),
+        )
+        animations.forEach { animState ->
+            val t = animState.value % 1f
+            val radius = maxRadius * (0.18f + t * 0.82f)
+            val alpha = (1f - t).coerceIn(0f, 1f)
+            drawCircle(
+                color = color.copy(alpha = alpha),
+                radius = radius,
+                center = Offset(cx, cy),
+                style = Stroke(width = maxRadius * 0.06f),
+            )
+        }
+    }
+}
+
+/**
+ * Status caption text used by [NfcStatusOverlay] while a tag-waiting flow
+ * is running. Replaces the old top-of-screen pill that pushed content
+ * down on flow start and was off-screen if the user had scrolled.
+ */
+private fun computeStatusLabel(activeFlow: ActiveFlow, nfc: NfcResult): String? = when {
+    activeFlow == ActiveFlow.ReadingForPair &&
+        (nfc is NfcResult.Idle || nfc is NfcResult.Reading) ->
+        "Tap a tag to read"
+    activeFlow is ActiveFlow.WritingSecondTag &&
+        (nfc is NfcResult.Idle || nfc is NfcResult.Writing) ->
+        // Pair-another runs through TwoTagUseCase which tries NDEF first;
+        // if the second tap is a vendor tag, it re-routes to the
+        // HTTP-only vendor pair. Either way the user just needs to tap a
+        // tag, so the label drops the "to write" half (which lied for
+        // the vendor branch).
+        "Tap second tag to pair"
+    activeFlow == ActiveFlow.WritingForPair &&
+        (nfc is NfcResult.Idle || nfc is NfcResult.Writing) ->
+        "Tap a tag to write"
+    (activeFlow == ActiveFlow.WritingForPair ||
+        activeFlow is ActiveFlow.WritingSecondTag) &&
+        nfc is NfcResult.Verifying -> "Verifying tag"
+    activeFlow == ActiveFlow.PairingVendorUidOnly -> "Linking tag to spool"
+    else -> null
+}
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -459,7 +764,7 @@ internal fun SpoolmanDropdown(
     val displayText = if (!enabled) {
         "Configure Spoolman URL in Settings"
     } else {
-        selected?.let { spoolSelectedDisplay(it) } ?: "Select a Spoolman spool…"
+        selected?.let { spoolSelectedDisplay(it) } ?: "Spools in Spoolman"
     }
 
     ExposedDropdownMenuBox(
@@ -611,20 +916,6 @@ private fun AmbiguityBlock(state: AmbiguityState?) {
                 style = MaterialTheme.typography.bodySmall,
             )
         }
-    }
-}
-
-@Composable
-private fun ReadFab(isReading: Boolean, onClick: () -> Unit) {
-    ExtendedFloatingActionButton(
-        onClick = onClick,
-        modifier = Modifier.testTag("main-read-fab"),
-    ) {
-        Text(
-            text = if (isReading) "Reading…" else "Read tag",
-            style = MaterialTheme.typography.labelLarge,
-            modifier = Modifier.padding(horizontal = 4.dp),
-        )
     }
 }
 

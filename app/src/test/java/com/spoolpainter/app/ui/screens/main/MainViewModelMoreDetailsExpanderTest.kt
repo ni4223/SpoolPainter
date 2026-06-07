@@ -9,6 +9,7 @@ import com.spoolpainter.app.support.FakeMoveOnBindConfirmer
 import com.spoolpainter.app.support.FakeMoveOnBindUseCase
 import com.spoolpainter.app.support.FakeNfcRepository
 import com.spoolpainter.app.support.FakeRawWriteUseCase
+import com.spoolpainter.app.support.FakeSaveToSpoolmanUseCase
 import com.spoolpainter.app.support.FakeSettingsRepository
 import com.spoolpainter.app.support.FakeSpoolmanRepository
 import com.spoolpainter.app.support.FakeTwoTagUseCase
@@ -35,6 +36,7 @@ class MainViewModelMoreDetailsExpanderTest {
     private val spoolman = FakeSpoolmanRepository()
     private val settings = FakeSettingsRepository()
     private val createAndPair = FakeCreateAndPairUseCase(nfc = nfc, spoolman = spoolman)
+    private val saveToSpoolman = FakeSaveToSpoolmanUseCase(spoolman = spoolman)
     private val twoTag = FakeTwoTagUseCase(nfc = nfc, spoolman = spoolman)
     private val confirmer = FakeMoveOnBindConfirmer()
     private val moveOnBind = FakeMoveOnBindUseCase()
@@ -51,6 +53,7 @@ class MainViewModelMoreDetailsExpanderTest {
         settings = settings,
         materialBrandRepo = materialBrandRepo,
         readAndPair = ReadAndPairUseCase(nfc, spoolman),
+        saveToSpoolman = saveToSpoolman,
         createAndPair = createAndPair,
         twoTag = twoTag,
         confirmer = confirmer,
@@ -116,41 +119,68 @@ class MainViewModelMoreDetailsExpanderTest {
         assertEquals(1.30f, vm.state.value.form.densityGPerCm3)
     }
 
-    // v2.0.2 — Remaining + Measured handlers and prefill snapshots.
+    // U13 (Cluster A) — radio-style weight handlers + prefill snapshots.
 
-    @Test fun `onRemainingWeightChanged updates remainingWeightG only`() = runTest {
+    @Test fun `onActiveWeightChanged in Remaining mode updates remainingWeightG only`() = runTest {
         val vm = newVm()
-        vm.onRemainingWeightChanged("730")
+        vm.onWeightMethodPicked(WeightMethod.Remaining)
+        vm.onActiveWeightChanged("730")
         val form = vm.state.value.form
         assertEquals(730f, form.remainingWeightG)
         // The prefill snapshot is untouched — only onSpoolSelected populates it.
         assertNull(form.prefilledRemainingWeightG)
     }
 
-    @Test fun `onMeasuredWeightChanged with spool weight 220, input 950 - remainingWeightG becomes 730`() = runTest {
+    @Test fun `onActiveWeightChanged in Measured mode with empty=220 input=950 - remaining becomes 730`() = runTest {
         val vm = newVm()
+        vm.onWeightMethodPicked(WeightMethod.Measured)
         vm.onEmptySpoolWeightChanged("220")
-        vm.onMeasuredWeightChanged("950")
+        vm.onActiveWeightChanged("950")
+        val form = vm.state.value.form
+        assertEquals(730f, form.remainingWeightG)
+        assertEquals(950f, form.measuredEntry)
+    }
+
+    @Test fun `onActiveWeightChanged in Measured mode without empty stashes measuredEntry`() = runTest {
+        val vm = newVm()
+        vm.onWeightMethodPicked(WeightMethod.Measured)
+        vm.onActiveWeightChanged("950")
+        // No remaining commit yet — empty-spool reference is unknown.
+        val form = vm.state.value.form
+        assertNull(form.remainingWeightG)
+        assertEquals(950f, form.measuredEntry)
+    }
+
+    @Test fun `setting empty-spool after stashed measuredEntry commits derived remaining`() = runTest {
+        val vm = newVm()
+        vm.onWeightMethodPicked(WeightMethod.Measured)
+        vm.onActiveWeightChanged("950")
+        vm.onEmptySpoolWeightChanged("220") // becomes known after entry
+        val form = vm.state.value.form
+        assertEquals(730f, form.remainingWeightG)
+        assertEquals(220f, form.emptySpoolWeightG)
+    }
+
+    @Test fun `onActiveWeightChanged Measured with negative back-solve skips commit (mid-typing protection)`() = runTest {
+        // Lets the user type "9" → "95" → "950" without each intermediate
+        // state recomputing remaining=0/-125/-150 and resetting the
+        // DecimalField's local text via remember(value).
+        val vm = newVm()
+        vm.onWeightMethodPicked(WeightMethod.Measured)
+        vm.onEmptySpoolWeightChanged("220")
+        vm.onActiveWeightChanged("950") // commits remaining=730
+        vm.onActiveWeightChanged("100") // would back-solve to negative — skip
+        // Remaining is unchanged from the prior commit, not coerced to 0.
         assertEquals(730f, vm.state.value.form.remainingWeightG)
     }
 
-    @Test fun `onMeasuredWeightChanged with no spool weight is no-op`() = runTest {
+    @Test fun `switching method drops measuredEntry`() = runTest {
         val vm = newVm()
-        // Default form has no empty-spool weight.
-        vm.onMeasuredWeightChanged("950")
-        assertNull(vm.state.value.form.remainingWeightG)
-    }
-
-    @Test fun `onMeasuredWeightChanged with negative back-solve skips commit (mid-typing protection)`() = runTest {
-        // Skipping is what lets the user type "9" → "95" → "950" without
-        // each intermediate state recomputing remaining=0/-125/-150 and
-        // resetting the DecimalField's local text via remember(value).
-        val vm = newVm()
-        vm.onEmptySpoolWeightChanged("220")
-        vm.onRemainingWeightChanged("730") // seed a known remaining
-        vm.onMeasuredWeightChanged("100") // would back-solve to negative
-        // Remaining is unchanged from the seeded value, not coerced to 0.
-        assertEquals(730f, vm.state.value.form.remainingWeightG)
+        vm.onWeightMethodPicked(WeightMethod.Measured)
+        vm.onActiveWeightChanged("950") // stashed in measuredEntry
+        assertEquals(950f, vm.state.value.form.measuredEntry)
+        vm.onWeightMethodPicked(WeightMethod.Remaining)
+        assertNull(vm.state.value.form.measuredEntry)
     }
 
     @Test fun `onSpoolSelected populates remaining + price prefill snapshots from spool fields`() = runTest {
@@ -199,18 +229,32 @@ class MainViewModelMoreDetailsExpanderTest {
         assertEquals(19.99f, form.prefilledPriceMajor)
     }
 
-    @Test fun `toExpanderOverrides with selectedSpoolId returns variant only - filament-spec locked`() = runTest {
+    @Test fun `toExpanderOverrides with selectedSpoolId flows full filament-record overrides — v2_1 unlock`() = runTest {
+        // v2.1: Color + Density + Filament weight + Temps + Variant all flow
+        // on existing-spool Save. sparseDiff in the repo collapses unchanged
+        // values to a no-op. Material + Brand are NOT in the override bag —
+        // those stay locked at the UI layer (changing them = wrong filament
+        // picked). Spool-scope fields (price, spool_weight) ride
+        // patchSpoolFields separately.
         val form = FormState(
             selectedSpoolId = 42,
             variant = "Matte",
+            colorHex = "FF8800",
             densityGPerCm3 = 1.27f,
             fullSpoolWeightG = 750f,
             priceMajor = 19.99f,
+            tempRanges = com.spoolpainter.app.domain.models.TempRanges(
+                extruderMin = 215, extruderMax = 235, bedMin = 70, bedMax = 70,
+            ),
         )
         val overrides = form.toExpanderOverrides()
         assertEquals("Matte", overrides.variant)
-        assertNull(overrides.density)
-        assertNull(overrides.weight)
+        assertEquals("FF8800", overrides.colorHex)
+        assertEquals(1.27f, overrides.density)
+        assertEquals(750f, overrides.weight)
+        assertEquals(215, overrides.extruderTemp)
+        assertEquals(70, overrides.bedTemp)
+        // Spool-scope per-spool overrides DO NOT ride filament PATCH.
         assertNull(overrides.spoolWeight)
         assertNull(overrides.price)
         assertNull(overrides.spoolPrice)

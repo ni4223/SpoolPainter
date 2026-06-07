@@ -35,7 +35,6 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.spoolpainter.app.data.local.Currency
 import com.spoolpainter.app.data.local.FilamentSortKey
 import com.spoolpainter.app.data.local.SpoolSortKey
 import com.spoolpainter.app.ui.common.UiEffect
@@ -143,13 +142,7 @@ fun SettingsScreen(
                 onDirectionChanged = viewModel::onFilamentSortDirectionChanged,
                 testTag = "settings-filament-sort",
             )
-            SettingsSegmentedSection(
-                label = "Currency",
-                options = listOf(
-                    Currency.Dollar to "$ Dollar",
-                    Currency.Euro to "€ Euro",
-                    Currency.Generic to "¤ Money",
-                ),
+            SettingsCurrencySection(
                 selected = state.currency,
                 onSelect = viewModel::onCurrencyChanged,
                 testTag = "settings-currency",

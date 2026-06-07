@@ -47,29 +47,32 @@ fun SpoolPainterLogo(
         modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        LogoImageWithOptionalHalo(
-            modifier = Modifier,
-            sizeModifier = Modifier.height(96.dp),
-            colorFilter = colorFilter,
-            outlineFilter = outlineFilter,
-        )
-        // Title centred on the spool body, not on the spool+NFC-waves
-        // bounding box. The vector viewport is 600×341 with NFC waves at
-        // x≈460–600 (~23% of width); we pair the Text with a trailing
-        // Spacer of that proportional width so the parent Column's
-        // CenterHorizontally centring shifts the text leftward to align
-        // with the spool. Using a Row + Spacer keeps the layout proper —
-        // no Modifier.offset (which doesn't compose with the parent and
-        // breaks across screen sizes / densities).
+        // 2026-06-06: visual anchor is the spool HOLE at screen vertical
+        // center (user request). The vector viewport is 600×341 with NFC
+        // waves at x≈460–600 (~23% of width), so the spool body's center
+        // sits left of the bounding-box center. We add a leading Spacer
+        // sized to mirror the NFC-waves area (40dp at 96dp height ≈ image
+        // width × 23%) so the parent Column's CenterHorizontally shifts
+        // the image rightward — net effect: spool hole on screen center,
+        // NFC waves visibly to the right. Title row sits naturally
+        // centered beneath the now-shifted spool. Row + Spacer is the
+        // right layout primitive here — no Modifier.offset
+        // [[feedback_no_offset_modifier]].
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = "Spool Painter",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground,
+            Spacer(modifier = Modifier.width(40.dp))
+            LogoImageWithOptionalHalo(
+                modifier = Modifier,
+                sizeModifier = Modifier.height(96.dp),
+                colorFilter = colorFilter,
+                outlineFilter = outlineFilter,
             )
-            Spacer(modifier = Modifier.width(20.dp))
         }
+        Text(
+            text = "Spool Painter",
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onBackground,
+        )
     }
 }
 

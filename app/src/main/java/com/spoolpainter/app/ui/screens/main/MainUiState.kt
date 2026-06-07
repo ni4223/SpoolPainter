@@ -67,7 +67,31 @@ data class FormState(
     val prefilledRemainingWeightG: Float? = null,
     val prefilledPriceMajor: Float? = null,
     val prefilledEmptySpoolWeightG: Float? = null,
+
+    // U13 (Cluster A) — radio-style weight picker (Spoolman parity). Only the
+    // active method's input renders; the inactive method's field is hidden
+    // entirely (decision: hide-not-disable, save vertical real estate).
+    // Default = Measured (most scales report total weight).
+    //
+    // measuredEntry is a transient buffer for the case "active=Measured AND
+    // emptySpoolWeightG is null". The user typed a measured value but we
+    // can't yet derive remaining (no empty-spool reference). We hold the
+    // raw entry here without committing remainingWeightG; once empty-spool
+    // is set, the ViewModel commits remaining = measuredEntry − emptySpool.
+    val weightMethod: WeightMethod = WeightMethod.Measured,
+    val measuredEntry: Float? = null,
 )
+
+/**
+ * U13 (Cluster A) — which weight measurement the user is entering. Spoolman
+ * parity. Gross was dropped (locked plan §1.4 + Q-U13-2).
+ *  - [Remaining]: net filament left on the spool (g). Source of truth on the
+ *    PATCH wire — Spoolman's `spool.remaining_weight`.
+ *  - [Measured]: total scale reading including empty spool (g). Converts to
+ *    remaining via `measured − emptySpoolWeightG` at submit time when both
+ *    are known.
+ */
+enum class WeightMethod { Remaining, Measured }
 
 /**
  * Decision I/J: when an existing spool OR existing filament is selected,
@@ -81,11 +105,23 @@ data class FormState(
  * priceMajor value so the spool record gets per-spool pricing too.
  */
 fun FormState.toExpanderOverrides(): ExpanderOverrides {
-    // Existing-spool path: variant only. remaining_weight + price +
-    // empty-spool ride patchSpoolFields separately. Filament-spec stays
-    // locked (decision J).
+    // Existing-spool path (v2.1 unlock — UI-13 follow-up): filament-record
+    // edits Color + Density + Diameter + Filament weight + Temps now flow
+    // alongside Variant. sparseDiff in the repo collapses unchanged values
+    // to a no-op so passing these on every Save is cheap. Material + Brand
+    // stay locked (changing those means "wrong filament picked", not edit).
+    // Spool-scope fields (remaining_weight, price, empty-spool) ride
+    // patchSpoolFields separately as before.
     if (selectedSpoolId != null) {
-        return ExpanderOverrides(variant = variant?.takeIf { it.isNotBlank() })
+        return ExpanderOverrides(
+            density = densityGPerCm3,
+            diameter = null,
+            weight = fullSpoolWeightG,
+            colorHex = colorHex?.takeIf { it.matches(HEX6_REGEX) }?.uppercase(),
+            extruderTemp = tempRanges.extruderMin,
+            bedTemp = tempRanges.bedMin,
+            variant = variant?.takeIf { it.isNotBlank() },
+        )
     }
     // Filament-picker path: filament-spec locked at the UI layer, but the
     // new spool gets per-spool empty-spool + price set from the form.

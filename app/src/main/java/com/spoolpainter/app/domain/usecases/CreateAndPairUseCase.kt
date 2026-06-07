@@ -1,7 +1,5 @@
 package com.spoolpainter.app.domain.usecases
 
-import com.spoolpainter.app.data.remote.spoolman.OrphanSpool
-import com.spoolpainter.app.data.remote.spoolman.SpoolPatchBody
 import com.spoolpainter.app.data.remote.spoolman.SpoolmanOutcome
 import com.spoolpainter.app.data.remote.spoolman.SpoolmanRepository
 import com.spoolpainter.app.domain.models.OpenSpoolPayload
@@ -10,11 +8,16 @@ import com.spoolpainter.app.domain.primitives.NfcIntent
 import com.spoolpainter.app.domain.primitives.NfcResult
 import com.spoolpainter.app.hardware.nfc.NfcRepository
 import com.spoolpainter.app.ui.screens.main.FormState
-import com.spoolpainter.app.ui.screens.main.toExpanderOverrides
 import kotlinx.coroutines.flow.first
 import javax.inject.Inject
 
 data class CreateAndPairInput(
+    /** Required — the spool was already resolved by [SaveToSpoolmanUseCase]. */
+    val spoolId: Int,
+    /** True when [spoolId] was created by the immediately-preceding Save. Used to
+     *  set [CreateAndPairResult.Success.WrittenAndPaired.isNewSpool] for the
+     *  PromptingPairAnother sheet copy ("with this new spool"). */
+    val isNewSpool: Boolean,
     val form: FormState,
     val newFilamentName: String,
     val newFilamentVendor: String,
@@ -23,23 +26,15 @@ data class CreateAndPairInput(
 )
 
 /**
- * Create-and-pair orchestration. One sequence handles both tap-first (UID
- * already in the form) and form-first (no UID yet) — the only thing that
- * varies is what gets passed as `expectedUid` to the Write arm.
+ * U13 — Write-only orchestration. Spoolman state was committed beforehand by
+ * [SaveToSpoolmanUseCase]; this use case only arms NFC, writes the OpenSpool
+ * payload, and PATCHes the captured UID into `extra.card_uids`.
  *
- *   1. Resolve the spool: pick the existing one or create vendor + filament
- *      + spool (no `extra.card_uids` yet — the create call no longer lies
- *      about a UID it doesn't know).
- *   2. Arm Write with `expectedUid = form.cardUid` (null = accept any tap).
- *   3. The user's tap performs the write. The Success state's UID is the
- *      authoritative tag UID — same physical tap reused for capture.
- *   4. PATCH `extra.card_uids` to include the captured UID. Idempotent if it
- *      was already there (e.g. same spool re-paired).
- *   5. Verify pass on the next tap.
- *
- * Spoolman-first sequencing per FD §1 / FR-4.3 is preserved in spirit: the
- * spool record is committed *before* any tag is written, so a retry after a
- * verify-fail finds the spool via [SpoolmanRepository.findSpoolsByCardUid].
+ *   1. (was step 1) Spool already exists — `snapshot.spoolId`.
+ *   2. Arm Write. The user's tap performs write + readback on one connection.
+ *   3. PATCH `extra.card_uids` with the observed UID (idempotent). Move-on-
+ *      bind sweeps any existing owners first.
+ *   4. Translate the write outcome into the final [CreateAndPairResult].
  */
 open class CreateAndPairUseCase @Inject constructor(
     protected val nfc: NfcRepository,
@@ -47,87 +42,9 @@ open class CreateAndPairUseCase @Inject constructor(
     protected val moveOnBind: MoveOnBindUseCase,
 ) {
 
-    /** Set after Step 1 (resolveSpool) when a NEW spool was created in this
-     *  invoke() and cleared again the moment that spool gets a UID attached.
-     *  Lets the caller fire chain-delete cleanup if the coroutine is cancelled
-     *  by an outer withTimeoutOrNull or fails before any UID lands.
-     *  Existing-spool selections leave this null (nothing to clean up). */
-    @Volatile
-    var lastResolvedOrphan: OrphanSpool? = null
-        private set
-
-    /** Spool id from the most recent invoke(), regardless of new-vs-existing.
-     *  Used by callers to pin selection on retry paths. */
-    val lastResolvedSpoolId: Int? get() = lastResolvedSpoolIdInternal
-    @Volatile
-    private var lastResolvedSpoolIdInternal: Int? = null
-
     open suspend operator fun invoke(snapshot: CreateAndPairInput): CreateAndPairResult {
-        lastResolvedOrphan = null
-        lastResolvedSpoolIdInternal = null
-        // 1. Resolve the spool: either an existing selection or a freshly
-        //    minted vendor + filament + spool (no UID attached yet).
-        val (spoolId, isNewSpool) = when (val resolved = resolveSpool(snapshot)) {
-            is ResolvedSpool.Existing -> resolved.id to false
-            is ResolvedSpool.Created -> {
-                lastResolvedOrphan = resolved.orphan
-                resolved.id to true
-            }
-            is ResolvedSpool.Failed -> return resolved.result
-        }
-        lastResolvedSpoolIdInternal = spoolId
-
-        // 1a. Existing-spool variant edit (UI-13). Variant is the ONE
-        //     filament-scope field still editable on the existing-spool
-        //     path in v2.0.2 (decision K). Density / weight / spool_weight
-        //     / price are locked read-only at the UI layer (decision J)
-        //     and toExpanderOverrides drops them defensively, but we
-        //     route through the narrower applyVariantToFilamentOfSpool
-        //     anyway so the wire surface matches the intent.
-        //
-        //     Failures are logged but do NOT abort the write/UID-append:
-        //     a Spoolman-side hiccup shouldn't break the primary pairing.
-        val variant = snapshot.form.variant?.takeIf { it.isNotBlank() }
-        if (!isNewSpool && variant != null) {
-            when (val patch = spoolman.applyVariantToFilamentOfSpool(spoolId, variant)) {
-                is SpoolmanOutcome.Success -> Unit
-                else -> android.util.Log.w(
-                    "CreateAndPair",
-                    "applyVariantToFilamentOfSpool failed (non-fatal): $patch",
-                )
-            }
-        }
-
-        // 1b. Existing-spool spool-scope edits (v2.0.2 — remaining_weight +
-        //     empty-spool). Price is locked on existing-spool (revised
-        //     2026-05-31): set at acquisition, not a moving quote.
-        //     Empty-spool is now spool-scope (verified against Spoolman
-        //     models.py:46+73) and can be back-solved via Measured when
-        //     the inherited filament value is missing. Stale-prefill guard:
-        //     PATCH only when the form value differs from the prefill
-        //     snapshot (printer firmware writes remaining_weight while we
-        //     hold a stale form).
-        if (!isNewSpool) {
-            val rem = snapshot.form.remainingWeightG
-            val remPrefilled = snapshot.form.prefilledRemainingWeightG
-            val empty = snapshot.form.emptySpoolWeightG
-            val emptyPrefilled = snapshot.form.prefilledEmptySpoolWeightG
-            val remDirty = rem != null && rem != remPrefilled
-            val emptyDirty = empty != null && empty != emptyPrefilled
-            if (remDirty || emptyDirty) {
-                val body = SpoolPatchBody(
-                    remaining_weight = rem.takeIf { remDirty },
-                    spool_weight = empty.takeIf { emptyDirty },
-                )
-                when (val patch = spoolman.patchSpoolFields(spoolId, body)) {
-                    is SpoolmanOutcome.Success -> Unit
-                    else -> android.util.Log.w(
-                        "CreateAndPair",
-                        "patchSpoolFields failed (non-fatal): $patch",
-                    )
-                }
-            }
-        }
+        val spoolId = snapshot.spoolId
+        val isNewSpool = snapshot.isNewSpool
 
         // 2. Arm Write — NfcRepository writes + verifies on the same physical
         //    tap. The use case accepts whichever tag the user taps; UID-
@@ -173,13 +90,15 @@ open class CreateAndPairUseCase @Inject constructor(
             // doesn't end up with an orphan spool when a write dies mid-
             // tag. If the append itself fails, fall through to the write
             // outcome — the user can retry.
+            //
+            // Side effect: when this Append succeeds against a spool that
+            // [SaveToSpoolmanUseCase] just created (orphan), the orphan is
+            // no longer dangling. The caller is responsible for clearing
+            // [SaveToSpoolmanUseCase.lastResolvedOrphan] on a successful
+            // pair so a subsequent Write failure doesn't chain-delete a
+            // real, paired spool.
             when (val append = spoolman.appendCardUidToSpool(spoolId, observedUid)) {
-                is SpoolmanOutcome.Success -> {
-                    // The spool is no longer an orphan — UID is attached.
-                    // Clear so any later failure path doesn't chain-delete
-                    // a real, paired spool.
-                    lastResolvedOrphan = null
-                }
+                is SpoolmanOutcome.Success -> Unit
                 else -> if (writeResult is WriteResult.Success) {
                     return CreateAndPairResult.SpoolmanFailed(observedUid, append)
                 }
@@ -229,60 +148,6 @@ open class CreateAndPairUseCase @Inject constructor(
         }
     }
 
-    private sealed interface ResolvedSpool {
-        data class Existing(val id: Int) : ResolvedSpool
-        data class Created(val id: Int, val orphan: OrphanSpool) : ResolvedSpool
-        data class Failed(val result: CreateAndPairResult) : ResolvedSpool
-    }
-
-    private suspend fun resolveSpool(snapshot: CreateAndPairInput): ResolvedSpool {
-        val targetId = snapshot.form.selectedSpoolId
-        if (targetId != null) return ResolvedSpool.Existing(targetId)
-
-        val filamentId = snapshot.form.selectedFilamentId
-        return if (filamentId != null) {
-            // Existing-filament path: only the spool is freshly created. Its
-            // orphan record carries spoolId only — vendor + filament are
-            // pre-existing and must NOT be deleted on cleanup.
-            val createOutcome = spoolman.createSpoolForExistingFilament(
-                filamentId,
-                snapshot.form.toExpanderOverrides(),
-            )
-            val newSpool = (createOutcome as? SpoolmanOutcome.Success)?.data
-                ?: return ResolvedSpool.Failed(
-                    CreateAndPairResult.SpoolmanFailed(snapshot.form.cardUid ?: CardUid(""), createOutcome),
-                )
-            val newId = newSpool.id ?: return ResolvedSpool.Failed(
-                CreateAndPairResult.SpoolmanFailed(
-                    snapshot.form.cardUid ?: CardUid(""),
-                    SpoolmanOutcome.ParseError(IllegalStateException("no spool id from createSpool")),
-                ),
-            )
-            ResolvedSpool.Created(newId, OrphanSpool(spoolId = newId))
-        } else {
-            // New-filament path: vendor and/or filament may be freshly
-            // POSTed in the same transaction. The bundle tells us which
-            // are ours to chain-delete on cleanup.
-            val bundleOutcome = spoolman.createSpoolForNewFilamentBundle(newFilamentRequest(snapshot))
-            val bundle = (bundleOutcome as? SpoolmanOutcome.Success)?.data
-                ?: return ResolvedSpool.Failed(
-                    CreateAndPairResult.SpoolmanFailed(snapshot.form.cardUid ?: CardUid(""), bundleOutcome),
-                )
-            val newId = bundle.spool.id ?: return ResolvedSpool.Failed(
-                CreateAndPairResult.SpoolmanFailed(
-                    snapshot.form.cardUid ?: CardUid(""),
-                    SpoolmanOutcome.ParseError(IllegalStateException("no spool id from createSpool")),
-                ),
-            )
-            val orphan = OrphanSpool(
-                spoolId = newId,
-                filamentId = if (bundle.filamentWasFresh) bundle.filamentId else null,
-                vendorId = if (bundle.vendorWasFresh) bundle.vendorId else null,
-            )
-            ResolvedSpool.Created(newId, orphan)
-        }
-    }
-
     private sealed interface WriteResult {
         data class Success(val uid: CardUid) : WriteResult
         data class Verify(val uid: CardUid, val reason: String) : WriteResult
@@ -321,24 +186,6 @@ open class CreateAndPairUseCase @Inject constructor(
                 }
             else -> WriteResult.Failed(null, "unexpected write state: $outcome")
         }
-    }
-
-    private fun newFilamentRequest(snapshot: CreateAndPairInput): NewFilamentRequest {
-        val baseReq = NewFilamentRequest.fromForm(
-            form = snapshot.form,
-            name = snapshot.newFilamentName,
-            vendorName = snapshot.newFilamentVendor,
-        )
-        val req = if (snapshot.resolvedMaterialName?.isNotBlank() == true) {
-            baseReq.copy(materialName = snapshot.resolvedMaterialName)
-        } else {
-            baseReq
-        }
-        android.util.Log.d(
-            "SpoolmanRepo",
-            "newFilamentRequest: name=${req.name} variant=${req.variant} material=${req.materialName} colorHex=${req.colorHex}",
-        )
-        return req
     }
 
     private fun makePayload(snapshot: CreateAndPairInput, spoolId: Int): OpenSpoolPayload {

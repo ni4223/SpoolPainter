@@ -13,6 +13,7 @@ import com.spoolpainter.app.support.FakeMoveOnBindConfirmer
 import com.spoolpainter.app.support.FakeMoveOnBindUseCase
 import com.spoolpainter.app.support.FakeNfcRepository
 import com.spoolpainter.app.support.FakeRawWriteUseCase
+import com.spoolpainter.app.support.FakeSaveToSpoolmanUseCase
 import com.spoolpainter.app.support.FakeSettingsRepository
 import com.spoolpainter.app.support.FakeSpoolmanRepository
 import com.spoolpainter.app.support.FakeTwoTagUseCase
@@ -38,6 +39,7 @@ class MainViewModelFilamentPickerTest {
     private val spoolman = FakeSpoolmanRepository()
     private val settings = FakeSettingsRepository()
     private val createAndPair = FakeCreateAndPairUseCase(nfc = nfc, spoolman = spoolman)
+    private val saveToSpoolman = FakeSaveToSpoolmanUseCase(spoolman = spoolman)
     private val twoTag = FakeTwoTagUseCase(nfc = nfc, spoolman = spoolman)
     private val confirmer = FakeMoveOnBindConfirmer()
     private val moveOnBind = FakeMoveOnBindUseCase()
@@ -68,6 +70,7 @@ class MainViewModelFilamentPickerTest {
         settings = settings,
         materialBrandRepo = materialBrandRepo,
         readAndPair = ReadAndPairUseCase(nfc, spoolman),
+        saveToSpoolman = saveToSpoolman,
         createAndPair = createAndPair,
         twoTag = twoTag,
         confirmer = confirmer,
@@ -130,17 +133,18 @@ class MainViewModelFilamentPickerTest {
         assertEquals(42, vm.state.value.form.selectedSpoolId)
     }
 
-    @Test fun `onWriteTapped routing — filament selected → CreateAndPairInput carries selectedFilamentId`() = runTest {
+    @Test fun `onWriteTapped routing — filament selected only is gated (no spool yet)`() = runTest {
+        // U13: Write is disabled until a spool exists. With filament-only
+        // selection the user must Save first to mint a spool, then Write.
         spoolman.setFilaments(listOf(sampleFilament))
         settings.pushSettings(Settings(url = "http://10.0.0.5:8000"))
         val vm = newVm()
         vm.onFilamentSelected(sampleFilament)
         createAndPair.nextResult = CreateAndPairResult.Cancelled("test")
 
+        assertEquals(false, vm.canWrite.value)
         vm.onWriteTapped()
-
-        assertEquals(1, createAndPair.invokeCalls)
-        assertEquals(7, createAndPair.lastInput?.form?.selectedFilamentId)
+        assertEquals(0, createAndPair.invokeCalls)
     }
 
     @Test fun `onWriteTapped routing — spool selected → existing append path (selectedSpoolId wins over selectedFilamentId)`() = runTest {

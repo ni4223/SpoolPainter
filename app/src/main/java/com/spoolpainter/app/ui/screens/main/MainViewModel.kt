@@ -22,6 +22,9 @@ import com.spoolpainter.app.domain.usecases.RawWriteResult
 import com.spoolpainter.app.domain.usecases.RawWriteUseCase
 import com.spoolpainter.app.domain.usecases.ReadAndPairResult
 import com.spoolpainter.app.domain.usecases.ReadAndPairUseCase
+import com.spoolpainter.app.domain.usecases.SaveToSpoolmanInput
+import com.spoolpainter.app.domain.usecases.SaveToSpoolmanResult
+import com.spoolpainter.app.domain.usecases.SaveToSpoolmanUseCase
 import com.spoolpainter.app.domain.usecases.TwoTagInput
 import com.spoolpainter.app.domain.usecases.TwoTagResult
 import com.spoolpainter.app.domain.usecases.TwoTagUseCase
@@ -56,6 +59,7 @@ class MainViewModel @Inject constructor(
     private val settings: SettingsRepository,
     private val materialBrandRepo: MaterialBrandRepository,
     private val readAndPair: ReadAndPairUseCase,
+    private val saveToSpoolman: SaveToSpoolmanUseCase,
     private val createAndPair: CreateAndPairUseCase,
     private val twoTag: TwoTagUseCase,
     private val confirmer: MoveOnBindConfirmer,
@@ -88,6 +92,9 @@ class MainViewModel @Inject constructor(
 
     private var readJob: Job? = null
     private var writeJob: Job? = null
+    private var saveJob: Job? = null
+    private val _saveInFlight = MutableStateFlow(false)
+    val saveInFlight: StateFlow<Boolean> = _saveInFlight.asStateFlow()
     private var priorActiveFlow: ActiveFlow? = null
     // UI-02: passive-tap hint. The hint is suppressed when the user has acted
     // (Read pressed, spool picked, write started). When the user keeps tapping
@@ -98,23 +105,113 @@ class MainViewModel @Inject constructor(
     internal val readTimeoutMs: Long = READ_TIMEOUT_MS_DEFAULT
     internal val writeTimeoutMs: Long = WRITE_TIMEOUT_MS_DEFAULT
 
-    val canWrite: StateFlow<Boolean> = combine(
-        _state.map { it.form.canSubmit && it.activeFlow == ActiveFlow.Idle }.distinctUntilChanged(),
+    /**
+     * U13 — true when the form can be saved to Spoolman (HTTP-only). Requires
+     * a fully-validated form with resolved Other-custom names. Save creates a
+     * spool on the new-filament path or PATCHes on the existing-spool path.
+     * RawNoUrl mode disables Save (no Spoolman target).
+     */
+    val canSave: StateFlow<Boolean> = combine(
+        _state.map {
+            it.form.canSubmit &&
+                it.activeFlow == ActiveFlow.Idle &&
+                it.writeMode == WriteMode.Spoolman
+        }.distinctUntilChanged(),
         _state.map { it.form.material }.distinctUntilChanged(),
         _customMaterial.map { it }.distinctUntilChanged(),
         _state.map { it.form.brand }.distinctUntilChanged(),
         _customBrand.map { it }.distinctUntilChanged(),
+        _saveInFlight,
     ) { values ->
         @Suppress("UNCHECKED_CAST")
-        val formOk = values[0] as Boolean
+        val baseOk = values[0] as Boolean
         val material = values[1] as Material?
         val customMat = values[2] as String
         val brand = values[3] as Brand?
         val customBr = values[4] as String
-        formOk &&
-            (material?.name != "Other" || customMat.isNotBlank()) &&
+        val saving = values[5] as Boolean
+        val customsOk = (material?.name != "Other" || customMat.isNotBlank()) &&
             (brand?.name != "Other" || customBr.isNotBlank())
+        baseOk && customsOk && !saving
     }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    /**
+     * U13 — true when Write is tappable.
+     *
+     * Vendor + Spoolman + chip visible: Save handles the vendor pair (Q-U13-1=A);
+     * Write button stays disabled in that state. Write button caption tells the
+     * user what to do ("Pick a spool or hit Save first." / "Vendor tag — can't
+     * be written.").
+     *
+     * RawNoUrl: Write writes the form to a tag (no Spoolman); enabled when the
+     * form validates.
+     *
+     * Standard (Spoolman + non-vendor): enabled when a spool is selected.
+     */
+    val canWrite: StateFlow<Boolean> = combine(
+        _state.map {
+            it.activeFlow == ActiveFlow.Idle
+        }.distinctUntilChanged(),
+        _state.map { it.form.canSubmit }.distinctUntilChanged(),
+        _state.map { it.form.material }.distinctUntilChanged(),
+        _customMaterial.map { it }.distinctUntilChanged(),
+        _state.map { it.form.brand }.distinctUntilChanged(),
+        _customBrand.map { it }.distinctUntilChanged(),
+        _state.map { it.spoolman.selectedSpoolId }.distinctUntilChanged(),
+        _state.map { it.observedTagKind }.distinctUntilChanged(),
+        _state.map { it.writeMode }.distinctUntilChanged(),
+    ) { values ->
+        @Suppress("UNCHECKED_CAST")
+        val idle = values[0] as Boolean
+        val formValid = values[1] as Boolean
+        val material = values[2] as Material?
+        val customMat = values[3] as String
+        val brand = values[4] as Brand?
+        val customBr = values[5] as String
+        val selectedSpoolId = values[6] as Int?
+        val tagKind = values[7] as ObservedTagKind
+        val mode = values[8] as WriteMode
+        if (!idle) return@combine false
+        val customsOk = (material?.name != "Other" || customMat.isNotBlank()) &&
+            (brand?.name != "Other" || customBr.isNotBlank())
+        when (mode) {
+            // Vendor tags can't be NDEF-written. RawNoUrl + Vendor is a
+            // dead end (no Spoolman target either). Disable Write so the
+            // vendor caption can fire and the user knows to configure
+            // Spoolman first.
+            WriteMode.RawNoUrl -> tagKind != ObservedTagKind.Vendor && formValid && customsOk
+            WriteMode.Spoolman -> {
+                // 2026-06-06 reframe: vendor tags now route through Write
+                // (HTTP-only UID append) so each button has one job. Save
+                // = form edits; Write = NFC + UID for writable, HTTP-only
+                // UID for vendor. Both vendor and writable paths require
+                // a spool target; canWrite enables once one exists.
+                selectedSpoolId != null
+            }
+        }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    /** Read button is active (showing "Cancel"). Drives the bottom-bar label flip. */
+    val isReadInFlight: StateFlow<Boolean> =
+        _state.map { it.activeFlow == ActiveFlow.ReadingForPair }
+            .distinctUntilChanged()
+            .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    /** Write button is currently in a tag-waiting NDEF flow that supports Cancel.
+     *  Includes second-tag listening from the pair-another flow so the inline
+     *  [Read|Write] row's shared Cancel button covers it too — sheet auto-
+     *  dismisses during second-tag listening so the user only sees one
+     *  Cancel surface. Vendor UID-only pair is HTTP-only and is NOT
+     *  cancellable (button stays disabled while in flight; ~250ms typical
+     *  roundtrip). */
+    val isWriteCancellable: StateFlow<Boolean> =
+        _state.map {
+            it.activeFlow == ActiveFlow.WritingForPair ||
+                it.activeFlow == ActiveFlow.WritingRaw ||
+                it.activeFlow is ActiveFlow.WritingSecondTag
+        }
+            .distinctUntilChanged()
+            .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     // F-6 (v2.0.3): drives the MainScreen PullToRefreshBox spinner. Flips
     // true while a user-initiated refresh is in flight, false when it
@@ -222,22 +319,14 @@ class MainViewModel @Inject constructor(
                 }
             }
         }
-        // ObservedTagKind: collected from BOTH lastSeenTag (passive ambient
-        // taps when Idle) AND nfc.state.Success (when a Read armed the buffer
-        // and consumed it before the collector could observe). MutableStateFlow
-        // conflation drops intermediate values when handleTag writes the
-        // buffer + clears it without a suspend point in between, so we can't
-        // rely on lastSeenTag alone to deliver the Vendor classification on
-        // an armed-Read path. nfc.state.Success carries the classification
-        // verbatim and is observable.
+        // ObservedTagKind only flips on EXPLICIT Read (nfc.state.Success).
+        // Passive ambient taps surface a snackbar hint but DO NOT change
+        // app state — vendor mode would otherwise stick from a random
+        // pass-by tap, breaking the "I want to map this tag now" flow
+        // (2026-06-06 fix). The lastSeenTag collector below stays for
+        // the snackbar; it just no longer mutates `observedTagKind`.
         viewModelScope.launch {
             nfc.lastSeenTag.collect { tag ->
-                val kind = mapClassification(tag?.classification)
-                if (kind != null) {
-                    _state.update {
-                        it.copy(observedTagKind = kind, observedTagUid = tag?.uid)
-                    }
-                }
                 // UI-02: passive-tap hint with cooldown. Fires when the tap is
                 // genuinely ambient (no read/write in flight). Re-fires on
                 // subsequent taps if 15s have elapsed since the last hint,
@@ -329,8 +418,18 @@ class MainViewModel @Inject constructor(
         }
     }
 
+    /**
+     * U13 — Read tap is a toggle. Idle → start a fresh read. ReadingForPair →
+     * cancel the in-flight read + disarm NFC + return to Idle (no snackbar;
+     * Cancel is an explicit user action).
+     */
     fun onReadTapped() {
-        if (_state.value.activeFlow != ActiveFlow.Idle) return
+        val current = _state.value.activeFlow
+        if (current == ActiveFlow.ReadingForPair) {
+            cancelReadInFlight()
+            return
+        }
+        if (current != ActiveFlow.Idle) return
         readJob?.let { job ->
             if (job.isActive) {
                 job.cancel()
@@ -359,39 +458,123 @@ class MainViewModel @Inject constructor(
         }
     }
 
-    fun onWriteTapped() {
-        if (!canWrite.value) return
+    private fun cancelReadInFlight() {
+        readJob?.cancel()
+        readJob = null
+        viewModelScope.launch { nfc.disarm() }
+        _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
+    }
+
+    private fun cancelWriteInFlight() {
+        writeJob?.cancel()
+        writeJob = null
+        viewModelScope.launch { nfc.disarm() }
+        _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
+    }
+
+    /**
+     * U13 — Save to Spoolman. HTTP-only; no NFC. On vendor + Spoolman + chip
+     * visible (Q-U13-1=A), Save instead routes to the vendor UID-only pair
+     * use case — Save = "commit Spoolman state + UID linkage" subsumes the
+     * vendor pair on this path. Write button stays disabled with chip showing.
+     */
+    fun onSaveTapped() {
+        if (!canSave.value) return
+        if (_saveInFlight.value) return
         val state = _state.value
         val form = state.form
-        val mode = state.writeMode
-        val tagKind = state.observedTagKind
-
-        // U7 dispatch:
-        //   1. Vendor tag + no Spoolman → refuse with a snackbar; form preserved.
-        //   2. Vendor tag + Spoolman    → vendor UID-only pair (no NDEF write).
-        //   3. RawNoUrl                 → raw write (no Spoolman calls).
-        //   4. Otherwise                → standard create-and-pair.
-
-        when {
-            tagKind == ObservedTagKind.Vendor && mode == WriteMode.RawNoUrl -> {
-                _effects.trySend(
-                    UiEffect.ShowSnackbar(
-                        "Configure Spoolman in Settings to save this tag.",
+        // 2026-06-06 reframe: vendor UID mapping moved off Save and onto
+        // Write so each button has one job. Save = pure HTTP form edits
+        // across all states (vendor or otherwise). Write = NFC + UID for
+        // writable tags, or HTTP-only UID append for vendor tags. See
+        // [onWriteTapped] vendor branch.
+        // Pure HTTP Save: no activeFlow transition. Save runs in viewModelScope
+        // and the Save button's disabled state during the coroutine is the only
+        // visual feedback. ~250 ms typical Spoolman roundtrip is too short to
+        // justify a screen-blocking flow + Cancel surface.
+        _saveInFlight.value = true
+        saveJob = viewModelScope.launch {
+            try {
+                val materialName = resolveMaterialName(form.material, _customMaterial.value)
+                val brandName = resolveBrandName(form.brand, _customBrand.value)
+                val variantPart = form.variant?.trim().orEmpty()
+                val derivedName = listOfNotNull(
+                    brandName.takeIf { it.isNotBlank() },
+                    materialName.takeIf { it.isNotBlank() },
+                    variantPart.takeIf { it.isNotBlank() },
+                ).joinToString(" ").ifBlank { materialName }
+                val input = SaveToSpoolmanInput(
+                    form = form,
+                    newFilamentName = derivedName,
+                    newFilamentVendor = brandName.ifBlank { "Generic" },
+                    resolvedMaterialName = materialName.takeIf { it.isNotBlank() },
+                )
+                val result = withTimeoutOrNull(writeTimeoutMs) {
+                    saveToSpoolman.invoke(input)
+                } ?: SaveToSpoolmanResult.Failed(
+                    com.spoolpainter.app.data.remote.spoolman.SpoolmanOutcome.NetworkError(
+                        java.io.IOException("Save timed out"),
                     ),
                 )
-                return
+                applySaveResult(result)
+            } finally {
+                _saveInFlight.value = false
             }
-            tagKind == ObservedTagKind.Vendor -> {
-                launchVendorUidOnlyPair(form, state.observedTagUid)
-                return
-            }
-            mode == WriteMode.RawNoUrl -> {
+        }
+    }
+
+    /**
+     * U13 — Write to NFC. Tag-only; assumes Spoolman state was already
+     * committed by an immediately-preceding Save (or a prior Read/spool-pick).
+     *
+     * Toggle behaviour: when a tag-waiting Write is in flight, this cancels it.
+     */
+    fun onWriteTapped() {
+        val state = _state.value
+        if (state.activeFlow == ActiveFlow.WritingForPair ||
+            state.activeFlow == ActiveFlow.WritingRaw
+        ) {
+            cancelWriteInFlight()
+            return
+        }
+        if (state.activeFlow is ActiveFlow.WritingSecondTag) {
+            // Shared inline Cancel covers second-tag listening too. Delegate
+            // to the existing pair-another toggle, which cancels the writeJob
+            // + disarms NFC + flips activeFlow back to PromptingPairAnother
+            // so the sheet re-mounts at its prompt state.
+            onPairAnotherTagAccepted()
+            return
+        }
+        if (!canWrite.value) return
+        val form = state.form
+        val mode = state.writeMode
+        // 2026-06-06 reframe: vendor tags can't be NDEF-written, but the
+        // UID still needs to land in Spoolman's `extra.card_uids`. Route
+        // vendor + Spoolman + spool-selected to the HTTP-only pair use
+        // case so Save stays a pure form-edit action.
+        if (mode == WriteMode.Spoolman && state.observedTagKind == ObservedTagKind.Vendor) {
+            launchVendorUidOnlyPair(form, state.observedTagUid)
+            return
+        }
+        when (mode) {
+            WriteMode.RawNoUrl -> {
                 launchRawWrite(form)
                 return
             }
+            WriteMode.Spoolman -> {
+                val spoolId = form.selectedSpoolId ?: state.spoolman.selectedSpoolId
+                if (spoolId == null) {
+                    // Defensive — canWrite already gates on this. Should
+                    // never fire in practice.
+                    _effects.trySend(UiEffect.ShowSnackbar("Pick a spool or hit Save first."))
+                    return
+                }
+                launchCreateAndPair(form, spoolId, isNewSpool = false)
+            }
         }
+    }
 
-        // Standard create-and-pair (existing U6a path).
+    private fun launchCreateAndPair(form: FormState, spoolId: Int, isNewSpool: Boolean) {
         _state.update { it.copy(activeFlow = ActiveFlow.WritingForPair) }
         writeJob = viewModelScope.launch {
             val materialName = resolveMaterialName(form.material, _customMaterial.value)
@@ -402,13 +585,9 @@ class MainViewModel @Inject constructor(
                 materialName.takeIf { it.isNotBlank() },
                 variantPart.takeIf { it.isNotBlank() },
             ).joinToString(" ").ifBlank { materialName }
-
-            android.util.Log.d(
-                "SpoolmanRepo",
-                "onWriteTapped: form.variant=${form.variant} variantPart=$variantPart derivedName=$derivedName selectedSpoolId=${form.selectedSpoolId}",
-            )
-
             val input = CreateAndPairInput(
+                spoolId = spoolId,
+                isNewSpool = isNewSpool,
                 form = form,
                 newFilamentName = derivedName,
                 newFilamentVendor = brandName.ifBlank { "Generic" },
@@ -416,10 +595,7 @@ class MainViewModel @Inject constructor(
             )
             val result = withTimeoutOrNull(writeTimeoutMs) {
                 createAndPair.invoke(input)
-            } ?: CreateAndPairResult.Cancelled(
-                reason = "timeout",
-                spoolId = createAndPair.lastResolvedSpoolId,
-            )
+            } ?: CreateAndPairResult.Cancelled(reason = "timeout", spoolId = spoolId)
             applyWriteResult(result)
         }
     }
@@ -564,46 +740,103 @@ class MainViewModel @Inject constructor(
         _state.update { it.copy(form = it.form.copy(moreDetailsExpanded = !it.form.moreDetailsExpanded)) }
     }
 
-    fun onEmptySpoolWeightChanged(s: String) = updateFloatField(s) { form, v -> form.copy(emptySpoolWeightG = v) }
+    fun onEmptySpoolWeightChanged(s: String) {
+        if (s.isEmpty()) {
+            _state.update { it.copy(form = it.form.copy(emptySpoolWeightG = null)) }
+            return
+        }
+        val parsed = s.toFloatOrNull() ?: return
+        _state.update { current ->
+            val form = current.form
+            // U13 — when measuredEntry was stashed because emptySpool was
+            // unknown, commit remaining = measured − empty now that the
+            // reference exists. Clamp ≥ 0 to avoid negative remaining when
+            // the user typed something inconsistent.
+            val updatedForm = if (form.weightMethod == WeightMethod.Measured && form.measuredEntry != null) {
+                val rem = (form.measuredEntry - parsed).coerceAtLeast(0f)
+                form.copy(
+                    emptySpoolWeightG = parsed,
+                    remainingWeightG = rem,
+                )
+            } else {
+                form.copy(emptySpoolWeightG = parsed)
+            }
+            current.copy(form = updatedForm)
+        }
+    }
     fun onPriceChanged(s: String) = updateFloatField(s) { form, v -> form.copy(priceMajor = v) }
     fun onFullSpoolWeightChanged(s: String) = updateFloatField(s) { form, v -> form.copy(fullSpoolWeightG = v) }
     fun onDensityChanged(s: String) = updateFloatField(s) { form, v -> form.copy(densityGPerCm3 = v) }
-    fun onRemainingWeightChanged(s: String) =
-        updateFloatField(s) { form, v -> form.copy(remainingWeightG = v) }
 
     /**
-     * Measured = remaining + emptySpoolWeightG. Two modes:
-     *
-     *  - emptySpoolWeightG is set → solve for remaining (the normal
-     *    bidirectional case; remaining is the source of truth).
-     *  - emptySpoolWeightG is null → solve for emptySpoolWeightG instead.
-     *    Lets the user back-solve empty-spool from a scale reading +
-     *    known remaining when neither the spool nor filament has one
-     *    set yet. Requires remainingWeightG to be set.
-     *
-     * If the back-solved value would be negative, skip the commit. The
-     * user is mid-typing ("9" before "950"); committing intermediate
-     * states triggers a recompute that resets the local DecimalField
-     * text via `remember(value)`, eating the keystroke. Skipping leaves
-     * the form unchanged so the user can finish typing.
+     * U13 (Cluster A) — pick the weight measurement method. Switching the
+     * method may drop a stashed measuredEntry (when leaving Measured before
+     * emptySpool was set), but never clobbers committed remaining/empty
+     * values.
      */
-    fun onMeasuredWeightChanged(s: String) {
-        if (s.isEmpty()) {
-            _state.update { it.copy(form = it.form.copy(remainingWeightG = null)) }
-            return
+    fun onWeightMethodPicked(method: WeightMethod) {
+        _state.update { current ->
+            val form = current.form
+            if (form.weightMethod == method) return@update current
+            // Drop the transient on method change: it's a "I typed this in
+            // Measured but emptySpool wasn't there yet" buffer, only relevant
+            // while Measured is active.
+            current.copy(form = form.copy(weightMethod = method, measuredEntry = null))
         }
-        val measured = s.toFloatOrNull() ?: return
-        val form = _state.value.form
-        val spoolWeight = form.emptySpoolWeightG
-        if (spoolWeight != null) {
-            val remaining = measured - spoolWeight
-            if (remaining < 0f) return
-            _state.update { it.copy(form = it.form.copy(remainingWeightG = remaining)) }
-        } else {
-            val remaining = form.remainingWeightG ?: return
-            val emptySpool = measured - remaining
-            if (emptySpool < 0f) return
-            _state.update { it.copy(form = it.form.copy(emptySpoolWeightG = emptySpool)) }
+    }
+
+    /**
+     * U13 (Cluster A) — write to the active weight method's underlying value.
+     *
+     *  - Active = Remaining: commit `remainingWeightG`. Empty input → null.
+     *  - Active = Measured + emptySpool known: commit
+     *    `remainingWeightG = measured − emptySpoolWeightG` (clamped ≥ 0).
+     *    Skip negative back-solve to preserve mid-typing keystrokes
+     *    ("9" before "950") — committing intermediate values triggers a
+     *    recompute that resets the field's local string via `remember(value)`.
+     *  - Active = Measured + emptySpool unknown: stash the user's measured
+     *    value in `measuredEntry`. The display field stays as the source of
+     *    truth; remaining is committed automatically when emptySpool resolves.
+     */
+    fun onActiveWeightChanged(s: String) {
+        val current = _state.value.form
+        when (current.weightMethod) {
+            WeightMethod.Remaining -> {
+                if (s.isEmpty()) {
+                    _state.update { it.copy(form = it.form.copy(remainingWeightG = null)) }
+                    return
+                }
+                val parsed = s.toFloatOrNull() ?: return
+                _state.update { it.copy(form = it.form.copy(remainingWeightG = parsed)) }
+            }
+            WeightMethod.Measured -> {
+                if (s.isEmpty()) {
+                    _state.update {
+                        it.copy(form = it.form.copy(remainingWeightG = null, measuredEntry = null))
+                    }
+                    return
+                }
+                val measured = s.toFloatOrNull() ?: return
+                val empty = current.emptySpoolWeightG
+                if (empty != null) {
+                    val remaining = measured - empty
+                    if (remaining < 0f) return // mid-typing — keep user input
+                    _state.update {
+                        it.copy(
+                            form = it.form.copy(
+                                remainingWeightG = remaining,
+                                measuredEntry = measured,
+                            ),
+                        )
+                    }
+                } else {
+                    // No reference yet — stash the entry. Don't commit
+                    // remaining (we don't know what to subtract).
+                    _state.update {
+                        it.copy(form = it.form.copy(measuredEntry = measured))
+                    }
+                }
+            }
         }
     }
 
@@ -757,17 +990,27 @@ class MainViewModel @Inject constructor(
                 // form (material/brand/colour/temps), keep the filament
                 // selection if any, keep the spool selection if any. Only
                 // update the cardUid so a subsequent Save & Write knows which
-                // tag to write to. The snackbar tells the user what was
-                // detected; vendor tags surface the chip + don't need extra
-                // snackbar copy.
+                // tag to write to.
+                //
+                // 2026-06-06 fix: Read of an unpaired VENDOR tag IS different.
+                // The user is signalling "I want to map this tag" — the
+                // previously-selected spool is stale (it doesn't own this
+                // UID). Clear it so the user picks a target deliberately.
+                val isVendor = result.classification is TagClassification.Vendor
                 _state.update { current ->
                     current.copy(
-                        form = current.form.copy(cardUid = result.uid),
+                        form = current.form.copy(
+                            cardUid = result.uid,
+                            selectedSpoolId = if (isVendor) null else current.form.selectedSpoolId,
+                        ),
+                        spoolman = if (isVendor) {
+                            current.spoolman.copy(selectedSpoolId = null)
+                        } else current.spoolman,
                         ambiguity = null,
                         activeFlow = ActiveFlow.Idle,
                     )
                 }
-                if (result.classification !is TagClassification.Vendor) {
+                if (!isVendor) {
                     _effects.trySend(UiEffect.ShowSnackbar("Blank tag detected."))
                 }
             }
@@ -803,6 +1046,11 @@ class MainViewModel @Inject constructor(
                 // The sheet's title acts as the success confirmation — a
                 // separate snackbar would slide up underneath the sheet and be
                 // immediately covered (UI-03).
+                //
+                // Clear orphan: the spool now has a UID linkage in Spoolman,
+                // so a subsequent failure path must not chain-delete a real
+                // paired spool.
+                saveToSpoolman.lastResolvedOrphan = null
                 _state.update { current ->
                     val filamentId = current.spoolman.spools
                         .firstOrNull { it.id == result.spoolId }?.filament?.id
@@ -833,7 +1081,7 @@ class MainViewModel @Inject constructor(
                     )
                 }
                 _effects.trySend(
-                    UiEffect.ShowSnackbar("Saved to Spoolman. Tag write failed. Try again."),
+                    UiEffect.ShowSnackbar("Tag write failed. Try again."),
                 )
             }
             is CreateAndPairResult.SpoolmanFailed -> {
@@ -846,7 +1094,7 @@ class MainViewModel @Inject constructor(
                 // up in the background. We do NOT pin the spool selection
                 // in that case — the spoolId is about to disappear from
                 // Spoolman, pinning it would break the next tap.
-                val orphan = createAndPair.lastResolvedOrphan
+                val orphan = saveToSpoolman.lastResolvedOrphan
                 if (orphan != null) {
                     _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
                     fireOrphanCleanup(orphan)
@@ -875,12 +1123,12 @@ class MainViewModel @Inject constructor(
                     result.reason.contains("vendor-tag", ignoreCase = true) ->
                         "Vendor tag. Write blocked."
                     else ->
-                        "Saved to Spoolman. Tag write failed. Try again."
+                        "Tag write failed. Try again."
                 }
                 _effects.trySend(UiEffect.ShowSnackbar(msg))
             }
             is CreateAndPairResult.Cancelled -> {
-                val orphan = createAndPair.lastResolvedOrphan
+                val orphan = saveToSpoolman.lastResolvedOrphan
                 if (orphan != null) {
                     _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
                     fireOrphanCleanup(orphan)
@@ -914,11 +1162,79 @@ class MainViewModel @Inject constructor(
         }
     }
 
+    /**
+     * U13 — apply [SaveToSpoolmanResult] back to UI state. On success, auto-
+     * select the spool in the dropdown + pin form selection so the next Write
+     * tap appends to it. Snackbar copy varies on new vs existing.
+     */
+    private fun applySaveResult(result: SaveToSpoolmanResult) {
+        when (result) {
+            is SaveToSpoolmanResult.Success.Saved -> {
+                _state.update { current ->
+                    val filamentId = current.spoolman.spools
+                        .firstOrNull { it.id == result.spoolId }?.filament?.id
+                    val updatedForm = current.form.copy(
+                        selectedSpoolId = result.spoolId,
+                        selectedFilamentId = filamentId ?: current.form.selectedFilamentId,
+                        // Refresh prefilled snapshots to current values so a
+                        // follow-up Save with no further edits is a no-op.
+                        prefilledRemainingWeightG = current.form.remainingWeightG,
+                        prefilledPriceMajor = current.form.priceMajor,
+                        prefilledEmptySpoolWeightG = current.form.emptySpoolWeightG,
+                    )
+                    current.copy(
+                        form = updatedForm,
+                        spoolman = current.spoolman.copy(selectedSpoolId = result.spoolId),
+                    )
+                }
+                val msg = if (result.isNewSpool) {
+                    "Saved spool #${result.spoolId}. Tap Write to pair a tag."
+                } else {
+                    "Updated spool #${result.spoolId}."
+                }
+                _effects.trySend(UiEffect.ShowSnackbar(msg))
+            }
+            is SaveToSpoolmanResult.NoChanges -> {
+                // Save button should have been greyed; this only fires on a race.
+                android.util.Log.d("SpoolmanRepo", "Save no-op for spool #${result.spoolId}")
+            }
+            is SaveToSpoolmanResult.Failed -> {
+                _effects.trySend(UiEffect.ShowSnackbar(humanReadable(result.outcome)))
+            }
+            SaveToSpoolmanResult.UrlNotConfigured -> {
+                _effects.trySend(UiEffect.ShowSnackbar("Configure Spoolman in Settings."))
+            }
+        }
+    }
+
+    /**
+     * U13 §11 — sheet's "Pair another" button. Behaves as a toggle when a
+     * second-tag write is in flight: tapping during [ActiveFlow.WritingSecondTag]
+     * cancels the writeJob + disarms NFC + returns to [ActiveFlow.PromptingPairAnother]
+     * (the sheet stays visible — user is still inside the pair-another flow).
+     */
     fun onPairAnotherTagAccepted() {
-        val current = _state.value.activeFlow as? ActiveFlow.PromptingPairAnother ?: return
+        val state = _state.value
+        val flow = state.activeFlow
+        if (flow is ActiveFlow.WritingSecondTag) {
+            // Cancel branch — same target spool, return to prompt state.
+            writeJob?.cancel()
+            writeJob = null
+            viewModelScope.launch { nfc.disarm() }
+            _state.update { current ->
+                current.copy(
+                    activeFlow = ActiveFlow.PromptingPairAnother(
+                        spoolId = flow.spoolId,
+                        isVendorPair = false,
+                    ),
+                )
+            }
+            return
+        }
+        val current = flow as? ActiveFlow.PromptingPairAnother ?: return
         val spoolId = current.spoolId
         _state.update { it.copy(activeFlow = ActiveFlow.WritingSecondTag(spoolId)) }
-        viewModelScope.launch {
+        writeJob = viewModelScope.launch {
             val result = withTimeoutOrNull(writeTimeoutMs) {
                 twoTag.invoke(TwoTagInput(spoolId))
             } ?: TwoTagResult.Cancelled("timeout")
@@ -998,7 +1314,9 @@ class MainViewModel @Inject constructor(
             }
             is TwoTagResult.VerifyFailed -> {
                 _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
-                _effects.trySend(UiEffect.ShowSnackbar("Couldn't write to second tag. Try again."))
+                _effects.trySend(
+                    UiEffect.ShowSnackbar("Couldn't write to second tag. Tap Write to retry."),
+                )
             }
             is TwoTagResult.SpoolmanFailed -> {
                 _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
@@ -1014,14 +1332,18 @@ class MainViewModel @Inject constructor(
             }
             is TwoTagResult.NfcFailed -> {
                 _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
-                _effects.trySend(UiEffect.ShowSnackbar("Couldn't write to tag. Try again."))
+                _effects.trySend(
+                    UiEffect.ShowSnackbar("Couldn't write to second tag. Tap Write to retry."),
+                )
             }
             is TwoTagResult.Cancelled -> {
                 _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
                 // Suppress on explicit user decline (RepairConfirmSheet
                 // Cancel). Emit only for genuine timeouts / unknown reasons.
                 if (!result.reason.startsWith("repair declined", ignoreCase = true)) {
-                    _effects.trySend(UiEffect.ShowSnackbar("No second tag tapped. Tap Pair another to retry."))
+                    _effects.trySend(
+                        UiEffect.ShowSnackbar("No second tag tapped. Tap Write to retry."),
+                    )
                 }
             }
         }

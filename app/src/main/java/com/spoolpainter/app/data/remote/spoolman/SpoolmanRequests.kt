@@ -24,6 +24,7 @@ data class CreateFilamentRequest(
 
 data class PatchFilamentBody(
     val name: String? = null,
+    val color_hex: String? = null,
     val settings_extruder_temp: Int? = null,
     val settings_bed_temp: Int? = null,
     val density: Float? = null,
@@ -53,6 +54,13 @@ data class ExpanderOverrides(
     val price: Float? = null,
     val spoolPrice: Float? = null,
     val variant: String? = null,
+    /** v2.1 — filament-record edits unlocked on existing-spool path. Color +
+     *  temps PATCH the filament alongside variant. sparseDiff in
+     *  patchFilament collapses unchanged values to a no-op so passing these
+     *  on every Save is cheap. */
+    val colorHex: String? = null,
+    val extruderTemp: Int? = null,
+    val bedTemp: Int? = null,
 ) {
     companion object {
         val EMPTY = ExpanderOverrides()

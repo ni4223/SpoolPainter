@@ -1832,3 +1832,225 @@ Branch `v2` will get a single bundled commit covering: 8 prod files modified (`M
 **Context**: v2.0.3 Cluster D code generation; on-device verified; version bump deferred; awaiting close-out commit.
 
 ---
+
+## Session resumed 2026-06-06 — U13 Code Gen Part 1 plan authored
+**Timestamp**: 2026-06-06T00:00:00Z
+**User Input**: "aidlc continue" → [picked "U13 spec authoring" from resume-path question, presented after detecting Cluster D close-out commit `2add547` already shipped] → [picked "Skip FD — Cluster B+A locked it" from FD-path question] → [picked "v2.1 — separate release" from release-window question]
+**AI Response**: Confirmed Cluster D close-out commit `2add547` already on `v2` + pushed to `origin/v2` (tree clean). Per-unit gate locked: FD / NFR-R / NFR-D / Infra-D SKIP — Cluster B (2026-06-05, 9 decisions) + Cluster A (2026-06-06, weight-picker reframe) in `feedback-raw.md` constitute the de-facto FD. Release window locked v2.1 separate — v2.0.3 ships Cluster D + F-7/F-8 polish without U13 for fast tester turnaround.
+
+Audited the actual code surface before plan authoring: `MainScreen.kt:74-291` (Scaffold + ReadFab + Outer-content + 3 Cards + SaveAndWriteButton), `MainViewModel.kt:362-425` (`onWriteTapped` U7 dispatch into 4 branches: vendor+RawNoUrl→snackbar, vendor+Spoolman→vendor UID-only, RawNoUrl→raw, else→standard create-and-pair), `MainViewModel.kt:474-561` (`onSpoolSelected` + `onFilamentSelected` form-prefill mechanics), `MainViewModel.kt:590-608` (the buggy `onMeasuredWeightChanged` back-solve branch), `MainUiState.kt:38-69` (`FormState` shape with `prefilledRemainingWeightG / prefilledPriceMajor / prefilledEmptySpoolWeightG` snapshot triple), `MoreDetailsExpander.kt:163-251` (today's bidirectional Remaining/Measured row + filament weight + empty spool + density + price), `CreateAndPairUseCase.kt:65-130` (steps 1+1a+1b that the new SaveToSpoolmanUseCase will inherit verbatim — `resolveSpool` + variant patch + spool-scope patch via `applyVariantToFilamentOfSpool` + `patchSpoolFields`), `VendorUidOnlyPairUseCase.kt:49-174` (pattern for the new use case — same Hilt-injected single-repo + MoveOnBindUseCase shape), `SpoolmanRepository.kt:140-260` (`createSpoolForExistingFilament` + `applyVariantToFilamentOfSpool` + `patchSpoolFields` + `applyOverridesToFilamentOfSpool` — all already callable from a new caller, no surface change needed).
+
+Authored `aidlc-docs/construction/plans/u13-action-split-code-generation-plan.md` (~530 lines, 6 sections):
+
+  - **§1 Scope locked**: action split (two top-level buttons), bottom action row replacing ReadFab (Read↔Cancel + Write, both stationary), outer-Card layout reversing U9b's three-Cards decision (decision 6), Spoolman-parity Remaining+Measured radio replacing back-solve branch (Cluster A), snackbar copy delta dropping today's joint-state strings, out-of-scope explicit list.
+  - **§2 File impact**: 3 new files (`SaveToSpoolmanUseCase.kt` + `SaveToSpoolmanResult.kt` + `WeightMethodRadio.kt`); 8 prod modified (`MainViewModel`, `MainUiState`, `MainScreen`, `MoreDetailsExpander`, `FilamentForm`, `CreateAndPairUseCase` shrunken, `SpoolmanRepository` no-surface-change verify, Hilt UseCaseModule); 7 test modified incl. 3 new test classes (`MainViewModelSaveTapTest` 6 cases, `MainViewModelWeightMethodTest` 4 cases, `SaveToSpoolmanUseCaseTest` 8 cases).
+  - **§3 17-step plan**: §1 WeightMethod enum → §2 SaveToSpoolmanUseCase + Result + Hilt → §3 CreateAndPairUseCase shrink (drop resolveSpool, take spoolId as required input) → §4 WeightMethodRadio composable → §5 MoreDetailsExpander integration + locked-weight supportingText → §6 ViewModel Save/Write split (canSave + canWrite flows; applySaveResult auto-pin) → §7 Weight method handlers (transient measuredEntry approach for the no-emptySpool-yet case — eliminates today's silent-keystroke-swallow) → §8 MainScreen reshape (outer Card; bottomBar Slot; ReadFab dropped; VendorTagHint chip body relocated to button caption) → §9 Read↔Cancel toggle → §10 RawNoUrl mode (Save hidden, Write label = "Write to NFC") → §11 Pair-another flow + sheet-internal Cancel flip (resolves F-7 part 2) → §12 F-8 tooltip copy fix → §13 SettingsRepository unchanged → §14 Hilt → §15 brownfield invariants → §16 build matrix (target tests ~410, APK ~64 MB / release ~7.0 MB) → §17 12-scenario manual install gate.
+  - **§4 Open Q-U13-* for Part 2**: Q-U13-1 (vendor + Spoolman: Save triggers vendor UID-only pair OR Write stays the only pair affordance routing to vendor UID-only?), Q-U13-2 (drop Gross radio entirely?), Q-U13-3 (inner Cards: Surface, elevation 0 Card, or visible nested Cards?), Q-U13-4 (Save label "Save to Spoolman" vs "Save"), Q-U13-5 (Read-blank-then-Save: confirm extra-tap acceptance).
+  - **§5 traceability**: matrix mapping all 11 Cluster B decisions + 2 Cluster A asks to plan sections.
+  - **§6 resume options**.
+
+Test count target ~410 (Δ +20 vs Cluster D's 390): +28 added across 3 new test classes + 2 second-tag-flip in MainViewModelTwoTagTest + 2 read-cancel in MainViewModelTest, minus ~−8 replaced bidirectional-pair cases in MoreDetailsExpanderTest.
+
+Three task-list entries created/closed: #1 "Audit current MainViewModel + form-state surface" DONE (no code; surface mapping only); #2 "Author U13 Code Gen Part 1 plan" DONE; #3 "Update aidlc-state.md + audit.md" in flight via this entry.
+
+State.md "Current Stage" rewritten to (a) flip Cluster D from "awaiting bundled close-out" → "DONE — commit `2add547` pushed", (b) add U13 Code Gen Part 1 plan AUTHORED + awaiting stage-gate approval, (c) lock release window v2.1 separate, (d) carry F-7/F-8 second-tag-listening as still-pending with a note that it's currently captured as in-scope for U13 §11 but easy to lift into v2.0.3 if scope flips.
+
+**Awaiting stage-gate approval** before Code Gen Part 2 execution — likely a fresh "aidlc continue" tomorrow given session length.
+**Context**: U13 Code Gen Part 1 plan authored; per-unit FD/NFR-R/NFR-D/Infra-D skipped; v2.1 release window locked.
+
+---
+
+## U13 plan revision — Universal Cancel rule
+**Timestamp**: 2026-06-06T00:00:00Z
+**User Input**: "i dont want just read cancel, any operatuon that blocks screen should have cznc el"
+**AI Response**: Generalised Cluster B's "Read↔Cancel toggle" (locked decision 11) into a **Universal Cancel rule**: any `activeFlow` state that blocks the form area MUST surface a Cancel affordance on whichever bottom-bar button "owns" that flow. No silent locked screens. Specifically:
+
+  | activeFlow                       | Read button | Write button | Other affordance         |
+  |----------------------------------|-------------|--------------|--------------------------|
+  | Idle                             | Read        | Write        | —                        |
+  | ReadingForPair                   | **Cancel**  | disabled     | —                        |
+  | WritingForPair (standard)        | disabled    | **Cancel**   | —                        |
+  | WritingRaw (RawNoUrl)            | disabled    | **Cancel**   | —                        |
+  | PairingVendorUidOnly (HTTP only) | disabled    | **Cancel**   | —                        |
+  | WritingSecondTag(spoolId)        | disabled    | disabled     | sheet's Pair another → **Cancel** |
+  | PromptingPairAnother(spoolId)    | disabled    | disabled     | sheet has Done / Pair another |
+  | AwaitingRepairConfirmation(...)  | disabled    | disabled     | sheet has Confirm / Cancel |
+
+Plan revisions in `aidlc-docs/construction/plans/u13-action-split-code-generation-plan.md`:
+
+  - **§1.2** (bottom action row): added the matrix above + locked-2026-06-06 note. Save button stays "never long enough to need Cancel" — completes in ~250ms typical Spoolman HTTP, OkHttp/safety-net timeouts cover hangs; no separate Cancel surface.
+  - **§9** (renamed "Read↔Cancel toggle" → "Universal Cancel (Read + Write + Vendor + Raw)"): generalised to BOTH `onReadTapped` and `onWriteTapped` toggle behaviour. `onWriteTapped` toggle handles all three Write states (standard / raw / vendor UID-only) via a single `writeJob.cancel()` collapse. Coroutine cancellation already propagates through `withTimeoutOrNull` + suspended `nfc.arm` / use-case bodies — no new cleanup needed. Captured a subtle correctness note: cancel during `WritingForPair` after the UID PATCH already landed leaves the spool↔UID linkage intact (correct — preserves the user's pairing intent).
+  - **§11** (pair-another sheet): sheet "Pair another" button flips to Cancel during `WritingSecondTag`. Cancel returns to `PromptingPairAnother` (NOT Idle — user is still inside pair-another flow). Cleanly resolves both F-7 part 2 + F-8 (Cancel target lives on the same button that armed the listen, so the user is never told to "tap a button that has dismissed").
+  - **§16** (build matrix): test target raised from ~410 to ~415 (5 new universal-Cancel cases in MainViewModelTest + 1 extra in MainViewModelTwoTagTest).
+  - **§17** (manual install gate): scenario 8 expanded into 8 / 8b / 8c / 8d covering Read / Write standard / Write vendor / Write Raw cancel paths. Scenario 9 captures sheet Cancel.
+  - **§5** (traceability matrix): new row "Universal Cancel — every blocking flow shows Cancel on its owning button" pointing at §1.2 matrix + §9 + §11.
+
+**Context**: Plan revision in flight; awaiting Code Gen Part 1 stage-gate approval before Part 2 execution.
+
+---
+
+## U13 plan revision — Cancel scope narrowed to tag-waiting flows
+**Timestamp**: 2026-06-06T00:00:00Z
+**User Input**: "just things that takes lot of time like read and write, others are fine"
+**AI Response**: Narrowed the prior universal-Cancel rule. Cancel surfaces only for the NFC-bound flows that wait for a tag: `ReadingForPair` (Read button → Cancel) + `WritingForPair` (Write button → Cancel) + `WritingRaw` (Write button → Cancel) + sheet's `WritingSecondTag` (Pair another button → Cancel). HTTP-only flows (`PairingVendorUidOnly`, Save in flight) keep their owning button disabled-while-in-flight without a separate Cancel surface — ~250ms typical roundtrip is too short to justify a Cancel affordance.
+
+Plan revisions in `aidlc-docs/construction/plans/u13-action-split-code-generation-plan.md`:
+
+  - **§1.2** matrix updated: `PairingVendorUidOnly` row + new "Save in flight" row both flip to "no Cancel, fast HTTP". Locked-rule note rewritten as "only NFC-bound flows that wait for a tag get Cancel".
+  - **§9** retitled "Cancel for tag-waiting flows (Read + Write NDEF)" (was "Universal Cancel"). `onWriteTapped` toggle restricted to `WritingForPair` + `WritingRaw` only — `PairingVendorUidOnly` is no longer Cancel-toggleable. New `isWriteCancellable` flow gates the label flip. Test for `PairingVendorUidOnly` flipped from "cancels writeJob" to "is a no-op (button disabled in this state)".
+  - **§17** scenario 8c (was vendor pair Cancel) became 8d (vendor pair, no Cancel surface — explicitly tested). Scenario count unchanged but semantics flipped.
+  - **§16** test target: ~415 → ~412 (one less Cancel test in MainViewModelTest after the vendor-pair-Cancel case became vendor-pair-no-Cancel).
+  - **§5** traceability matrix row reframed.
+
+**Context**: Plan revision in flight; awaiting Code Gen Part 1 stage-gate approval before Part 2 execution.
+
+---
+
+## U13 plan revision — Weight radio: hide inactive field, radio at top
+**Timestamp**: 2026-06-06T00:00:00Z
+**User Input**: "for weight radio button one, keep radio button top, and instead of active disable, just hide feild, since we do not have lot of UI"
+**AI Response**: Reshaped the WeightMethodRadio composable:
+  - Radio moves to TOP as a horizontal RadioButton pair (or SegmentedButton — pick cleanest at 1-line height): "( ) Remaining   ( ) Measured".
+  - Below the radio: a SINGLE DecimalField. Label + suffix flip with the active method. Inactive method's field is HIDDEN entirely (not disabled at 0.4 alpha) — saves vertical real estate in the already-dense expander.
+  - Composable signature simplified from `(remainingWeightG, measuredWeightG, ...)` to `(activeValueG, ...)` — caller computes which value is "active" based on `state.form.weightMethod`.
+  - Optional supportingText below the active field anchors the conversion: when emptySpool is set, shows "Scale will read N g" (active=Remaining) or "Filament left: N g" (active=Measured). Disappears when there's not enough info to compute.
+
+Plan revisions in `aidlc-docs/construction/plans/u13-action-split-code-generation-plan.md`:
+  - **§1.4** ASCII diagram redrawn — radio segmented row on top, single `[    ] g` field below. Locked-rule note updated.
+  - **§4** WeightMethodRadio signature simplified to (method, activeValueG, emptySpoolWeightG, ...); inactive field "no field rendered at all"; supportingText section added.
+  - **§5** MoreDetailsExpander integration updated — caller passes `activeValueG` instead of both remaining + measured. Locked-filament-weight supportingText reworded ("Switch to Remaining or Measured above to edit.").
+  - **§17** scenarios 4 + 5 rewritten to test the visible-field-flip behaviour explicitly: scenario 4 verifies radio swap hides one field + shows the other; scenario 5 verifies no silent keystroke loss when empty-spool is missing (input field is single source of truth).
+
+**Context**: Plan revision in flight; awaiting Code Gen Part 1 stage-gate approval before Part 2 execution.
+
+---
+
+## U13 plan locked in
+**Timestamp**: 2026-06-06T00:00:00Z
+**User Input**: "lock in aidlc docs"
+**AI Response**: Committing U13 Code Gen Part 1 plan + state.md sync + audit.md updates as a docs-only commit on `v2`. Plan covers: action split (Save↔Write), bottom action row (Read+Cancel toggle, Write+Cancel toggle for tag-waiting flows only), outer-Card layout, weight radio (radio at top, single active field below, inactive field hidden), 17 implementation steps, 5 open Q-U13-* questions for Part 2 Q&A, traceability matrix, 12+4 install-gate scenarios. Per-unit gate FD/NFR-R/NFR-D/Infra-D SKIP. Release window v2.1 (separate). Test target ~412.
+
+Three plan revisions during this session captured in prior audit entries:
+  1. Initial plan authored.
+  2. Universal-Cancel rule (later narrowed) — covered every blocking flow.
+  3. Cancel narrowed to tag-waiting flows only (Read + NDEF Write + sheet's Pair another); HTTP-only flows stay disabled-while-in-flight without Cancel.
+  4. Weight radio layout — radio segmented row at TOP, single active field below, inactive field hidden (saves vertical real estate).
+
+Awaiting Code Gen Part 1 stage-gate approval before Part 2 execution.
+**Context**: AIDLC docs locked in commit on `v2`.
+
+---
+
+## U13 Code Gen Part 1 — session resume + approval prompt
+**Timestamp**: 2026-06-06T00:00:00Z
+**User Input**: "aidlc continue"
+**AI Response**: Resumed AIDLC at U13 Code Gen Part 1 stage gate. Plan at `aidlc-docs/construction/plans/u13-action-split-code-generation-plan.md` (458 lines, untracked) was locked in this session via three plan revisions: (1) initial draft, (2) universal-Cancel rule then narrowed to (3) Cancel for tag-waiting flows only (Read + NDEF Write + sheet's Pair another), (4) weight radio reshape — radio at TOP, single active field below, inactive field hidden. Per-unit gate: FD / NFR-R / NFR-D / Infra-D **SKIP** per "Skip FD — Cluster B+A locked it". Release window: v2.1 separate. Test target: ~412 (today: 390; +22 net). Branch `v2` is clean against `origin/v2` (commits `2add547` Cluster D and prior pushed; only `aidlc-state.md` + `audit.md` modified + plan untracked since last push).
+
+Presenting standardized 2-option Code Gen Part 1 completion message.
+**Context**: Awaiting explicit user choice between "Request Changes" and "Continue to Next Stage" (Code Gen Part 2 execution).
+
+---
+
+## U13 Code Gen Part 1 — APPROVED
+**Timestamp**: 2026-06-06T00:00:00Z
+**User Input**: "approved"
+**AI Response**: U13 Code Gen Part 1 plan approved. Marking Part 1 complete in `aidlc-state.md`. Transitioning to Code Gen Part 2 (Generation). Five open Q-U13-* questions need resolution before Part 2 execution begins (per plan §4 — they affect implementation directly):
+
+  - Q-U13-1: vendor-tag write — Save-triggers-pair vs Write-routes-internally
+  - Q-U13-2: Gross radio option — drop entirely (re-confirm)
+  - Q-U13-3: inner Cards — Surface / elevation-0 / visible
+  - Q-U13-4: Save button label — "Save to Spoolman" (locked) vs shorter "Save"
+  - Q-U13-5: Read-flow orphan path — user accepts "hit Save first" extra tap
+
+Will surface as a single AskUserQuestion block before §1 begins.
+**Context**: Code Gen Part 1 approved; preparing Part 2 Q&A.
+
+---
+
+## U13 Code Gen Part 2 — Q&A resolved
+**Timestamp**: 2026-06-06T00:00:00Z
+**User Input** (5 answers; Q-U13-2 carried over locked from plan §1.4 + the approved plan):
+  - Q-U13-1 = **A** "Save triggers vendor pair" — Save with vendor chip visible commits Spoolman state + UID linkage in one step (subsumes vendor UID-only pair). Write button stays disabled when vendor chip is visible (caption: "Vendor tag — can't be written.").
+  - Q-U13-2 = **drop Gross** (locked by plan §1.4; not re-asked — plan approval covers it).
+  - Q-U13-3 = **B** "Elevation-0 Cards with thin border" — inner Cards drop to elevation 0 with `BorderStroke(1.dp, surfaceVariant)` inside the outer Card.
+  - Q-U13-4 = **A** "Save to Spoolman" (locked label).
+  - Q-U13-5 = **A** "Hit Save first, then Write" — orphan-Read path follows the same Save→Write rule as typed forms; no auto-Save inside Write.
+
+**AI Response**: Logged. Plan implementation impact:
+  - §1.2 + §6 + §8: Q-U13-1=A reshapes vendor flow — `onSaveTapped` checks `state.observedTagKind == ObservedTagKind.Vendor && state.spoolman.urlConfigured` and routes to vendor UID-only pair path (no NDEF) instead of the standard Save. Write button stays `enabled = false` whenever vendor chip is visible. Eliminates the open question in §17 scenario 7; Cancel surfacing in §1.2 matrix already covers the "no Cancel for vendor pair" case (HTTP-only).
+  - §1.3 + §8: Q-U13-3=B locks inner Cards as `elevation = 0.dp, border = BorderStroke(1.dp, surfaceVariant)`.
+  - §6 + §8: Q-U13-4=A — `SaveToSpoolmanButton` text = "Save to Spoolman".
+  - §6: Q-U13-5=A confirmed — `canSave` flow gates on form-validity-and-changes, not on selectedSpoolId; orphan path goes Save → spool created → dropdown auto-selects → Write enabled.
+
+Proceeding to Part 2 generation. Will execute §1..§17 in order with explicit verify gates.
+**Context**: All Q&A locked; entering Part 2 generation.
+
+---
+
+## U13 Code Gen Part 2 — EXECUTED
+**Timestamp**: 2026-06-06T00:00:00Z
+**User Input**: (continued execution under Part 1 + Part 2 Q&A approval)
+**AI Response**: All §1..§17 plan steps executed.
+
+  - **Created (7)**: `SaveToSpoolmanResult.kt` + `SaveToSpoolmanUseCase.kt` + `WeightMethodRadio.kt` (prod); `FakeSaveToSpoolmanUseCase.kt` + `SaveToSpoolmanUseCaseTest.kt` (8) + `MainViewModelSaveTapTest.kt` (6) + `MainViewModelWeightMethodTest.kt` (4) (test).
+  - **Modified prod (6)**: `MainViewModel.kt` (Save/Write split, Cancel toggles, weight radio handlers, snackbar copy delta), `MainUiState.kt` (`WeightMethod` enum + `weightMethod`/`measuredEntry` fields), `MainScreen.kt` (outer Card + bottomBar + InnerSectionCard helper), `CreateAndPairUseCase.kt` (write-only shrink), `MoreDetailsExpander.kt` (radio integration), `FilamentForm.kt` (FormChange variants + button rename).
+  - **Modified test (12)**: 9 ViewModel tests gained `saveToSpoolman` ctor arg via bulk patch; `CreateAndPairUseCaseTest.kt` rewritten as write-only; `MainViewModelMoreDetailsExpanderTest.kt` weight cases rewritten for radio model; `MainViewModelRawWriteTest.kt` vendor cases reframed (Save handles vendor per Q-U13-1=A); `MainViewModelFilamentPickerTest.kt` orphan-Write reframed.
+  - **Build matrix**: `compileDebugKotlin` ✅ / `testDebugUnitTest` ✅ **403 / 403** / `assembleDebug` ✅ 64 MB / `assembleRelease` ✅ **7.0 MB R8** / `bundleRelease` ✅ 7.7 MB AAB.
+  - **Brownfield invariants**: ✅ no `*_modified.kt` / `*_new.kt` / `*.bak`; ✅ no production `MoveOnBindUseCase.NoOp` refs; ✅ no leftover `RemainingWeightChanged`/`MeasuredWeightChanged` FormChange variants in production.
+  - **Mid-codegen surprises**: (a) Test count target ~412 → landed 403 because the bidirectional Remaining/Measured cases compressed when the radio model replaced them; (b) Save uses `_saveInFlight` private flag instead of an `activeFlow` transition (Save runs in `viewModelScope` without a screen-blocking flow — ~250 ms typical Spoolman roundtrip is too short to justify a flow + Cancel surface); (c) Vendor + RawNoUrl Write disabled (canWrite returns false for vendor + non-Spoolman) — vendor tags can't be NDEF-written and there's no Spoolman target to pair to.
+
+Manual install gate per Q-T2=B is deferred to v2.1 testing-track iteration; 12-scenario checklist (incl. Snapmaker U1 round-trip) captured in plan §17 + summary.
+
+Presenting standardized 2-option Code Gen Part 2 completion message.
+**Context**: Awaiting explicit user choice between "Request Changes" and "Continue to Next Stage" (close-out commit + transition to Build and Test or next unit).
+
+---
+
+## U13 install on phone + session-resume snapshot
+**Timestamp**: 2026-06-06T00:00:00Z
+**User Input**: "install on phone" then (after `/clear` notice) "save details in AIDLC, i need to reset this session, also we need to come up with all the thing i need to test"
+**AI Response**: Installed U13 debug APK (`com.spoolpainter.app.debug` versionCode 103 / `2.0.2-DEBUG`) on the connected moto g stylus 2025 (ZA2238F4JF) after uninstalling stale debug 104 from a prior session. Prod `com.spoolpainter.app` v2.0.2 untouched.
+
+Authored two session-handoff artefacts under `aidlc-docs/construction/u13-action-split/code/`:
+
+- **`u13-install-gate-checklist.md`** — comprehensive on-device test list across 9 sections (~55 scenarios): §A layout/cosmetics · §B Save happy paths (new spool, existing-spool variant + remaining_weight patches, stale-prefill guard) · §C Write happy paths (NDEF, pair-another, sheet Cancel, Read→Save→Write, orphan-Read flow per Q-U13-5=A) · §D Cancel toggles (Read, Write standard, RawNoUrl Write, vendor-pair-no-Cancel per Q-U13-1=A) · §E Vendor + RawNoUrl dead end · §F snackbar copy regression sweep across all 14 §1.5 paths · §G edge cases (transient measuredEntry, switch-method-drops-entry, concurrent Save, pull-to-refresh, settings round-trip) · §H Snapmaker U1 round-trip · §I release-side build matrix re-verify. Each scenario has a checkbox + notes column; §J table for new issues.
+
+- **`u13-session-resume.md`** — TL;DR for cold-start of next session: current state, Q&A locks, what shipped, deferrals, next-step list (run checklist → patch failures → close-out commit → push → bump version + release), and a fingerprint of `git status` so the next session can verify the working tree is the same.
+
+Updated `aidlc-docs/aidlc-state.md` Current Stage line to reference the new artefacts.
+
+**Context**: Saving state for session reset. Working tree remains dirty (17 modified + 7 untracked); no commits made.
+
+---
+
+## U13 Install-Gate UI Polish Round
+**Timestamp**: 2026-06-06T00:00:00Z
+**User Input**: "aidlc resume" → §A walk → "i dont like A2 version with elevation 0" → multiple iteration rounds covering layout primitives + section colors + Read/Write placement + status overlay + Save label + Write hint + Filament hint + picker placeholders + weight radio chip + Remaining hint + Filament-weight supportingText drop + snackbar lift + spool-hole centering + state-aware Save / state-aware Filament hint / state-aware Write hint copy via ChatGPT-prompt collaboration. Closed with "checklist" → §B.1 pass / §B.2 pass (B2e dropped per "i dont want it") / §B.3 pass with new wording. Final input: "save all what we did in AIDLC".
+**AI Response**: Wrote `aidlc-docs/construction/u13-action-split/code/u13-ui-polish-round.md` capturing all decisions. Updated `aidlc-docs/aidlc-state.md` U13 paragraph with the complete delta list. Updated install-gate checklist B2e to dropped/strikethrough. No close-out commit per [[feedback_aidlc_unit_close_out_commit]]. Tests verified 403/403 at end of round.
+**Context**: U13 install-gate matrix progress. §A / §B.1 / §B.2 / §B.3 confirmed pass. §C onward pending. New memory saved: [[feedback_no_em_dash]] (never use em dashes in user-facing copy).
+
+---
+
+## U13 Vendor Reframe + State-Aware Copy Pass (round 2)
+**Timestamp**: 2026-06-06T00:00:00Z
+**User Input**: After §A/B.1/B.2/B.3 pass, user iterated through: "make message on filament also state aware and snackbar bigger and middle" → state-aware filament section hint + snackbar lifted to 25% with bodyLarge text. Then "save button state aware too" → ChatGPT-prompt collaboration → `Update` / `Create spool` / `Create filament and spool` labels with `Save to Spoolman` as the disabled fallback. Then "we should not overload save, switch write button to do mapping for vendor and stop write" → big architectural reframe: vendor UID mapping moved off Save onto Write. Two real bugs found and fixed: (1) passive ambient taps were flipping observedTagKind; (2) Read of unpaired vendor tag wasn't clearing selectedSpoolId. After §C.1 pass, found vendor pair-another second-tap overlay said "Tap second tag to write" which lied for the HTTP-only branch — fixed to "Tap second tag". User collaborated with ChatGPT to draft hint copy for: filament section, Write button hint, Save button labels, picker placeholders. Saved [[feedback_no_em_dash]] memory after "never use --" feedback. Final: "update aidlc i need to reset the session".
+**AI Response**: Wrote `aidlc-docs/construction/u13-action-split/code/u13-vendor-reframe-and-copy-pass.md` capturing all decisions in this round. Updated `aidlc-docs/aidlc-state.md` U13 paragraph with full delta list (a..l). Tests 403/403 ✅ verified throughout — two test renames + assertion flips for the vendor reframe; passes including `pushState` swap. No close-out commit per [[feedback_aidlc_unit_close_out_commit]].
+**Context**: U13 install-gate matrix progress. §A / §B.1 / §B.2 (B2e dropped) / §B.3 / §C.1 confirmed pass. §C.2 pair-another tag is next on resume. Big architectural decision: Q-U13-1=A behaviour reversed; Save no longer handles vendor pair, Write does (with HTTP-only routing through VendorUidOnlyPairUseCase). New microcopy across Save label / Write label / Write hint / Filament section hint / picker placeholders / weight radio. Memory carried: [[feedback_no_em_dash]] (never use em dashes in user-facing copy).
+
+---
+
+## U13 Install-Gate Resume (§C.2 next)
+**Timestamp**: 2026-06-06T00:00:00Z
+**User Input**: "aidlc continie"
+**AI Response**: Confirmed working tree fingerprint matches the §C.1-PASS handoff in `u13-session-resume.md` exactly (17 modified + 7 untracked, all U13 files). Tests held at 403/403 from prior round. No new code changes. Next install-gate scenario is **§C.2 (Pair-another tag)** in `aidlc-docs/construction/u13-action-split/code/u13-install-gate-checklist.md`. Asked the user how they want to drive the resume.
+**Context**: U13 install-gate matrix — §A / §B.1 / §B.2 (B2e dropped) / §B.3 / §C.1 PASS; §C.2 onward pending. Awaiting user direction on resume path (continue install-gate from §C.2 vs other follow-ups).
+
+---
+
+## U13 Install-Gate Completion + v2.1 Polish + Close-Out
+**Timestamp**: 2026-06-07T00:00:00Z
+**User Input**: After §C.3 fix → walked the rest of the install-gate matrix to PASS (§C.4, §C.5 with copy tweak "Tap Create..." → "Create...", §D.1 through §D.4, §E, §F PASS-by-coverage, §G.1 through §G.5, §H PASS-by-coverage, §I.1-I.4 by build matrix re-run + I.5/I.6 PASS-by-coverage, §B.4 PASS-by-coverage). Then mid-close-out user pulled in three v2.1 polish items: "quickly change currency option from just three to some more major currency dropdown" (currency 3 → 22 dropdown), "since we can now do update i am thinking letting it update more fields, what all should we let use edit?" (filament-record unlock — Color + Density + Filament weight + Temps; Material + Brand stay locked), "should we remove editing this label? since now we have update and non editable fields are disabled" (drop both "Editing... updates Spoolman" captions), "price also edit, but just edit only in spool for price" (spool.price unlock with stale-prefill guard; filament.price untouched). Final: "pass, update all the docs, commit and also add for future changes archiving".
+**AI Response**: Updated `aidlc-docs/ui-followups.md` (UI-35 → fixed, UI-36 archive logged for v2.1.x), `aidlc-docs/aidlc-state.md` (U13 entry → DONE 2026-06-07 with full delta list), authored `aidlc-docs/construction/u13-action-split/code/u13-close-out-summary.md` capturing locked decisions + file inventory + carry-overs. Tests held at 403/403 throughout. UI-35 fix (PairAnotherTagSheet vanish bug): first-cut spinner-on-cancel-button rejected, second-cut reused inline `[Read|Write] → Cancel` row via `isWriteCancellable` predicate extension + `onWriteTapped` toggle dispatch. Currency dropdown: `Settings.Currency` enum 3 → 22 entries preserving `Dollar`/`Euro`/`Generic` IDs for back-compat; new `SettingsCurrencySection.kt`; `SettingsSegmentedSection.kt` deleted. Filament-record unlock: `PatchFilamentBody.color_hex` + `ExpanderOverrides.{colorHex, extruderTemp, bedTemp}` added; `toExpanderOverrides()` existing-spool branch flows full bag; `SaveToSpoolmanUseCase` switched from narrow `applyVariantToFilamentOfSpool` to `applyOverridesToFilamentOfSpool`; sparseDiff extended with case-insensitive `color_hex`. Price unlock: gate dropped from `MoreDetailsExpander.kt`; `SaveToSpoolmanUseCase` step 1b extended with `priceDirty` against `prefilledPriceMajor`. Caption drop: both "Editing... updates Spoolman" lines removed from `FilamentForm.kt` + `MoreDetailsExpander.kt`. Single close-out commit pending.
+**Context**: U13 → DONE. Ships as v2.1.0 (versionCode 103 → 104 / 2.0.3 → 2.1.0 per "v2.1 — separate release"). UI-36 archive parked for v2.1.x next-increment. Branch `v2` 1 ahead of `origin/v2` pre-commit.
+
+---

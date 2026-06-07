@@ -21,6 +21,7 @@ import com.spoolpainter.app.support.FakeMoveOnBindConfirmer
 import com.spoolpainter.app.support.FakeMoveOnBindUseCase
 import com.spoolpainter.app.support.FakeNfcRepository
 import com.spoolpainter.app.support.FakeRawWriteUseCase
+import com.spoolpainter.app.support.FakeSaveToSpoolmanUseCase
 import com.spoolpainter.app.support.FakeSettingsRepository
 import com.spoolpainter.app.support.FakeSpoolmanRepository
 import com.spoolpainter.app.support.FakeTwoTagUseCase
@@ -48,6 +49,7 @@ class MainViewModelTwoTagTest {
     private val spoolman = FakeSpoolmanRepository()
     private val settings = FakeSettingsRepository()
     private val createAndPair = FakeCreateAndPairUseCase(nfc = nfc, spoolman = spoolman)
+    private val saveToSpoolman = FakeSaveToSpoolmanUseCase(spoolman = spoolman)
     private val twoTag = FakeTwoTagUseCase(nfc = nfc, spoolman = spoolman)
     private val confirmer = FakeMoveOnBindConfirmer()
     private val moveOnBind = FakeMoveOnBindUseCase()
@@ -72,6 +74,7 @@ class MainViewModelTwoTagTest {
         settings = settings,
         materialBrandRepo = materialBrandRepo,
         readAndPair = ReadAndPairUseCase(nfc, spoolman),
+        saveToSpoolman = saveToSpoolman,
         createAndPair = createAndPair,
         twoTag = twoTag,
         confirmer = confirmer,
@@ -107,6 +110,10 @@ class MainViewModelTwoTagTest {
 
     private fun stagePromptingPairAnother(vm: MainViewModel) {
         primeFormForWrite(vm)
+        // U13 — Write requires a saved spool. Pre-select one so onWriteTapped
+        // can fire (canWrite gates on spoolman.selectedSpoolId != null).
+        spoolman.setSpools(listOf(sampleSpool))
+        vm.onSpoolSelected(sampleSpool)
         createAndPair.nextResult = CreateAndPairResult.Success.WrittenAndPaired(
             spoolId = 42, uid = sampleUid, isNewSpool = false,
         )

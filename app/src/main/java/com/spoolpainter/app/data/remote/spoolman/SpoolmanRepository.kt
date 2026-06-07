@@ -276,6 +276,9 @@ open class SpoolmanRepository @Inject constructor(
             current + ("variant" to GSON.toJson(variantNormalised))
         }
         val body = PatchFilamentBody(
+            color_hex = overrides.colorHex,
+            settings_extruder_temp = overrides.extruderTemp,
+            settings_bed_temp = overrides.bedTemp,
             density = overrides.density,
             diameter = overrides.diameter,
             weight = overrides.weight,
@@ -292,6 +295,7 @@ open class SpoolmanRepository @Inject constructor(
         body: PatchFilamentBody,
     ): PatchFilamentBody = PatchFilamentBody(
         name = body.name?.takeIf { it != current.name },
+        color_hex = body.color_hex?.takeIf { !it.equals(current.color_hex, ignoreCase = true) },
         settings_extruder_temp = body.settings_extruder_temp?.takeIf { it != current.settings_extruder_temp },
         settings_bed_temp = body.settings_bed_temp?.takeIf { it != current.settings_bed_temp },
         density = body.density?.takeIf { it != current.density },
@@ -303,7 +307,8 @@ open class SpoolmanRepository @Inject constructor(
     )
 
     private fun PatchFilamentBody.isEmpty(): Boolean =
-        name == null && settings_extruder_temp == null && settings_bed_temp == null &&
+        name == null && color_hex == null &&
+            settings_extruder_temp == null && settings_bed_temp == null &&
             density == null && diameter == null && weight == null &&
             spool_weight == null && price == null && extra == null
 

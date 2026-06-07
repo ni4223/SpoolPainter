@@ -18,6 +18,7 @@ import com.spoolpainter.app.domain.models.SpoolmanFilament
 fun FilamentSection(
     filaments: List<SpoolmanFilament>,
     selectedFilamentId: Int?,
+    selectedSpoolId: Int?,
     enabled: Boolean,
     sortKey: FilamentSortKey,
     sortDirection: SortDirection,
@@ -36,11 +37,24 @@ fun FilamentSection(
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.primary,
         )
-        Text(
-            text = "Already have this filament in Spoolman? Pick it. Otherwise we'll create a new one from the form below.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        // State-aware hint. Spool selected: no hint (form is locked, the
+        // picker is for another flow). Filament selected: tell the user
+        // Save creates a fresh spool of that filament. Nothing selected:
+        // encourage pick or fill.
+        val hint = when {
+            selectedSpoolId != null -> null
+            selectedFilamentId != null ->
+                "Tap Save to create a spool for this filament."
+            else ->
+                "Select a filament, or fill in the details to create one."
+        }
+        hint?.let {
+            Text(
+                text = it,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         FilamentPicker(
             filaments = filaments,
             selectedFilamentId = selectedFilamentId,

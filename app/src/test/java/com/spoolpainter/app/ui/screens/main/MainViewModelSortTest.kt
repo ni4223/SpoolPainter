@@ -10,6 +10,7 @@ import com.spoolpainter.app.support.FakeMoveOnBindConfirmer
 import com.spoolpainter.app.support.FakeMoveOnBindUseCase
 import com.spoolpainter.app.support.FakeNfcRepository
 import com.spoolpainter.app.support.FakeRawWriteUseCase
+import com.spoolpainter.app.support.FakeSaveToSpoolmanUseCase
 import com.spoolpainter.app.support.FakeSettingsRepository
 import com.spoolpainter.app.support.FakeSpoolmanRepository
 import com.spoolpainter.app.support.FakeTwoTagUseCase
@@ -34,6 +35,7 @@ class MainViewModelSortTest {
     private val settings = FakeSettingsRepository()
     private val spoolman = FakeSpoolmanRepository(settings = settings)
     private val createAndPair = FakeCreateAndPairUseCase(nfc = nfc, spoolman = spoolman)
+    private val saveToSpoolman = FakeSaveToSpoolmanUseCase(spoolman = spoolman)
     private val twoTag = FakeTwoTagUseCase(nfc = nfc, spoolman = spoolman)
     private val confirmer = FakeMoveOnBindConfirmer()
     private val moveOnBind = FakeMoveOnBindUseCase()
@@ -47,6 +49,7 @@ class MainViewModelSortTest {
         settings = settings,
         materialBrandRepo = materialBrandRepo,
         readAndPair = ReadAndPairUseCase(nfc, spoolman),
+        saveToSpoolman = saveToSpoolman,
         createAndPair = createAndPair,
         twoTag = twoTag,
         confirmer = confirmer,

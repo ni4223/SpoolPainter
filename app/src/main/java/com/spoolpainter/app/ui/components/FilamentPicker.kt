@@ -80,7 +80,7 @@ fun FilamentPicker(
             readOnly = true,
             enabled = enabled,
             label = { Text("Pick existing filament") },
-            placeholder = { Text("Optional") },
+            placeholder = { Text("Filaments in Spoolman") },
             trailingIcon = {
                 if (selected != null && enabled) {
                     IconButton(

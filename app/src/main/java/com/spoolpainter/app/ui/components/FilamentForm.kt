@@ -24,6 +24,7 @@ import com.spoolpainter.app.domain.models.Material
 import com.spoolpainter.app.domain.models.SpoolmanFilament
 import com.spoolpainter.app.domain.models.TempRanges
 import com.spoolpainter.app.ui.screens.main.FormState
+import com.spoolpainter.app.ui.screens.main.WeightMethod
 
 /**
  * Sealed event interface for FilamentForm changes. All field changes (and the
@@ -49,9 +50,11 @@ sealed interface FormChange {
     data class FullSpoolWeightChanged(val value: String) : FormChange
     data class DensityChanged(val value: String) : FormChange
 
-    // v2.0.2 — spool-scope edit fields.
-    data class RemainingWeightChanged(val value: String) : FormChange
-    data class MeasuredWeightChanged(val value: String) : FormChange
+    // U13 (Cluster A) — Spoolman-parity radio weight picker. The bidirectional
+    // Remaining + Measured row + back-solve was replaced by a single active-
+    // method input field; the inactive method's input is hidden.
+    data class WeightMethodPicked(val value: WeightMethod) : FormChange
+    data class ActiveWeightChanged(val value: String) : FormChange
 }
 
 /**
@@ -67,12 +70,12 @@ fun FilamentForm(
     customBrand: String,
     enabled: Boolean,
     /**
-     * v2.0.2 — when true, Material / Brand / Color pickers grey out but
-     * Variant stays editable. Triggered when an existing spool OR existing
-     * filament is selected (decision I — eliminates the tag↔Spoolman
-     * identity desync class). Variant rides the tag write so it's safe to
-     * keep editable; identity fields would silently change the tag's
-     * identity bytes without PATCHing Spoolman.
+     * Locks the Material + Brand pickers. v2.1 narrowed this from the
+     * v2.0.2 set (Material + Brand + Color) — Color now PATCHes the
+     * filament record alongside variant on the existing-spool path, so
+     * keeping it editable is safe. Material + Brand stay locked because
+     * changing them means "wrong filament picked"; the user should pick a
+     * different filament instead.
      */
     identityLocked: Boolean,
     spoolmanConfigured: Boolean,
@@ -96,6 +99,7 @@ fun FilamentForm(
             FilamentSection(
                 filaments = filaments,
                 selectedFilamentId = state.selectedFilamentId,
+                selectedSpoolId = state.selectedSpoolId,
                 enabled = enabled && spoolmanReachable,
                 sortKey = filamentSortKey,
                 sortDirection = filamentSortDirection,
@@ -112,24 +116,15 @@ fun FilamentForm(
             onCustomNameChange = { onChange(FormChange.CustomMaterialChanged(it)) },
         )
 
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            if (identityLocked) {
-                Text(
-                    text = "Editing this updates Spoolman",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            VariantField(
-                value = state.variant,
-                enabled = enabled,
-                onChange = { onChange(FormChange.Variant(it)) },
-            )
-        }
+        VariantField(
+            value = state.variant,
+            enabled = enabled,
+            onChange = { onChange(FormChange.Variant(it)) },
+        )
 
         ColorPicker(
             colorHex = state.colorHex,
-            enabled = identityEnabled,
+            enabled = enabled,
             onChange = { onChange(FormChange.ColorHex(it)) },
         )
 
@@ -144,16 +139,22 @@ fun FilamentForm(
     }
 }
 
+/**
+ * U13 — Spoolman-only Save button (replaces the old `Save & Write` combo).
+ * Lives at the bottom of the outer Card on MainScreen. Hidden in
+ * [com.spoolpainter.app.ui.screens.main.WriteMode.RawNoUrl] (no Spoolman
+ * target). Label locked to "Save to Spoolman" per Q-U13-4=A.
+ */
 @Composable
-fun SaveAndWriteButton(
-    label: String,
-    canSave: Boolean,
+fun SaveToSpoolmanButton(
+    enabled: Boolean,
     onClick: () -> Unit,
+    label: String = "Save to Spoolman",
     modifier: Modifier = Modifier,
 ) {
     Button(
         onClick = onClick,
-        enabled = canSave,
+        enabled = enabled,
         modifier = modifier
             .fillMaxWidth()
             .height(48.dp)

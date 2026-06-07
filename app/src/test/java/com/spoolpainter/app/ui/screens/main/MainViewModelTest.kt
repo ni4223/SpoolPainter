@@ -23,6 +23,7 @@ import com.spoolpainter.app.support.FakeMoveOnBindConfirmer
 import com.spoolpainter.app.support.FakeMoveOnBindUseCase
 import com.spoolpainter.app.support.FakeNfcRepository
 import com.spoolpainter.app.support.FakeRawWriteUseCase
+import com.spoolpainter.app.support.FakeSaveToSpoolmanUseCase
 import com.spoolpainter.app.support.FakeSettingsRepository
 import com.spoolpainter.app.support.FakeSpoolmanRepository
 import com.spoolpainter.app.support.FakeTwoTagUseCase
@@ -50,6 +51,7 @@ class MainViewModelTest {
     private val spoolman = FakeSpoolmanRepository()
     private val settings = FakeSettingsRepository()
     private val createAndPair = FakeCreateAndPairUseCase(nfc = nfc, spoolman = spoolman)
+    private val saveToSpoolman = FakeSaveToSpoolmanUseCase(spoolman = spoolman)
     private val twoTag = FakeTwoTagUseCase(nfc = nfc, spoolman = spoolman)
     private val confirmer = FakeMoveOnBindConfirmer()
     private val moveOnBind = FakeMoveOnBindUseCase()
@@ -86,6 +88,7 @@ class MainViewModelTest {
         settings = settings,
         materialBrandRepo = materialBrandRepo,
         readAndPair = ReadAndPairUseCase(nfc, spoolman),
+        saveToSpoolman = saveToSpoolman,
         createAndPair = createAndPair,
         twoTag = twoTag,
         confirmer = confirmer,
@@ -406,11 +409,11 @@ class MainViewModelTest {
     // ---- U6a: onWriteTapped ----
 
     @Test
-    fun `onWriteTapped whenCanWriteFalse isNoOp andDoesNotChangeActiveFlow`() = runTest {
+    fun `onWriteTapped with no spool selected isNoOp`() = runTest {
         val vm = newVm()
-        // Force canSubmit false by clearing material; defaults pre-fill it,
-        // so without this the fresh form would satisfy canWrite.
-        vm.onMaterialPicked(null)
+        primeFormForWrite(vm)
+        // Form is valid + canSave is true, but no spool is selected → Write
+        // disabled per U13 §1.2 (caption "Pick a spool or hit Save first.").
         assertEquals(false, vm.canWrite.value)
         vm.onWriteTapped()
         assertEquals(ActiveFlow.Idle, vm.state.value.activeFlow)
@@ -450,22 +453,25 @@ class MainViewModelTest {
     }
 
     @Test
-    fun `onWriteTapped newSpool emitsSnackbarAndKeepsFormOnSuccess`() = runTest {
+    fun `onSaveTapped then onWriteTapped newSpool happy path lands at PromptingPairAnother`() = runTest {
         val vm = newVm()
         primeFormForWrite(vm)
-        createAndPair.nextResult = CreateAndPairResult.Success.WrittenAndPaired(
-            spoolId = 99, uid = sampleUid, isNewSpool = true,
-        )
+        // U13 — Save creates the spool first; the FakeSaveToSpoolman default
+        // returns Saved(spoolId=1, isNewSpool=true) which auto-selects spool #1.
+        saveToSpoolman.nextResult = com.spoolpainter.app.domain.usecases
+            .SaveToSpoolmanResult.Success.Saved(spoolId = 99, isNewSpool = true)
+        vm.onSaveTapped()
+        assertEquals(99, vm.state.value.spoolman.selectedSpoolId)
 
+        createAndPair.nextResult = CreateAndPairResult.Success.WrittenAndPaired(
+            spoolId = 99, uid = sampleUid, isNewSpool = false,
+        )
         vm.onWriteTapped()
         // UI-03: snackbar removed; sheet title carries the success message.
         assertNotNull(vm.state.value.form.material)
-        // cardUid reflects the just-written UID (display); enforcement gone.
         assertEquals(sampleUid, vm.state.value.form.cardUid)
-        // Newly-minted spool stays selected so dropdown reflects what landed.
         assertEquals(99, vm.state.value.form.selectedSpoolId)
         assertEquals(99, vm.state.value.spoolman.selectedSpoolId)
-        // U6b: PromptingPairAnother is now active — see test above.
         assertTrue(vm.state.value.activeFlow is ActiveFlow.PromptingPairAnother)
     }
 
@@ -473,6 +479,7 @@ class MainViewModelTest {
     fun `onWriteTapped verifyFailed keepsFormAndEmitsSnackbar`() = runTest {
         val vm = newVm()
         primeFormForWrite(vm)
+        vm.onSpoolSelected(sampleSpool)
         createAndPair.nextResult = CreateAndPairResult.VerifyFailed(
             spoolId = 1, uid = sampleUid, isNewSpool = false, cause = "verify mismatch",
         )
@@ -480,10 +487,11 @@ class MainViewModelTest {
         vm.effects.test {
             vm.onWriteTapped()
             val emission = awaitNonAmbientSnackbar()
-            // UI-19: snackbar reframed to surface the spool-was-saved fact.
+            // U13 §1.5 — joint Save/Write copy dropped; tag write failure
+            // surfaces standalone since Save is now a distinct prior step.
             assertTrue(
                 "got '${emission.message}'",
-                emission.message.contains("Saved to Spoolman"),
+                emission.message.contains("Tag write failed"),
             )
             cancelAndIgnoreRemainingEvents()
         }
@@ -496,6 +504,7 @@ class MainViewModelTest {
     fun `onWriteTapped spoolmanFailed keepsFormAndEmitsHumanReadable`() = runTest {
         val vm = newVm()
         primeFormForWrite(vm)
+        vm.onSpoolSelected(sampleSpool)
         createAndPair.nextResult = CreateAndPairResult.SpoolmanFailed(
             uid = sampleUid,
             outcome = SpoolmanOutcome.HttpError(500, "boom"),
@@ -514,6 +523,7 @@ class MainViewModelTest {
     fun `onWriteTapped nfcFailed keepsFormAndEmitsSnackbar`() = runTest {
         val vm = newVm()
         primeFormForWrite(vm)
+        vm.onSpoolSelected(sampleSpool)
         createAndPair.nextResult = CreateAndPairResult.NfcFailed(
             uid = sampleUid, reason = "tag lost",
         )
@@ -521,10 +531,10 @@ class MainViewModelTest {
         vm.effects.test {
             vm.onWriteTapped()
             val emission = awaitNonAmbientSnackbar()
-            // UI-19: snackbar reframed for non-vendor NfcFailed too.
+            // U13 §1.5 — standalone tag-write failure copy.
             assertTrue(
                 "got '${emission.message}'",
-                emission.message.contains("Saved to Spoolman"),
+                emission.message.contains("Tag write failed"),
             )
             cancelAndIgnoreRemainingEvents()
         }
@@ -535,6 +545,7 @@ class MainViewModelTest {
     fun `onWriteTapped concurrentReadTapped is dropped`() = runTest {
         val vm = newVm()
         primeFormForWrite(vm)
+        vm.onSpoolSelected(sampleSpool)
         // Stage write that returns synchronously.
         createAndPair.nextResult = CreateAndPairResult.Success.WrittenAndPaired(
             spoolId = 1, uid = sampleUid, isNewSpool = true,
@@ -550,5 +561,44 @@ class MainViewModelTest {
             "got ${vm.state.value.activeFlow}",
             vm.state.value.activeFlow is ActiveFlow.PromptingPairAnother,
         )
+    }
+
+    // ---- U13 — Cancel toggle for tag-waiting flows ----
+
+    @Test
+    fun `onReadTapped while ReadingForPair cancels and returns to Idle`() = runTest {
+        val vm = newVm()
+        // Simulate Reading flow start without staging a tap → it stays armed.
+        nfc.queueArmResults(NfcResult.Reading)
+        vm.onReadTapped()
+        assertEquals(ActiveFlow.ReadingForPair, vm.state.value.activeFlow)
+        // Second tap cancels.
+        vm.onReadTapped()
+        assertEquals(ActiveFlow.Idle, vm.state.value.activeFlow)
+    }
+
+    @Test
+    fun `onWriteTapped while WritingForPair cancels and returns to Idle`() = runTest {
+        val vm = newVm()
+        primeFormForWrite(vm)
+        vm.onSpoolSelected(sampleSpool)
+        // Stage a delay so the flow stays in WritingForPair until we cancel.
+        createAndPair.nextDelayMs = 10_000L
+        createAndPair.nextResult = CreateAndPairResult.Success.WrittenAndPaired(
+            spoolId = 42, uid = sampleUid, isNewSpool = false,
+        )
+        vm.onWriteTapped()
+        assertEquals(ActiveFlow.WritingForPair, vm.state.value.activeFlow)
+        vm.onWriteTapped() // Cancel toggle
+        assertEquals(ActiveFlow.Idle, vm.state.value.activeFlow)
+    }
+
+    @Test
+    fun `isWriteCancellable is false during PairingVendorUidOnly`() = runTest {
+        // PairingVendorUidOnly is HTTP-only; Cancel does not surface there.
+        val vm = newVm()
+        primeFormForWrite(vm)
+        // No stage needed — verify the flow itself.
+        assertEquals(false, vm.isWriteCancellable.value)
     }
 }

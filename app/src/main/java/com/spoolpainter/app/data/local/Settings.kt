@@ -26,8 +26,27 @@ enum class SortDirection { Asc, Desc }
 enum class ThemeOverride { Light, Dark }
 
 @Serializable
-enum class Currency(val symbol: String) {
-    Dollar("$"),
-    Euro("€"),
-    Generic("¤"),
+enum class Currency(val symbol: String, val displayName: String) {
+    Dollar("$", "US Dollar"),
+    Euro("€", "Euro"),
+    Pound("£", "British Pound"),
+    Yen("¥", "Japanese Yen"),
+    Yuan("¥", "Chinese Yuan"),
+    Rupee("₹", "Indian Rupee"),
+    Won("₩", "South Korean Won"),
+    Franc("₣", "Swiss Franc"),
+    CanadianDollar("C$", "Canadian Dollar"),
+    AustralianDollar("A$", "Australian Dollar"),
+    NewZealandDollar("NZ$", "New Zealand Dollar"),
+    Real("R$", "Brazilian Real"),
+    Peso("$", "Mexican Peso"),
+    Krona("kr", "Swedish Krona"),
+    Lira("₺", "Turkish Lira"),
+    Ruble("₽", "Russian Ruble"),
+    Rand("R", "South African Rand"),
+    Shekel("₪", "Israeli Shekel"),
+    Dirham("د.إ", "UAE Dirham"),
+    HongKongDollar("HK$", "Hong Kong Dollar"),
+    SingaporeDollar("S$", "Singapore Dollar"),
+    Generic("¤", "Money"),
 }

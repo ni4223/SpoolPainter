@@ -1126,3 +1126,111 @@ on-device smoke before signoff — `assembleRelease` green is necessary
 but not sufficient.
 
 ---
+
+## UI-35 — Pair-another sheet: no Cancel during second-tag listening
+
+**State**: fixed (uncommitted, U13 install-gate patch 2026-06-06)
+**Found in**: U13 §C.3 install-gate, 2026-06-06
+**Routing**: U13 (current unit — folded into close-out commit).
+
+When the user taps **Pair another** on the PairAnotherTagSheet, MainViewModel
+flips `activeFlow` from `PromptingPairAnother` → `WritingSecondTag` and starts
+listening for the second tap. But `MainScreen.pairAnotherState` only built the
+sheet's UI state from `PromptingPairAnother`, so the sheet *vanished* during
+`WritingSecondTag` — leaving the user with no Cancel surface, no progress
+affordance, and no way back to the prompt without tapping a tag (or waiting
+out the 15s timeout).
+
+The MainViewModel side was already correct (`onPairAnotherTagAccepted` at
+`MainViewModel.kt:1203` toggles between Accept and Cancel based on
+`activeFlow`). The bug was purely on the projection layer.
+
+**First-cut fix attempt — rejected**: I initially extended
+`PairAnotherTagUiState` with a `secondTagListening` flag and built a
+Cancel button (with spinner) *inside* the sheet. User pushback was
+correct on two grounds: (1) spinner on a Cancel button breaks the
+convention set by the inline `[Read|Write]` row's text-only Cancel
+(status lives on the centered `NfcStatusOverlay`); (2) two Cancel
+surfaces — sheet's + inline row's — for the same flow is one too many.
+
+**Second-cut fix — shipped**: reuse the existing inline Cancel. The
+sheet auto-dismisses during `WritingSecondTag` (BottomSheetHost only
+mounts on `PromptingPairAnother`); the standard inline `[Read|Write] →
+Cancel` row takes over because `isWriteCancellable` now returns `true`
+for `WritingSecondTag` too. `onWriteTapped` recognizes the new state
+and routes the cancel through the existing `onPairAnotherTagAccepted`
+toggle (which cancels the writeJob + disarms NFC + flips `activeFlow`
+back to `PromptingPairAnother`). The sheet re-mounts at its prompt
+state with Done + Pair another buttons. One Cancel surface, one
+convention.
+
+**Files changed** (2 prod):
+
+1. `MainViewModel.kt` — `isWriteCancellable` predicate now matches
+   `WritingForPair || WritingRaw || is WritingSecondTag`.
+   `onWriteTapped` detects `WritingSecondTag` and delegates to
+   `onPairAnotherTagAccepted`.
+2. (no other files changed — `PairAnotherTagUiState` /
+   `PairAnotherTagSheet` / `BottomSheetHost` / `MainScreen` reverted
+   to pre-bug state. The fix lives entirely in the VM's
+   `isWriteCancellable` projection + `onWriteTapped` dispatch.)
+
+Tests held at 403/403. No new tests added — the existing toggle behaviour
+was already covered in `MainViewModelTwoTagTest`; the bug was UI projection.
+
+
+---
+
+## UI-36 — Archive a spool / filament from the app
+
+**State**: open
+**Found in**: U13 close-out conversation, 2026-06-07
+**Routing**: v2.1+ (not blocking U13).
+
+Today the app can read / pair / edit but not archive. To archive a
+spool the user has to open Spoolman web UI and toggle
+`spool.archived = true` (Spoolman uses an "archived" flag, not a
+delete — soft hide so historical references stay valid).
+
+**Why this is the right shape**:
+
+- v2's `MoveOnBindUseCase` and chain-delete logic both already model
+  the "spool is no longer active for this UID" pattern. Archive sits
+  alongside.
+- Spoolman's data model has `spool.archived` (boolean) and
+  `filament.archived` (boolean) — both PATCH-targets via the existing
+  PATCH endpoints. No new endpoint needed.
+- Listing already filters `allowArchived=true` via
+  `SpoolmanRepository.listSpools` (U6a fix); the dropdown filters
+  archived rows at the UI layer
+  (`MainScreen.SpoolmanDropdown` predicate).
+- The UI affordance is small: a long-press on a spool dropdown row,
+  or an `Archive` overflow item on the picker rows, or an explicit
+  "Archive this spool" action in a follow-up sheet after Save.
+
+**Sketch** (not committed; design later):
+
+1. **Surface**: long-press on a `PickerRow` in the Spool dropdown →
+   contextual sheet with "Archive spool" + "Cancel". Archive PATCHes
+   `spool.archived = true`; the row disappears from the dropdown on
+   the next refresh.
+2. **Wire**: extend `SpoolPatchBody` with `archived: Boolean? = null`
+   (Gson omits null already). New
+   `SpoolmanRepository.archiveSpool(spoolId)` thin wrapper. New
+   `ArchiveSpoolUseCase` — single PATCH + cache evict.
+3. **Filament archive**: same pattern with `filament.archived` —
+   surfaces from the Filament dropdown's long-press. Cascading is
+   Spoolman's job (their server semantics: archiving a filament
+   doesn't auto-archive its spools).
+4. **Undo**: archived spools/filaments stay visible behind a Settings
+   toggle "Show archived" → list filters off the predicate. Tapping
+   one offers "Unarchive" instead of "Archive".
+5. **Test plan**: `ArchiveSpoolUseCaseTest` (1 PATCH + cache evict),
+   `MainViewModelArchiveTest` (long-press → sheet → confirm → row
+   disappears). Add an install-gate scenario in v2.1.
+
+**Why not now**: U13 already added Save split + radio weight picker +
+filament-record unlock + currency dropdown. Tester turnaround on a
+v2.0.3 testing-track upload is more valuable than batching archive
+into the same release. Carve as a v2.1.x patch after the v2.0.3
+push lands.

@@ -13,8 +13,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -33,6 +31,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.spoolpainter.app.domain.models.TempRanges
+import com.spoolpainter.app.ui.screens.main.WeightMethod
 
 /**
  * Collapsed-by-default "Filament metadata ▾" expander hosting three labelled
@@ -60,8 +59,8 @@ fun MoreDetailsExpander(
      */
     filamentSpecLocked: Boolean,
     /**
-     * v2.0.2 — controls whether the spool-scope Remaining + Measured row
-     * renders. True when selectedSpoolId != null.
+     * v2.0.2 — controls whether the spool-scope Remaining/Measured radio
+     * renders editable. True when selectedSpoolId != null.
      */
     showSpoolScopeFields: Boolean,
     tempRanges: TempRanges,
@@ -70,29 +69,31 @@ fun MoreDetailsExpander(
     priceSuffix: String,
     fullSpoolWeightG: Float?,
     densityGPerCm3: Float?,
-    remainingWeightG: Float?,
-    measuredWeightG: Float?,
+    /**
+     * U13 (Cluster A) — radio-style weight picker. [weightMethod] picks which
+     * single value field is rendered ([WeightMethodRadio]); the inactive
+     * method's field is hidden entirely.
+     *  - When method=Remaining, [activeWeightValueG] is the remaining weight (g).
+     *  - When method=Measured, [activeWeightValueG] is the measured/scale weight (g).
+     */
+    weightMethod: WeightMethod,
+    activeWeightValueG: Float?,
+    onWeightMethodPicked: (WeightMethod) -> Unit,
+    onActiveWeightChange: (String) -> Unit,
     onToggle: () -> Unit,
     onTempRangesChange: (TempRanges) -> Unit,
     onEmptySpoolWeightChange: (String) -> Unit,
     onPriceChange: (String) -> Unit,
     onFullSpoolWeightChange: (String) -> Unit,
     onDensityChange: (String) -> Unit,
-    onRemainingChange: (String) -> Unit,
-    onMeasuredChange: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Card(
+    Column(
         modifier = modifier
             .fillMaxWidth()
             .testTag("more-details"),
-        shape = RoundedCornerShape(20.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 5.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Column(
-            modifier = Modifier.padding(10.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -129,70 +130,30 @@ fun MoreDetailsExpander(
                         val filamentSpecEnabled = spoolmanFieldsEnabled && !filamentSpecLocked
                         HorizontalDivider()
                         SectionLabel("Weight")
-                        // Remaining + Measured row always visible. When no spool
-                        // is selected, fields disable + pre-fill with the
-                        // "full spool" preview (filament weight, and filament
-                        // weight + spool weight). Picking a spool replaces
-                        // those with the stored remaining_weight.
+                        // U13 (Cluster A) — radio-style weight picker. Visible
+                        // only on the existing-spool path; the inactive
+                        // method's input is hidden entirely (saves vertical
+                        // real estate, kills the silent-keystroke bug by
+                        // construction). When no spool is selected, the
+                        // radio collapses out — preview is implied by
+                        // "Filament weight" below.
                         if (showSpoolScopeFields) {
-                            Text(
-                                text = "Editing these updates Spoolman",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        // Fallback preview values only fire when the row is
-                        // DISABLED (no spool selected). When the user is
-                        // actively editing, an empty field must stay empty
-                        // so they can clear and retype — otherwise deleting
-                        // "1000" snaps right back to a fullSpoolWeightG
-                        // preview and there's no way to type a new number.
-                        val displayRemaining = if (showSpoolScopeFields) {
-                            remainingWeightG
-                        } else {
-                            remainingWeightG ?: fullSpoolWeightG
-                        }
-                        val displayMeasured = if (showSpoolScopeFields) {
-                            measuredWeightG
-                        } else {
-                            measuredWeightG
-                                ?: fullSpoolWeightG?.let { full ->
-                                    emptySpoolWeightG?.let { spool -> full + spool }
-                                }
-                        }
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            DecimalField(
-                                label = "Remaining",
-                                supportingText = null,
-                                suffix = "g",
-                                value = displayRemaining,
-                                enabled = spoolmanFieldsEnabled && showSpoolScopeFields,
-                                testTag = "more-details-remaining-weight",
-                                maxLength = 5,
-                                onChange = onRemainingChange,
-                                modifier = Modifier.weight(1f),
-                                disabledAlpha = 0.4f,
-                            )
-                            val measuredEnabled = spoolmanFieldsEnabled && showSpoolScopeFields
-                            DecimalField(
-                                label = "Measured",
-                                supportingText = null,
-                                suffix = "g",
-                                value = displayMeasured,
-                                enabled = measuredEnabled,
-                                testTag = "more-details-measured-weight",
-                                maxLength = 5,
-                                onChange = onMeasuredChange,
-                                modifier = Modifier.weight(1f),
-                                disabledAlpha = 0.4f,
+                            WeightMethodRadio(
+                                method = weightMethod,
+                                activeValueG = activeWeightValueG,
+                                emptySpoolWeightG = emptySpoolWeightG,
+                                enabled = spoolmanFieldsEnabled,
+                                onMethodPicked = onWeightMethodPicked,
+                                onActiveValueChange = onActiveWeightChange,
                             )
                         }
                         DecimalField(
                             label = "Filament weight",
-                            supportingText = "Net filament only. Excludes the empty spool.",
+                            supportingText = if (filamentSpecLocked && showSpoolScopeFields) {
+                                null
+                            } else {
+                                "Net filament only. Excludes the empty spool."
+                            },
                             suffix = "g",
                             value = fullSpoolWeightG,
                             enabled = filamentSpecEnabled,
@@ -236,14 +197,13 @@ fun MoreDetailsExpander(
                             supportingText = null,
                             suffix = priceSuffix,
                             value = priceMajor,
-                            // Decision M revised 2026-05-31: price is set at
-                            // spool acquisition, not a moving stock quote.
-                            // Lock ONLY on existing-spool path (where the
-                            // spool already has its acquisition price);
-                            // editable on filament-picker + new-filament
-                            // paths so the user can set a per-spool price
-                            // for the new spool being created.
-                            enabled = spoolmanFieldsEnabled && !showSpoolScopeFields,
+                            // v2.1: price editable on existing-spool too. Edits
+                            // PATCH spool.price only (per-spool override) —
+                            // filament.price stays untouched, so sibling
+                            // spools aren't affected. SaveToSpoolmanUseCase
+                            // routes price through patchSpoolFields with the
+                            // same stale-prefill guard as remaining_weight.
+                            enabled = spoolmanFieldsEnabled,
                             testTag = "more-details-price",
                             maxLength = 7,
                             onChange = onPriceChange,
@@ -254,7 +214,6 @@ fun MoreDetailsExpander(
             }
         }
     }
-}
 
 @Composable
 private fun SectionLabel(text: String) {

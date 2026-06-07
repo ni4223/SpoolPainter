@@ -3,6 +3,9 @@ package com.spoolpainter.app.ui.screens.main
 import com.spoolpainter.app.data.local.Settings
 import com.spoolpainter.app.domain.models.Brand
 import com.spoolpainter.app.domain.models.Material
+import com.spoolpainter.app.domain.models.SpoolmanFilament
+import com.spoolpainter.app.domain.models.SpoolmanSpool
+import com.spoolpainter.app.domain.models.SpoolmanVendor
 import com.spoolpainter.app.domain.models.TempRanges
 import com.spoolpainter.app.domain.primitives.CardUid
 import com.spoolpainter.app.domain.primitives.TagClassification
@@ -14,6 +17,7 @@ import com.spoolpainter.app.support.FakeMoveOnBindConfirmer
 import com.spoolpainter.app.support.FakeMoveOnBindUseCase
 import com.spoolpainter.app.support.FakeNfcRepository
 import com.spoolpainter.app.support.FakeRawWriteUseCase
+import com.spoolpainter.app.support.FakeSaveToSpoolmanUseCase
 import com.spoolpainter.app.support.FakeSettingsRepository
 import com.spoolpainter.app.support.FakeSpoolmanRepository
 import com.spoolpainter.app.support.FakeTwoTagUseCase
@@ -38,6 +42,7 @@ class MainViewModelRawWriteTest {
     private val spoolman = FakeSpoolmanRepository()
     private val settings = FakeSettingsRepository()
     private val createAndPair = FakeCreateAndPairUseCase(nfc = nfc, spoolman = spoolman)
+    private val saveToSpoolman = FakeSaveToSpoolmanUseCase(spoolman = spoolman)
     private val twoTag = FakeTwoTagUseCase(nfc = nfc, spoolman = spoolman)
     private val confirmer = FakeMoveOnBindConfirmer()
     private val moveOnBind = FakeMoveOnBindUseCase()
@@ -54,6 +59,7 @@ class MainViewModelRawWriteTest {
         settings = settings,
         materialBrandRepo = materialBrandRepo,
         readAndPair = ReadAndPairUseCase(nfc, spoolman),
+        saveToSpoolman = saveToSpoolman,
         createAndPair = createAndPair,
         twoTag = twoTag,
         confirmer = confirmer,
@@ -136,30 +142,61 @@ class MainViewModelRawWriteTest {
     }
 
     @Test
-    fun `vendor tag plus no Spoolman url short-circuits with snackbar`() = runTest {
+    fun `vendor tag plus no Spoolman url - Write disabled (no pair affordance)`() = runTest {
+        // U13: vendor tag without Spoolman has no Spoolman target to pair to,
+        // so Write is disabled. RawWrite isn't a valid fallback for vendor
+        // tags either — they're factory-encoded and can't be written.
+        // Vendor state is reached via explicit Read (nfc.state.Success);
+        // passive ambient taps no longer flip observedTagKind (2026-06-06).
         settings.pushSettings(Settings(url = ""))
         val vm = newVm()
         primeFormForWrite(vm)
-        // Override the blank tag staging with a vendor tag.
-        nfc.pushLastSeenTag(
-            TagBuffer(sampleUid, TagClassification.Vendor("non-NDEF"), capturedAtEpochMs = 0L),
+        nfc.pushState(
+            com.spoolpainter.app.domain.primitives.NfcResult.Success(
+                sampleUid,
+                TagClassification.Vendor("non-NDEF"),
+            ),
         )
 
+        // canWrite is false; tap is a no-op.
         vm.onWriteTapped()
-
-        // Refused — neither use-case invoked.
         assertEquals(0, rawWrite.invokeCalls)
         assertEquals(0, vendorUidOnlyPair.invokeCalls)
-        assertTrue(vm.state.value.activeFlow == ActiveFlow.Idle)
+        assertEquals(ActiveFlow.Idle, vm.state.value.activeFlow)
     }
 
     @Test
-    fun `vendor tag plus Spoolman routes to vendorUidOnlyPair`() = runTest {
+    fun `vendor tag plus Spoolman plus selected spool - Write routes to vendorUidOnlyPair (2026-06-06 reframe)`() = runTest {
+        // 2026-06-06: vendor UID mapping moved off Save and onto Write.
+        // Save = pure HTTP form edits across all states. Write = NFC + UID
+        // for writable tags, HTTP-only UID append for vendor tags. Vendor
+        // mapping requires a spool target so Write is gated on
+        // selectedSpoolId; the vendor case is reachable only after a Save
+        // (or pre-existing pick) populates the spool dropdown.
         settings.pushSettings(Settings(url = "http://10.0.0.5:8000"))
         val vm = newVm()
         primeFormForWrite(vm)
-        nfc.pushLastSeenTag(
-            TagBuffer(sampleUid, TagClassification.Vendor("non-NDEF"), capturedAtEpochMs = 0L),
+        // Pre-existing spool to satisfy canWrite gate.
+        val existingSpool = SpoolmanSpool(
+            id = 99,
+            filament = SpoolmanFilament(
+                id = 200,
+                name = "PLA",
+                vendor = SpoolmanVendor(id = 300, name = "Bambu"),
+                material = "PLA",
+                color_hex = "FF0000",
+                settings_extruder_temp = 210,
+                settings_bed_temp = 60,
+            ),
+        )
+        spoolman.setSpools(listOf(existingSpool))
+        vm.onSpoolSelected(existingSpool)
+        // Explicit Read flips observedTagKind to Vendor (2026-06-06).
+        nfc.pushState(
+            com.spoolpainter.app.domain.primitives.NfcResult.Success(
+                sampleUid,
+                TagClassification.Vendor("non-NDEF"),
+            ),
         )
         vendorUidOnlyPair.nextResult =
             com.spoolpainter.app.domain.usecases.VendorUidOnlyPairResult.Cancelled("noop")
