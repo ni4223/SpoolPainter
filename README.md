@@ -1,10 +1,11 @@
 # SpoolPainter
 
+
 Android app for managing 3D printer filament spools via NFC tags. Reads / writes filament metadata in [OpenSpool](https://openspool.io/) format and syncs with a self-hosted [Spoolman](https://github.com/Donkie/Spoolman) inventory.
 
 `v2.1` · `applicationId` `com.spoolpainter.app` · `minSdk 29` (Android 10+) · `targetSdk 36`
 
----
+### [Join the testing program](https://play.google.com/apps/testing/com.spoolpainter.app)
 
 ## What it is
 
@@ -63,11 +64,11 @@ It is a single-user, sideloadable Android app. No accounts, no cloud, no analyti
 
 ### From the Play Store testing track
 
-v2.0 is on the Play Store **open testing track** — anyone with the link below can opt in.
+v2 is on the Play Store **open testing track** — anyone with the link below can opt in.
 
 [Join the testing program](https://play.google.com/apps/testing/com.spoolpainter.app)
 
-Once you've joined, the app shows up in the Play Store like any other install. You'll get v2.0 updates as testing-track releases land.
+Once you've joined, the app shows up in the Play Store like any other install. You'll get v2 updates as testing-track releases land.
 
 ### Build from source
 
