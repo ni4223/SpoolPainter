@@ -22,18 +22,23 @@ It is a single-user, sideloadable Android app. No accounts, no cloud, no analyti
 |---|---|---|
 | ![Main screen with paired spool](screenshots/01-main.png) | ![Spool dropdown open with colour swatches](screenshots/02-spool-dropdown.png) | ![Form with metadata expander](screenshots/03-form-expanded.png) |
 
-| Pair another tag | Settings | Move-on-bind |
+| Pair another tag | Settings | Vendor key field |
 |---|---|---|
-| ![Pair another tag sheet](screenshots/04-pair-another.png) | ![Settings screen with Advanced section](screenshots/05-settings.png) | ![Move-on-bind confirm](screenshots/06-move-on-bind.png) |
+| ![Pair another tag sheet](screenshots/04-pair-another.png) | ![Settings screen with Vendor tag support section](screenshots/05-settings.png) | ![Vendor tag support — per-vendor setup](screenshots/05b-settings-key-field.png) |
 
-| Vendor tag chip | Vendor tag prefilled | Weight: Remaining / Measured |
+| Move-on-bind | Vendor tag chip | Vendor tag prefilled |
 |---|---|---|
-| ![Vendor tag classification](screenshots/07-vendor-chip.png) | ![Snapmaker tag prefilled](screenshots/08-vendor-read.png) | ![Weight radio with Measured selected](screenshots/09-weight-radio.png) |
+| ![Move-on-bind confirm](screenshots/06-move-on-bind.png) | ![Vendor tag classification](screenshots/07-vendor-chip.png) | ![Vendor tag prefilled](screenshots/08-vendor-read.png) |
+
+| Weight: Remaining / Measured |
+|---|
+| ![Weight radio with Measured selected](screenshots/09-weight-radio.png) |
 
 ## What's new in v2.1
 
+- **Vendor tag read — six brands.** Bambu Lab, Snapmaker, QIDI, Anycubic, Elegoo, and Creality tags decode and prefill the form just like OpenSpool tags. Snapmaker / QIDI / Anycubic / Elegoo work out of the box. Bambu Lab and Creality need a one-time per-brand setup in Settings → **Vendor tag support**, which lists every supported brand with a status glyph showing whether SpoolPainter can read it. Pairing runs the standard Map-tag flow (UID-only, no write back to the chip). QIDI / Anycubic / Elegoo / Creality decode logic is ported from [OpenRFID](https://github.com/suchmememanyskill/OpenRFID) under GPL-3.0; see NOTICE for the upstream commit pin.
+- **Tester feedback for tag reads.** Settings → **Report a tag issue** opens a short report form with the most recent NFC scan (chip type, UID, parse outcome — no personal data) pre-filled, so you can tell us about a vendor tag we don't yet support without retyping anything.
 - **Save and Write are separate buttons.** Save commits the form to Spoolman (no NFC). Write does the tag pairing in a second tap. Either button flips to a full-width Cancel during its own tag-waiting flow.
-- **Vendor tag read.** Snapmaker tags decode out of the box. Settings → Advanced takes an optional tag key for additional vendor formats. Decoded tags prefill the form like OpenSpool tags; pairing then runs the standard "Map tag" flow (UID-only, no NDEF write to the chip).
 - **Radio weight picker.** Remaining and Measured are now mutually-exclusive options on a segmented row. The active method's input field renders below; the inactive one is hidden. No more silent keystroke loss when the form was missing an empty-spool weight.
 - **Edit more on existing spools.** Color, density, filament weight, temperatures, and per-spool price are now editable on the existing-spool path; Save patches the underlying filament record. Material and brand stay locked (changing those means you picked the wrong filament — pick a different one instead).
 - **22-currency dropdown** in Settings (was 3 segmented options).
@@ -55,7 +60,7 @@ It is a single-user, sideloadable Android app. No accounts, no cloud, no analyti
   - Independent sort orders for the spool dropdown (Material / Brand / ID / Last Used) and the filament picker (Material / Brand / ID), each with Asc/Desc segmented controls
   - Theme toggle (Light / Dark) on the Settings top app bar
   - Currency for the price field — 22-entry dropdown
-  - **Advanced** (collapsed by default) — optional tag key for additional vendor tag formats
+  - **Vendor tag support** (collapsed by default) — list of supported brands with a status glyph; per-brand setup tucked behind a small button on the right of the row
 - **Spoolman gating** — the Spoolman-dependent form sections hide entirely when no URL is configured, and disable (still visible) when the URL is configured but the server is unreachable. The temperature section stays usable in all states because temps live on the tag, not in Spoolman.
 - **Keyboard-aware UI** — snackbar messages slide above the IME keyboard so confirmations and errors aren't hidden mid-edit.
 - **In-place v1 → v2 update** — same package id (`com.spoolpainter.app`). v2 installs over v1; no data migration is needed because data lives on tags + Spoolman, not in the app.
@@ -102,7 +107,7 @@ For release builds (signed APK / AAB), you also need a local keystore at `~/spoo
 ## NFC compatibility
 
 - **Tag types**: NDEF-formattable tags. NTAG215 / NTAG216 give the most headroom; NTAG213 works but is tighter.
-- **Vendor / non-NDEF tags**: read-only support since v2.1. Snapmaker decodes out of the box. Other vendor formats can be unlocked by supplying a tag key in Settings → Advanced (the app does not bundle vendor keys). Decoded tags prefill the form; pairing then runs the standard UID-only "Map tag" flow (no NDEF write to a vendor chip — those chips can't accept one). Decoding only runs on an explicit Read tap, not on passive ambient taps.
+- **Vendor / non-NDEF tags**: read-only support since v2.1. Six brands supported (Bambu Lab, Snapmaker, QIDI, Anycubic, Elegoo, Creality). Snapmaker / QIDI / Anycubic / Elegoo work out of the box; Bambu Lab and Creality need a one-time per-brand setup in Settings → Vendor tag support. Decoded tags prefill the form; pairing then runs the standard UID-only "Map tag" flow (no write back to a vendor chip — those chips can't accept one). Decoding only runs on an explicit Read tap, not on passive ambient taps.
 
 ## Privacy
 

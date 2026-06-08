@@ -13,4 +13,6 @@ data class SettingsUiState(
     val filamentSortDirection: SortDirection = SortDirection.Desc,
     val currency: Currency = Currency.Dollar,
     val bambuSalt: String = "",
+    val crealitySalt: String = "",
+    val crealityEncKey: String = "",
 )

@@ -131,6 +131,54 @@ class NfcRepositoryVendorParseTest {
     }
 
     @Test
+    fun `Reading a MifareUltralight vendor chip classifies as Vendor with null parsedHint`() = runTest {
+        val wrapper = FakeNfcAdapterWrapper()
+        wrapper.simulateRead(
+            sampleUid(),
+            records = null,
+            techList = listOf("android.nfc.tech.MifareUltralight"),
+        )
+        val repo = newRepository(
+            wrapper = wrapper,
+            settingsRepository = FakeSettingsRepository(),
+        )
+        repo.arm(NfcIntent.Read)
+        repo.handleTag(makeTag(techList = listOf("android.nfc.tech.MifareUltralight")))
+        val state = repo.state.value as NfcResult.Success
+        val vendor = state.classification as TagClassification.Vendor
+        assertNull("Anycubic / Elegoo gate without on-device backing returns null", vendor.parsedHint)
+        assertTrue(vendor.reason.contains("Ultralight", ignoreCase = true))
+    }
+
+    @Test
+    fun `Reading a MifareClassic chip with all vendor keys configured stays vendor with null parsedHint`() = runTest {
+        // Even with QIDI default keys (always enabled) + Bambu salt + Creality salt + enc key
+        // configured, the JVM environment can't authenticate to a real chip, so
+        // parseVendor returns null. Dispatcher gating is the assertion.
+        val wrapper = FakeNfcAdapterWrapper()
+        wrapper.simulateRead(
+            sampleUid(),
+            records = null,
+            techList = listOf("android.nfc.tech.MifareClassic"),
+        )
+        val repo = newRepository(
+            wrapper = wrapper,
+            settingsRepository = FakeSettingsRepository(
+                Settings(
+                    bambuSalt = "DEADBEEFCAFEBABE0011223344556677",
+                    crealitySalt = "11".repeat(32),
+                    crealityEncKey = "22".repeat(32),
+                ),
+            ),
+        )
+        repo.arm(NfcIntent.Read)
+        repo.handleTag(makeTag(techList = listOf("android.nfc.tech.MifareClassic")))
+        val state = repo.state.value as NfcResult.Success
+        val vendor = state.classification as TagClassification.Vendor
+        assertNull(vendor.parsedHint)
+    }
+
+    @Test
     fun `Reading a Blank chip never invokes vendor parse`() = runTest {
         // classify(raw) returns Blank for an Ndef-techList tag — the vendor
         // gate (baseClassification is Vendor) short-circuits, so parseVendor

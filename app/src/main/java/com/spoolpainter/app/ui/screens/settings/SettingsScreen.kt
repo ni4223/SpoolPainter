@@ -47,6 +47,12 @@ import com.spoolpainter.app.ui.components.ThemeToggleSwitch
 //   to production. Tester feedback channel; not for general release.
 private const val FEEDBACK_URL = "https://forms.gle/Yx94vLHCSaBWRL1m9"
 
+// Vendor-tag-specific report form. Pre-filled via the diagnostic entry ID
+// when the user taps "Report a tag issue" from Settings.
+private const val TAG_REPORT_FORM_BASE =
+    "https://docs.google.com/forms/d/e/1FAIpQLSfRfHF4sOlyjGB6WXJDc_gt70CIByXKnxQMViIF7YJl3MCY2g/viewform"
+private const val TAG_REPORT_DIAGNOSTIC_ENTRY = "entry.85549585"
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
@@ -113,6 +119,12 @@ fun SettingsScreen(
                     .testTag("settings-url-field"),
                 label = { Text("Spoolman URL") },
                 placeholder = { Text("http://192.168.1.100:7912") },
+                textStyle = androidx.compose.material3.MaterialTheme.typography.bodyLarge,
+                colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = androidx.compose.material3.MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = androidx.compose.material3.MaterialTheme.colorScheme.outline,
+                ),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp),
             )
             Button(
                 onClick = { viewModel.onUrlSaved(draftUrl) },
@@ -157,7 +169,11 @@ fun SettingsScreen(
             )
             SettingsVendorSection(
                 bambuSalt = state.bambuSalt,
+                crealitySalt = state.crealitySalt,
+                crealityEncKey = state.crealityEncKey,
                 onBambuSaltSaved = viewModel::onBambuSaltSaved,
+                onCrealitySaltSaved = viewModel::onCrealitySaltSaved,
+                onCrealityEncKeySaved = viewModel::onCrealityEncKeySaved,
                 testTag = "settings-vendor",
             )
             androidx.compose.foundation.layout.Row(
@@ -173,6 +189,33 @@ fun SettingsScreen(
                     modifier = Modifier.testTag("settings-feedback"),
                 ) {
                     Text("Send feedback")
+                }
+            }
+            // Tester quick-feedback: copy the last NFC scan diagnostic to the
+            // clipboard and open the feedback form. Disabled until the user
+            // has tapped at least one tag this session.
+            androidx.compose.foundation.layout.Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
+            ) {
+                androidx.compose.material3.TextButton(
+                    onClick = {
+                        // Build the diagnostic block, URL-encode it into the
+                        // pre-fill param, and launch the form. No clipboard
+                        // step — the diagnostic field is filled before the
+                        // user even sees the form.
+                        val diagnostic = viewModel.buildNfcShareText(formUrl = null)
+                        val encoded = java.net.URLEncoder.encode(diagnostic, "UTF-8")
+                        val url = "$TAG_REPORT_FORM_BASE?usp=pp_url" +
+                            "&$TAG_REPORT_DIAGNOSTIC_ENTRY=$encoded"
+                        val open = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        context.startActivity(open)
+                    },
+                    enabled = viewModel.hasNfcReads(),
+                    modifier = Modifier.testTag("settings-share-nfc"),
+                ) {
+                    Text("Report a tag issue")
                 }
             }
         }

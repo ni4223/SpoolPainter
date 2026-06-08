@@ -19,6 +19,8 @@ interface SettingsRepository {
     suspend fun setThemeOverride(theme: ThemeOverride)
     suspend fun setCurrency(currency: Currency)
     suspend fun setBambuSalt(salt: String)
+    suspend fun setCrealitySalt(salt: String)
+    suspend fun setCrealityEncKey(key: String)
 }
 
 @Singleton
@@ -63,5 +65,13 @@ class SettingsRepositoryImpl @Inject constructor(
 
     override suspend fun setBambuSalt(salt: String) {
         store.updateData { it.copy(bambuSalt = salt) }
+    }
+
+    override suspend fun setCrealitySalt(salt: String) {
+        store.updateData { it.copy(crealitySalt = salt) }
+    }
+
+    override suspend fun setCrealityEncKey(key: String) {
+        store.updateData { it.copy(crealityEncKey = key) }
     }
 }

@@ -19,6 +19,7 @@ class FakeNfcRepository : NfcRepository(
     ioDispatcher = Dispatchers.Unconfined,
     clock = Clock.System,
     settingsRepository = FakeSettingsRepository(),
+    readLog = null,
     ttlMs = 5_000L,
 ) {
 

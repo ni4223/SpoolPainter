@@ -12,6 +12,8 @@ data class Settings(
     val themeOverride: ThemeOverride = ThemeOverride.Dark,
     val currency: Currency = Currency.Dollar,
     val bambuSalt: String = "",
+    val crealitySalt: String = "",
+    val crealityEncKey: String = "",
 )
 
 @Serializable

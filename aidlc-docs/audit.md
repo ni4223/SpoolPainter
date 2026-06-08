@@ -2054,3 +2054,95 @@ Updated `aidlc-docs/aidlc-state.md` Current Stage line to reference the new arte
 **Context**: U13 → DONE. Ships as v2.1.0 (versionCode 103 → 104 / 2.0.3 → 2.1.0 per "v2.1 — separate release"). UI-36 archive parked for v2.1.x next-increment. Branch `v2` 1 ahead of `origin/v2` pre-commit.
 
 ---
+
+## U14b — Vendor Expansion — Open
+**Timestamp**: 2026-06-07T00:00:00Z
+**User Input**: After v2.1.0 close-out, "AIDLC continue" → answered next-step prompt with "Add more vendors" → answered scope prompts with: vendors via OpenRFID (`https://github.com/suchmememanyskill/OpenRFID/tree/main`), source style "Community repo (like PR #3 was)", license "Stay on GPL-3.0", scope = "qidi, anycubic, elegoo, creality, dont call it u15 maybe extension of older gate", deferrals "Defer spoolease, Defer tigertag", architecture "Registry/Strategy refactor + new vendors (Recommended)", key bundling = mix posture, then "Also add UI option to clearly show which all tags we support, what do you think will be good option, big paragragh is not good", then on placement "Put all in advanced and let rename it" + on naming "Vendor tag support".
+
+**AI Response**: Locked unit name as **U14b — Vendor Expansion** (continuation of U14, mirrors U6a/U6b + U9/U9b precedent). Per-unit gate: FD / NFR-R / NFR-D / Infra-D ALL **SKIP** — OpenRFID is the de facto FD; current session is Code Gen authoring + execution.
+
+Investigated upstream license trail before drafting plan: OpenRFID itself = GPL-3.0 ✅. Surfaced two risks user wasn't directly aware of: (a) OpenRFID's QIDI processor cites `TinkerBarn/BoxRFID` upstream, which is CC BY-NC-SA 4.0 (NonCommercial — would forbid Play Store distribution if we were a derivative work). OpenRFID's QIDI processor uses default `0xFF` Mifare keys + RE'd lookup tables, so it doesn't actually inherit BoxRFID material. (b) OpenRFID's Anycubic processor cites `DnG-Crafts/ACE-RFID`, which has no LICENSE file (defaults to all-rights-reserved). User chose "Cite only OpenRFID as upstream" → inherit OpenRFID's relicensing decision; don't reach back to either non-GPL-compatible upstream directly.
+
+Authored Code Gen Part 1 plan at `aidlc-docs/construction/plans/u14b-vendor-expansion-code-generation-plan.md` covering: §1 scope (4 vendors + registry refactor + Settings rename + chip row), §2 file impact (12 new prod + 7 modified prod + ~12 test), §3 17-step plan with verify pointers, §4 8 Q-U14b-* questions awaiting answers (chip ordering, OpenSpool inclusion, Elegoo source pinning, Creality no-key behaviour, adapter test depth, Ultralight page count, Bambu/Creality field copy, Vendor display strings), §5 traceability matrix + 16 install-gate scenarios, §6 resume options.
+
+Updated `aidlc-docs/aidlc-state.md`: added U14b entry under Construction stages (unchecked); rewrote Current Status block to reference U14b as the current open unit + plan path; demoted v2.1.0 SHIPPED block to Previous.
+
+Tasks tracked: #1 gate decisions ✅ completed; #2 plan authoring ✅ in_progress (now done); #3 Code Gen Part 2 pending Q-U14b-* answers; #4 LICENSE/NOTICE updates pending Part 2; #5 install gate pending Part 2; #6 close-out pending install gate.
+
+**Context**: U14b Code Gen Part 1 plan AUTHORED. Stage gate awaits user's `[Answer]:` tags on the 8 Q-U14b-* questions in the plan §4. Branch `v2` 1 ahead of `origin/v2` (the v2.1.0 docs close-out commit `d885ac2` is unpushed; not blocked on U14b).
+
+---
+
+## U14b — Q-U14b-* answers locked
+**Timestamp**: 2026-06-07T00:00:00Z
+**User Input**: Walked through Q-U14b-1..8 via AskUserQuestion. Answered: Q-U14b-1=A (alphabetical chip order), Q-U14b-2=A (include OpenSpool), Q-U14b-3=B (pin to commit SHA — switched from Q-U14b-3=A recommended after seeing the explainer), Q-U14b-4=A (silent on Creality no-key), Q-U14b-5=A (one parity test per adapter), Q-U14b-6 user "idk what this is, explain" → after explainer → Q-U14b-6=A (36 pages + fallback), Q-U14b-7=B (preface, no per-field hints — switched from Q-U14b-7=A recommended), Q-U14b-8=B (drop "U1" from Snapmaker — switched from Q-U14b-8=A recommended).
+
+**AI Response**: Updated Code Gen Part 1 plan §4 in place to record locked answers per question. Net deltas vs recommendations: Q-U14b-3 reversed (SHA pin instead of HEAD — locks reproducibility), Q-U14b-7 reversed (preface-only instead of preface+per-field — leaner field stack), Q-U14b-8 reversed (drop "U1" from Snapmaker display — matches OpenRFID upstream + reduces tag-vs-chip copy drift). Q-U14b-8 also requires updating the existing v2.1 `VendorTagHint` chip from "Snapmaker U1" → "Snapmaker"; folded into Step 13/14 of the plan via shared `VendorTagProcessor.displayName`.
+
+Three small downstream effects on the plan:
+1. NOTICE block (§3 Step 15) now cites OpenRFID at a specific SHA — captured at port time during Part 2.
+2. `SettingsVendorSection` expanded body (§3 Step 14) reorders to: chip row → preface line → 3 OutlinedTextFields stacked → per-field Save buttons. No per-field supportingText.
+3. `VendorTagHint` copy edit folds in (was outside the original plan scope; small surface area).
+
+**Context**: Part 1 stage gate now has all 8 answers. Ready to proceed to Code Gen Part 2 on user's next "go" / "continue" / "execute".
+
+---
+
+## U14b — Session reset checkpoint
+**Timestamp**: 2026-06-07T00:00:00Z
+**User Input**: "save detail, i will reset session, also why its o big change?"
+
+**AI Response**: Authored cold-start handoff artefact at
+`aidlc-docs/construction/u14b-vendor-expansion/code/u14b-session-resume.md` covering: Q-U14b-1..8 locked answer ledger, working-tree fingerprint (HEAD `d885ac2`, origin/v2 `dadf6f4`, ahead by 1, 2 modified + 1 untracked under aidlc-docs/), why-it's-big breakdown (3 things in one diff: registry refactor + 4 vendor parsers + Settings UI rename/chip row/2 fields), **Slice A/B/C decomposition** (A = registry refactor only / B = registry + QIDI / C = full plan as written), task ledger across resume, license posture reaffirmation, release shape (versionCode 104→105, versionName 2.1.0→2.1.1), and revert path if U14b is abandoned. Updated `aidlc-state.md` Current Stage block to reference the resume artefact and the locked Q-U14b answers.
+
+User's question "why its o big change?" answered in the artefact's "Why Part 2 is big — short answer" section: it's the registry refactor + 4 new parsers + Settings UI rename in one coherent diff. Each piece is small individually; the bulk comes from doing all three together. Slicing options offered for the resume.
+
+**Context**: U14b paused at end of Part 1, before Part 2 codegen. Working tree dirty against `origin/v2` with state + audit + plan + resume artefact only — no code changes. Branch `v2` 1 commit ahead of `origin/v2` (the v2.1.0 docs close-out `d885ac2`, unpushed). On resume the AI should: (1) read `u14b-session-resume.md` end-to-end, (2) verify `git status` matches the captured fingerprint, (3) ask user "Slice A / Slice B / Slice C?" before starting Part 2.
+
+---
+
+## U14b — Autonomous-session prep
+**Timestamp**: 2026-06-07T00:00:00Z
+**User Input**: "add in detail for new session to get all the permission it need to do full coding to build to testing phase, i will be leaving for 30-40 mins and agent should be ready with app to install on phone by the time i am back" → "i might be gone for more than an hour, time is not an issue" → "no phone connected when i am away all install test gate at the end"
+
+**AI Response**: Three-pass setup for the next (autonomous) session:
+
+1. Expanded `.claude/settings.local.json` with wildcard allow rules (`./gradlew *`, `adb *` though unused, `git status/diff/log/show/rev-*/fetch/ls-files/branch *`, `curl -sL *`, common shell utils, Read/Edit/Write project tree) + a hard `deny` block (`git push`, `git commit`, `git reset --hard`, `git rebase`, `git checkout --`, `git restore`, `git clean -f`, `adb uninstall com.spoolpainter.app` for prod app safety, `WebFetch(forms.gle)`, `rm -rf` against project tree). Validated JSON.
+
+2. Rewrote `aidlc-docs/construction/u14b-vendor-expansion/code/u14b-session-resume.md` for autonomous mode: no-time-pressure framing, no-phone-connected guard, full Slice C execution (all 4 vendors + registry refactor + Settings UI rename + chip row + adapter parity tests + NOTICE updates), milestone-checkpointed cut order (M1 refactor seam → M2 QIDI → M3 Settings UI → M4 Anycubic+Elegoo → M5 Creality → M6 NOTICE+README+adapter parity → M7 full build matrix incl. assembleRelease + bundleRelease). End state for autonomous session = source code complete + debug APK + signed release APK + signed AAB sitting in `app/build/outputs/`. NO `adb install`, NO commits, NO version bump, NO U14b checkbox flip. User installs + walks install gate when they're back.
+
+3. Updated task #5 subject + description to reflect "build matrix only, no install" — install gate becomes a separate user-driven task post-resume.
+
+Resume artefact lists: copy/paste-ready build commands, milestone-by-milestone test count targets (421 → 427 → 429 → 441 → 451 → ~455), reference inventory (file paths, adb path though unused, keystore location, Q-U14b ledger), progress-log convention, hard guards, memory references, "what success looks like" definition, and explicit STOP-AND-DOCUMENT criteria. The new session reads this file end-to-end, verifies the working-tree fingerprint, and starts work without re-asking anything.
+
+**Context**: Prep complete. User about to reset session and leave for ≥1 hour. Next session inherits expanded permissions + complete plan + locked Q&A + checkpointed cut order. Working tree at this point: 4 modified (settings.local.json, aidlc-state.md, audit.md, plus the resume artefact's edits) + 1 untracked plan file + 1 untracked u14b-vendor-expansion/ subdir. Branch `v2` 1 ahead of `origin/v2`.
+
+---
+
+## U14b — Autonomous run + close-out
+**Timestamp**: 2026-06-07T00:00:00Z
+**User Input**: "AIDLC continue — autonomous mode, follow u14b-session-resume.md" (resume) → on-device install gate sequence covering OpenSpool / Bambu / Snapmaker / Anycubic taps with byte-dump logging + NFC Tools probe + NfcA fallback + brand normalisation + tag-failure feedback affordance + 3-digit temp clip fix + Spoolman URL field shape match → "lets start close out stuff, update version, build, write me reelase notes for the playstore, update aidlc closeout, commit".
+
+**AI Response**: Worked through all 7 milestones autonomously (M1 refactor seam → M7 full build matrix), then carried over five fixes during the on-device install gate that were not in the original plan:
+
+1. **NfcA fallback** — `MifareUltralightReader` now tries `MifareUltralight.get(tag)` first, falls back to raw `NfcA.transceive(byteArrayOf(0x30, page))` READ commands when the tag's techList omits MifareUltralight. moto g stylus 2025's NFC stack reports genuine MIFARE Ultralight chips with `techList=[NfcA]` only (verified independently via NFC Tools showing same NfcA-only result + ATQA `0x0044` + SAK `0x00` — canonical Ultralight signature). Widened `AnycubicProcessor.matchesChipType` + `ElegooProcessor.matchesChipType` to accept NfcA; widened `TagFormatParser` Ultralight branch + `NfcRepository.classify` Vendor classification for NfcA-only chips. False positives caught downstream by Anycubic's `7B 00 65 00` magic and Elegoo's `EE EE EE EE` marker.
+
+2. **Anycubic brand normalisation** — Anycubic chips encode `"AC"` in the brand slot rather than the full vendor name; `AnycubicProcessor.parse` maps `"AC" / "" / "ANYCUBIC"` → `"Anycubic"` so the form prefill matches what users expect.
+
+3. **Tag-failure feedback affordance** — new `NfcReadLog` singleton (in-memory ring buffer, last 5 reads, cleared on process death). Injected into `NfcRepository.handleTag` to capture UID + techList + parse outcome. New "Report a tag issue" button in Settings (disabled until first scan) launches a separate Google Form (`docs.google.com/forms/d/e/1FAIpQLSfRfHF4sOlyjGB6WXJDc_gt70CIByXKnxQMViIF7YJl3MCY2g/viewform`) with the diagnostic block URL-pre-filled into entry ID `entry.85549585`. Zero clipboard step. SettingsViewModel + SettingsViewModelTest + FakeNfcRepository all updated to thread the new dependency.
+
+4. **3-digit temp clip fix** — `TempPanel` field width 80→96dp so `"220 °C"` no longer clips into the suffix on narrow phones.
+
+5. **Spoolman URL field shape** matched to vendor key field rounded-corner style (`RoundedCornerShape(20.dp)` + primary/outline border colors + `bodyLarge` text style).
+
+**Vendor list visual iterations** (final shipped): brand name + green/red `Icons.Filled.PowerSettingsNew` glyph at midpoint between brand and key column + (Bambu/Creality only) elevated circular `Surface` "key" button on the right. Custom `Layout` measure-pass column-max-width "table" so glyphs and key buttons line up vertically across all 7 rows without pixel guessing. Tapping a key button highlights it, mounts the brand's key field(s) in a fixed bottom slot, scrolls into view, focuses first field, suppresses IME so the keyboard doesn't auto-pop. Creality has two fields (tag key + encryption key) but a single combined Save. Collapsing the section resets the open key selection.
+
+**Q-U14b answers folded into the implementation**: 1=A (alphabetical row order), 2=A (OpenSpool included, always-ready), 3=B (NOTICE cites OpenRFID at SHA `ddd1609e9abe9cd37c4b8fa1a0e4307b976d5fd4`), 4=A (Creality encrypted-no-key returns null silently with log warn), 5=A (one happy-path adapter parity test per Bambu/Snapmaker), 6=A (MifareUltralight: try 36 pages, fall back to chip-reported), 7=B (no per-field supportingText; the redesigned per-row layout subsumed the original preface-line approach), 8=B (Snapmaker chip displayName = "Snapmaker", no "U1").
+
+**README + screenshots**: README "What's new in v2.1" rewritten to reference six vendors with status-glyph + per-brand setup framing (no explicit "key" / "HKDF" / "paste in" language per user direction "dont say key or brand key stuff explictly anywhere"). Three screenshots replaced/added: `02-spool-dropdown.png` regen, `05-settings.png` regen (new vendor list visible), `05b-settings-key-field.png` new (Creality field expanded inline). Screenshot grid in README reorganised 3×3 → 3×3+1 to fit the new addition.
+
+**versionCode 104→105, versionName 2.1.0→2.1.1**. Build matrix green: `compileDebugKotlin` ✅ / `testDebugUnitTest` ✅ **468/468** (Δ +47 vs U14's 421) / `assembleDebug` ✅ 65.43 MB / `assembleRelease` ✅ 7.07 MB R8 / `bundleRelease` ✅ 7.81 MB AAB. Memories applied: [[reference_adb_path]], [[feedback_no_em_dash]], [[feedback_aidlc_unit_close_out_commit]], [[feedback_no_offset_modifier]].
+
+**Context**: U14b DONE. State file updated. Awaiting close-out commit per [[feedback_aidlc_unit_close_out_commit]] (user owns the commit). Working tree dirty against `origin/v2` with new vendor processors + tests + Settings rework + NOTICE + README + screenshots + state + audit + 3-digit temp fix + Spoolman URL field shape + tag-failure feedback affordance + versionCode/Name bump.
+
+---

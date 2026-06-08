@@ -29,6 +29,7 @@ class SettingsViewModelTest {
     private fun newVm(): SettingsViewModel = SettingsViewModel(
         settings = settings,
         spoolman = spoolman,
+        nfcReadLog = com.spoolpainter.app.hardware.nfc.NfcReadLog(),
     )
 
     @Before

@@ -25,3 +25,18 @@ PR contribution
 ---------------
 The initial vendor-tag read implementation (PR #3) was contributed by
 Fabio De Simone <me@fabiodesim.one> (GitHub @ProtoxiDe22).
+
+OpenRFID — QIDI / Anycubic / Elegoo / Creality tag format support
+-----------------------------------------------------------------
+The QIDI, Anycubic, Elegoo, and Creality tag processors and lookup
+tables (under
+`app/src/main/java/com/spoolpainter/app/hardware/nfc/vendor/`) are
+ported from the OpenRFID project:
+
+  https://github.com/suchmememanyskill/OpenRFID
+
+Specifically, the source files at
+`OpenRFID/src/tag/{qidi,anycubic,elegoo,creality}/` at upstream commit
+`ddd1609e9abe9cd37c4b8fa1a0e4307b976d5fd4` were translated to Kotlin
+in this repository. OpenRFID is published under GPL-3.0; SpoolPainter
+inherits and remains under GPL-3.0 as a result.

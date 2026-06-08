@@ -170,7 +170,7 @@ private fun TempControl(
                     onValueChange(parsed)
                 }
             },
-            modifier = Modifier.width(80.dp),
+            modifier = Modifier.width(96.dp),
             textStyle = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
             singleLine = true,
             enabled = enabled,

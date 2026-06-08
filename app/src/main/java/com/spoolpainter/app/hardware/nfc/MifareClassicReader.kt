@@ -3,6 +3,8 @@ package com.spoolpainter.app.hardware.nfc
 import android.nfc.Tag
 import android.nfc.tech.MifareClassic
 import android.util.Log
+import com.spoolpainter.app.hardware.nfc.vendor.VendorAuth
+import com.spoolpainter.app.hardware.nfc.vendor.VendorId
 
 private const val TAG = "MifareClassicReader"
 
@@ -13,42 +15,50 @@ object MifareClassicReader {
         byteArrayOf(0xD3.toByte(), 0xF7.toByte(), 0xD3.toByte(), 0xF7.toByte(), 0xD3.toByte(), 0xF7.toByte()),
     )
 
-    fun tryReadRawCounted(
+    /**
+     * Read all sectors of a MifareClassic 1k tag, trying each vendor's keys
+     * in registry order per sector. Returns the raw 1024-byte read (if any
+     * sector authed) plus a per-vendor auth count the dispatcher uses to
+     * pick the most-likely vendor in a tiebreak.
+     *
+     * `vendorAuths` is iterated in insertion order — callers control vendor
+     * priority by ordering the map (LinkedHashMap / `mapOf`).
+     */
+    fun tryReadRawCountedMulti(
         tag: Tag,
-        bambuKeysA: List<ByteArray>?,
-        smKeysA: List<ByteArray>?,
-        smKeysB: List<ByteArray>?,
-    ): Triple<ByteArray?, Int, Int> {
-        val mc = MifareClassic.get(tag) ?: run { Log.w(TAG, "tryReadRawCounted: not a MifareClassic tag"); return Triple(null, 0, 0) }
-        Log.d(TAG, "tryReadRawCounted: sectors=${mc.sectorCount} bambuKeys=${bambuKeysA?.size} smKeysA=${smKeysA?.size} smKeysB=${smKeysB?.size}")
+        vendorAuths: Map<VendorId, VendorAuth>,
+    ): Pair<ByteArray?, Map<VendorId, Int>> {
+        val mc = MifareClassic.get(tag) ?: run {
+            Log.w(TAG, "tryReadRawCountedMulti: not a MifareClassic tag")
+            return null to vendorAuths.keys.associateWith { 0 }
+        }
+        Log.d(TAG, "tryReadRawCountedMulti: sectors=${mc.sectorCount} vendors=${vendorAuths.keys}")
         return try {
             mc.connect()
             val sectorCount = mc.sectorCount
             val result = ByteArray(sectorCount * 64)
             var anyAuthed = false
-            var bambuCount = 0
-            var smCount = 0
+            val counts = vendorAuths.keys.associateWith { 0 }.toMutableMap()
 
             for (sector in 0 until sectorCount) {
                 var authed = false
                 var authSource = "none"
 
-                if (bambuKeysA != null) {
-                    val key = bambuKeysA.getOrNull(sector)
-                    if (key != null && runCatching { mc.authenticateSectorWithKeyA(sector, key) }.getOrDefault(false)) {
-                        authed = true; bambuCount++; authSource = "bambu-A"
+                for ((vendorId, vendorAuth) in vendorAuths) {
+                    if (authed) break
+                    val keyA = vendorAuth.keysA.getOrNull(sector)
+                    if (keyA != null && runCatching { mc.authenticateSectorWithKeyA(sector, keyA) }.getOrDefault(false)) {
+                        authed = true
+                        counts[vendorId] = (counts[vendorId] ?: 0) + 1
+                        authSource = "$vendorId-A"
+                        break
                     }
-                }
-                if (!authed && smKeysA != null) {
-                    val key = smKeysA.getOrNull(sector)
-                    if (key != null && runCatching { mc.authenticateSectorWithKeyA(sector, key) }.getOrDefault(false)) {
-                        authed = true; smCount++; authSource = "sm-A"
-                    }
-                }
-                if (!authed && smKeysB != null) {
-                    val key = smKeysB.getOrNull(sector)
-                    if (key != null && runCatching { mc.authenticateSectorWithKeyB(sector, key) }.getOrDefault(false)) {
-                        authed = true; smCount++; authSource = "sm-B"
+                    val keyB = vendorAuth.keysB?.getOrNull(sector)
+                    if (keyB != null && runCatching { mc.authenticateSectorWithKeyB(sector, keyB) }.getOrDefault(false)) {
+                        authed = true
+                        counts[vendorId] = (counts[vendorId] ?: 0) + 1
+                        authSource = "$vendorId-B"
+                        break
                     }
                 }
                 if (!authed) {
@@ -73,12 +83,12 @@ object MifareClassicReader {
                 }
             }
             mc.close()
-            Log.d(TAG, "tryReadRawCounted done: bambu=$bambuCount sm=$smCount anyAuthed=$anyAuthed")
-            Triple(if (anyAuthed) result else null, bambuCount, smCount)
+            Log.d(TAG, "tryReadRawCountedMulti done: counts=$counts anyAuthed=$anyAuthed")
+            (if (anyAuthed) result else null) to counts
         } catch (e: Exception) {
-            Log.e(TAG, "tryReadRawCounted exception: $e")
+            Log.e(TAG, "tryReadRawCountedMulti exception: $e")
             runCatching { mc.close() }
-            Triple(null, 0, 0)
+            null to vendorAuths.keys.associateWith { 0 }
         }
     }
 }

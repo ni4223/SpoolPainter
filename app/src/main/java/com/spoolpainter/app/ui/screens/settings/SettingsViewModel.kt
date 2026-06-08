@@ -11,6 +11,7 @@ import com.spoolpainter.app.data.local.ThemeOverride
 import com.spoolpainter.app.data.remote.spoolman.SpoolmanOutcome
 import com.spoolpainter.app.data.remote.spoolman.SpoolmanRepository
 import com.spoolpainter.app.data.remote.spoolman.UrlNotConfiguredException
+import com.spoolpainter.app.hardware.nfc.NfcReadLog
 import com.spoolpainter.app.ui.common.UiEffect
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.channels.Channel
@@ -27,6 +28,7 @@ import javax.inject.Inject
 class SettingsViewModel @Inject constructor(
     private val settings: SettingsRepository,
     private val spoolman: SpoolmanRepository,
+    private val nfcReadLog: NfcReadLog,
 ) : ViewModel() {
 
     val state: StateFlow<SettingsUiState> = settings.settings
@@ -39,6 +41,8 @@ class SettingsViewModel @Inject constructor(
                 filamentSortDirection = it.filamentSortDirection,
                 currency = it.currency,
                 bambuSalt = it.bambuSalt,
+                crealitySalt = it.crealitySalt,
+                crealityEncKey = it.crealityEncKey,
             )
         }
         .stateIn(
@@ -100,6 +104,20 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    fun onCrealitySaltSaved(salt: String) {
+        viewModelScope.launch {
+            settings.setCrealitySalt(salt.trim())
+            _effects.trySend(UiEffect.ShowSnackbar("Creality tag key saved"))
+        }
+    }
+
+    fun onCrealityEncKeySaved(key: String) {
+        viewModelScope.launch {
+            settings.setCrealityEncKey(key.trim())
+            _effects.trySend(UiEffect.ShowSnackbar("Creality encryption key saved"))
+        }
+    }
+
     private fun normaliseUrl(raw: String): String {
         val trimmed = raw.trim().trimEnd('/')
         if (trimmed.isEmpty()) return ""
@@ -109,6 +127,12 @@ class SettingsViewModel @Inject constructor(
             "http://$trimmed"
         }
     }
+
+    /** Snapshot of the recent NFC reads, paste-friendly. */
+    fun buildNfcShareText(formUrl: String? = null): String = nfcReadLog.renderShareText(formUrl)
+
+    /** True when there's at least one read in the buffer. */
+    fun hasNfcReads(): Boolean = !nfcReadLog.isEmpty()
 
     fun onRefreshTapped() {
         viewModelScope.launch {

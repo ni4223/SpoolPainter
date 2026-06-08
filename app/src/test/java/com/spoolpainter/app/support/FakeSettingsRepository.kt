@@ -49,6 +49,14 @@ class FakeSettingsRepository(initial: Settings = Settings()) : SettingsRepositor
         _settings.update { it.copy(bambuSalt = salt) }
     }
 
+    override suspend fun setCrealitySalt(salt: String) {
+        _settings.update { it.copy(crealitySalt = salt) }
+    }
+
+    override suspend fun setCrealityEncKey(key: String) {
+        _settings.update { it.copy(crealityEncKey = key) }
+    }
+
     fun pushSettings(value: Settings) {
         _settings.value = value
     }

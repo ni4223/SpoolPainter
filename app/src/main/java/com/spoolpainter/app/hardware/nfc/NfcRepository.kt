@@ -34,6 +34,7 @@ open class NfcRepository internal constructor(
     private val ioDispatcher: CoroutineDispatcher,
     private val clock: Clock,
     private val settingsRepository: SettingsRepository,
+    private val readLog: NfcReadLog?,
     private val ttlMs: Long,
 ) {
 
@@ -44,7 +45,8 @@ open class NfcRepository internal constructor(
         @IoDispatcher ioDispatcher: CoroutineDispatcher,
         clock: Clock,
         settingsRepository: SettingsRepository,
-    ) : this(wrapper, scope, ioDispatcher, clock, settingsRepository, TTL_MS_DEFAULT)
+        readLog: NfcReadLog,
+    ) : this(wrapper, scope, ioDispatcher, clock, settingsRepository, readLog, TTL_MS_DEFAULT)
 
     private val _state = MutableStateFlow<NfcResult>(NfcResult.Idle)
     open val state: StateFlow<NfcResult> = _state.asStateFlow()
@@ -126,6 +128,7 @@ open class NfcRepository internal constructor(
     }
 
     internal suspend fun handleTag(tag: Tag) {
+        Log.d(TAG, "handleTag: uid=${tag.id?.joinToString("") { "%02X".format(it) }} techList=${tag.techList?.toList()}")
         // Peek state first: on a Writing-state tap we skip the NDEF pre-read
         // entirely and synthesize a RawTagRead from the in-memory Tag object
         // (uid + techList, no I/O). Cuts one Ndef.connect cycle off the write
@@ -154,8 +157,13 @@ open class NfcRepository internal constructor(
         val isReading = _state.value is NfcResult.Reading
         val baseClassification = classify(raw)
         val classification = if (isReading && baseClassification is TagClassification.Vendor) {
-            val bSalt = settingsRepository.settings.value.bambuSalt
-            val parsedPayload = TagFormatParser.parseVendor(tag, bSalt, SNAPMAKER_KEY_SALT)
+            val s = settingsRepository.settings.value
+            val vendorSettings = com.spoolpainter.app.hardware.nfc.vendor.VendorSettings(
+                bambuSalt = s.bambuSalt,
+                crealitySalt = s.crealitySalt,
+                crealityEncKey = s.crealityEncKey,
+            )
+            val parsedPayload = TagFormatParser.parseVendor(tag, vendorSettings)
             if (parsedPayload != null) {
                 TagClassification.Vendor(baseClassification.reason, parsedHint = parsedPayload)
             } else {
@@ -166,6 +174,32 @@ open class NfcRepository internal constructor(
         }
         val now = clock.now().toEpochMilliseconds()
         _lastSeenTag.value = TagBuffer(raw.uid, classification, now)
+
+        // Capture a per-read snapshot for the Settings "Share last NFC scan"
+        // feedback affordance. UID + techList + classification outcome is
+        // enough for triage; raw chip bytes would need a deeper hook through
+        // TagFormatParser and aren't needed for the common "what kind of
+        // chip is this and why didn't it parse" question.
+        readLog?.let { log ->
+            val uidBytes = tag.id ?: ByteArray(0)
+            val outcome = when (val c = classification) {
+                is TagClassification.OpenSpool -> "OpenSpool prefill (type=${c.payload.type})"
+                is TagClassification.Vendor ->
+                    if (c.parsedHint != null) "Vendor with prefill (brand=${c.parsedHint.brand}, type=${c.parsedHint.type})"
+                    else "Vendor, no prefill (${c.reason})"
+                TagClassification.Blank -> "Blank"
+            }
+            log.record(
+                NfcReadLog.Entry(
+                    timestampEpochMs = now,
+                    uidHex = uidBytes.joinToString("") { "%02X".format(it) },
+                    techList = tag.techList?.toList().orEmpty(),
+                    rawHex = "(uid only — see techList)",
+                    rawByteCount = uidBytes.size,
+                    parseOutcome = outcome,
+                ),
+            )
+        }
 
         val (intent, currentState) = mutex.withLock {
             val snapshot = armedIntent to _state.value
@@ -294,6 +328,8 @@ open class NfcRepository internal constructor(
             // Blank so the user's next Save & Write doesn't get misrouted
             // into the vendor-pair-only flow.
             val isMifareClassic = raw.techList.contains("android.nfc.tech.MifareClassic")
+            val isMifareUltralight = raw.techList.contains("android.nfc.tech.MifareUltralight")
+            val isNfcA = raw.techList.contains("android.nfc.tech.NfcA")
             val isFormattable = raw.techList.contains("android.nfc.tech.NdefFormatable")
             val isNdef = raw.techList.contains("android.nfc.tech.Ndef")
             return when {
@@ -305,6 +341,20 @@ open class NfcRepository internal constructor(
                 // pre-block + Spoolman UID-only pair fires.
                 isMifareClassic ->
                     TagClassification.Vendor("MifareClassic (vendor-encrypted)")
+                // MifareUltralight chips that don't expose readable NDEF
+                // are vendor tags too (Anycubic / Elegoo / similar). If
+                // Ndef IS exposed and parsed cleanly, the records-readable
+                // branch below already won — so reaching here means we
+                // couldn't read NDEF but the chip might still be vendor.
+                isMifareUltralight && !isNdef ->
+                    TagClassification.Vendor("MifareUltralight (vendor)")
+                // Some Android stacks (observed on moto g stylus 2025)
+                // don't promote a genuine Ultralight chip past NfcA in the
+                // techList. Treat NfcA-only tags as Vendor candidates so
+                // the registry's NfcA-fallback Ultralight reader gets a
+                // chance to parse them.
+                isNfcA && !isNdef ->
+                    TagClassification.Vendor("NfcA (vendor)")
                 isNdef -> TagClassification.Blank
                 isFormattable -> TagClassification.Blank
                 else ->

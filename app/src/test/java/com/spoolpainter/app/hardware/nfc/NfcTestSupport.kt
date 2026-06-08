@@ -101,6 +101,7 @@ internal object NfcTestSupport {
         ioDispatcher = UnconfinedTestDispatcher(),
         clock = clock,
         settingsRepository = settingsRepository,
+        readLog = null,
         ttlMs = ttlMs,
     )
 }
