@@ -40,3 +40,14 @@ Specifically, the source files at
 `ddd1609e9abe9cd37c4b8fa1a0e4307b976d5fd4` were translated to Kotlin
 in this repository. OpenRFID is published under GPL-3.0; SpoolPainter
 inherits and remains under GPL-3.0 as a result.
+
+OpenRFID — vendor tag test fixtures
+-----------------------------------
+The vendor tag dumps and their expected-output sidecars under
+`app/src/test/resources/vendor-fixtures/{Elegoo,Anycubic,Qidi,Snapmaker,Bambu}/`
+(`*.bin` raw chip captures + `*.yml` expected decode results) are copied
+verbatim from `OpenRFID/test/tags/` at the same upstream commit
+`ddd1609e9abe9cd37c4b8fa1a0e4307b976d5fd4`. They are used solely as
+regression test data for the vendor tag processors. Creality fixtures
+are not included — they require a per-tag AES encryption key that
+upstream supplies via environment variable, not in the repository.

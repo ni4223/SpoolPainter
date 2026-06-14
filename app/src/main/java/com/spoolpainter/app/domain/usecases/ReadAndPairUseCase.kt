@@ -26,6 +26,10 @@ class ReadAndPairUseCase @Inject constructor(
     }
 
     private suspend fun readTag(): NfcResult {
+        // A buffered passive tap already carries its vendor decode (handleTag
+        // runs the parse on every non-write tap), so consuming it gives the
+        // prefill immediately — no re-tap. Only when there's no fresh buffer do
+        // we arm and wait for a physical tap.
         val buffered = nfc.consumeLastSeen(NfcIntent.Read)
         if (buffered != null) return buffered
         nfc.arm(NfcIntent.Read)

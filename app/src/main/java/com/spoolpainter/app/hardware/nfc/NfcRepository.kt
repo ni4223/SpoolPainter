@@ -151,23 +151,53 @@ open class NfcRepository internal constructor(
                 return
             }
         }
-        // Vendor (Bambu/Snapmaker) parsing is gated to explicit Reads only —
-        // it does HKDF + multi-sector MifareClassic auth that costs hundreds
-        // of ms of phone-on-tag time. Ambient/idle taps must stay fast.
-        val isReading = _state.value is NfcResult.Reading
+        // Vendor (Bambu/Snapmaker/Anycubic/Elegoo/…) parsing runs on every tap
+        // that isn't a write — including passive/idle taps. The decode is what
+        // turns a bare "vendor tag detected" buffer into one carrying a
+        // parsedHint, so a user who taps passively then presses Read gets the
+        // prefill from the buffered tap instead of being forced to re-tap.
+        // The decode only fires when classify() already flagged the chip as a
+        // vendor candidate (MifareClassic present, or a Blank NfcA Ultralight),
+        // so plain OpenSpool / NDEF taps skip it and stay fast. Write taps skip
+        // it too — the write path keeps its minimal on-tag window and does its
+        // own vendor pre-block from the base classification.
         val baseClassification = classify(raw)
-        val classification = if (isReading && baseClassification is TagClassification.Vendor) {
+        val classification = if (!isWriting) {
             val s = settingsRepository.settings.value
             val vendorSettings = com.spoolpainter.app.hardware.nfc.vendor.VendorSettings(
                 bambuSalt = s.bambuSalt,
                 crealitySalt = s.crealitySalt,
                 crealityEncKey = s.crealityEncKey,
             )
-            val parsedPayload = TagFormatParser.parseVendor(tag, vendorSettings)
-            if (parsedPayload != null) {
-                TagClassification.Vendor(baseClassification.reason, parsedHint = parsedPayload)
-            } else {
-                baseClassification
+            when {
+                baseClassification is TagClassification.Vendor -> {
+                    val parsedPayload = TagFormatParser.parseVendor(tag, vendorSettings)
+                    if (parsedPayload != null) {
+                        TagClassification.Vendor(baseClassification.reason, parsedHint = parsedPayload)
+                    } else {
+                        baseClassification
+                    }
+                }
+                // Anycubic / Elegoo MIFARE Ultralight chips are auto-promoted
+                // to NDEF by some Android stacks, so they expose `Ndef` in the
+                // techList and classify() lands them in the Blank branch (no
+                // readable NDEF message, records == null). Speculatively run
+                // the vendor Ultralight parse here on an explicit Read: each
+                // processor's magic-byte check (7B 00 65 00 for Anycubic,
+                // EE EE EE EE for Elegoo) rejects genuine blank tags, so a
+                // non-null result means it really was a vendor chip. Genuine
+                // blank tags fall through unchanged and stay writable.
+                baseClassification is TagClassification.Blank &&
+                    raw.records == null &&
+                    raw.techList.contains("android.nfc.tech.NfcA") -> {
+                    val parsedPayload = TagFormatParser.parseVendor(tag, vendorSettings)
+                    if (parsedPayload != null) {
+                        TagClassification.Vendor("Ultralight (vendor)", parsedHint = parsedPayload)
+                    } else {
+                        baseClassification
+                    }
+                }
+                else -> baseClassification
             }
         } else {
             baseClassification

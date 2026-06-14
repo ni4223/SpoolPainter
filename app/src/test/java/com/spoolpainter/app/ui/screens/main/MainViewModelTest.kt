@@ -253,6 +253,25 @@ class MainViewModelTest {
     }
 
     @Test
+    fun `onReadTapped vendor tag with failed decode emits hold-and-retry snackbar`() = runTest {
+        // A vendor chip read whose decode came back empty (parsedHint == null)
+        // is the early-lift case: tell the user to hold still and retry rather
+        // than leaving a silent "vendor detected, nothing happened" dead-end.
+        val vm = newVm()
+        nfc.setBufferedTap(
+            NfcResult.Success(sampleUid, TagClassification.Vendor("MifareClassic (vendor-encrypted)")),
+        )
+        spoolman.nextFindSpoolsByCardUidResult = SpoolmanOutcome.Success(emptyList())
+
+        vm.effects.test {
+            vm.onReadTapped()
+            val emission = awaitNonAmbientSnackbar()
+            assertEquals("Couldn't read the tag. Hold still and press Read again.", emission.message)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
     fun `onReadTapped SpoolmanFailed emits ShowSnackbar`() = runTest {
         val vm = newVm()
         nfc.setBufferedTap(NfcResult.Success(sampleUid, TagClassification.Blank))

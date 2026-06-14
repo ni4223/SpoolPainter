@@ -1026,8 +1026,24 @@ class MainViewModel @Inject constructor(
                     _customMaterial.value = ""
                     _customBrand.value = ""
                 }
-                if (!isVendor) {
-                    _effects.trySend(UiEffect.ShowSnackbar("Blank tag detected."))
+                when {
+                    !isVendor ->
+                        _effects.trySend(UiEffect.ShowSnackbar("Blank tag detected."))
+                    // Vendor chip but the decode came back empty. The dominant
+                    // cause is a short tap: vendor chips (esp. Snapmaker, whose
+                    // RSA signature lives in the last sectors) need the whole
+                    // tag read, and the OS "tag detected" buzz fires long before
+                    // that finishes — so lifting at the buzz aborts the read.
+                    // We can't tell WHICH vendor failed here (the decode that
+                    // would name it is the thing that failed), so a "hold and
+                    // retry" message is the honest, universally-correct cue —
+                    // it fixes the common partial-read case and never
+                    // misdirects (a Snapmaker chip needs no key, so a
+                    // "configure a key" hint would be wrong for it).
+                    parsedHint == null ->
+                        _effects.trySend(
+                            UiEffect.ShowSnackbar("Couldn't read the tag. Hold still and press Read again."),
+                        )
                 }
             }
             is ReadAndPairResult.Ambiguous -> {

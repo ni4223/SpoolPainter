@@ -103,11 +103,16 @@ class NfcRepositoryVendorParseTest {
     }
 
     @Test
-    fun `idle ambient tap of a vendor chip does NOT invoke vendor parse`() = runTest {
-        // Perf gate: no Read armed → parseVendor must not run. We can't
-        // observe "didn't run" directly, but we CAN observe that the
-        // classification stays exactly what classify(raw) produces — never
-        // a Vendor-with-parsedHint, regardless of salt config.
+    fun `idle ambient tap of a vendor chip decodes into the buffer without changing state`() = runTest {
+        // Passive taps now run the vendor decode so the buffer carries a
+        // parsedHint — that's what lets a subsequent pressed Read consume the
+        // buffered tap and prefill instead of forcing a re-tap. The decode
+        // doesn't drive the state machine: state stays Idle, lastSeenTag holds
+        // the (decoded) buffer. In the JVM environment MifareClassic.get(tag)
+        // returns null so parseVendor can't auth a real chip → parsedHint stays
+        // null here; the decode-success path is covered on-device + by the
+        // fixture tests. The assertion that matters: a passive tap leaves state
+        // Idle and buffers the chip.
         val wrapper = FakeNfcAdapterWrapper()
         wrapper.simulateRead(
             sampleUid(),
@@ -122,12 +127,10 @@ class NfcRepositoryVendorParseTest {
         )
         // No arm() — this is a passive ambient tap.
         repo.handleTag(makeTag(techList = listOf("android.nfc.tech.MifareClassic")))
-        // State stays Idle on a passive tap; lastSeenTag holds the buffer.
         assertEquals(NfcResult.Idle, repo.state.value)
         val buffered = repo.lastSeenTag.value
         assertTrue(buffered != null)
-        val vendor = buffered!!.classification as TagClassification.Vendor
-        assertNull("ambient tap must not invoke vendor parse", vendor.parsedHint)
+        assertTrue(buffered!!.classification is TagClassification.Vendor)
     }
 
     @Test
@@ -176,6 +179,33 @@ class NfcRepositoryVendorParseTest {
         val state = repo.state.value as NfcResult.Success
         val vendor = state.classification as TagClassification.Vendor
         assertNull(vendor.parsedHint)
+    }
+
+    @Test
+    fun `Reading an NfcA Ndef-promoted chip with no readable NDEF stays Blank when no vendor chip backs it`() = runTest {
+        // Anycubic / Elegoo Ultralight chips are auto-promoted to Ndef by some
+        // Android stacks, so they arrive as techList=[NfcA, Ndef] with null
+        // records and classify() lands them in the Blank branch. The
+        // speculative-vendor probe in handleTag runs parseVendor here; in the
+        // JVM environment MifareUltralight/NfcA.get(tag) returns null so it
+        // can't read pages → parseVendor returns null → the tag correctly
+        // stays Blank (a genuine blank NTAG must remain writable). The
+        // Blank→Vendor flip only happens on-device when a real vendor chip's
+        // magic bytes parse; that path is covered by the install gate.
+        val wrapper = FakeNfcAdapterWrapper()
+        wrapper.simulateRead(
+            sampleUid(),
+            records = null,
+            techList = listOf("android.nfc.tech.NfcA", "android.nfc.tech.Ndef"),
+        )
+        val repo = newRepository(
+            wrapper = wrapper,
+            settingsRepository = FakeSettingsRepository(),
+        )
+        repo.arm(NfcIntent.Read)
+        repo.handleTag(makeTag(techList = listOf("android.nfc.tech.NfcA", "android.nfc.tech.Ndef")))
+        val state = repo.state.value as NfcResult.Success
+        assertEquals(TagClassification.Blank, state.classification)
     }
 
     @Test
