@@ -21,6 +21,7 @@ interface SettingsRepository {
     suspend fun setBambuSalt(salt: String)
     suspend fun setCrealitySalt(salt: String)
     suspend fun setCrealityEncKey(key: String)
+    suspend fun setLastSeenWhatsNewVersion(version: Int)
 }
 
 @Singleton
@@ -73,5 +74,9 @@ class SettingsRepositoryImpl @Inject constructor(
 
     override suspend fun setCrealityEncKey(key: String) {
         store.updateData { it.copy(crealityEncKey = key) }
+    }
+
+    override suspend fun setLastSeenWhatsNewVersion(version: Int) {
+        store.updateData { it.copy(lastSeenWhatsNewVersion = version) }
     }
 }

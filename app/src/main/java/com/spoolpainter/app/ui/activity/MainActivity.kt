@@ -16,13 +16,17 @@ import androidx.compose.runtime.setValue
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
+import com.spoolpainter.app.BuildConfig
 import com.spoolpainter.app.data.local.SettingsRepository
 import com.spoolpainter.app.data.local.ThemeOverride
 import com.spoolpainter.app.data.remote.spoolman.SpoolmanRepository
 import com.spoolpainter.app.hardware.nfc.NfcRepository
+import com.spoolpainter.app.ui.components.sheets.WhatsNewSheet
+import com.spoolpainter.app.ui.components.sheets.whatsNewV2Highlights
 import com.spoolpainter.app.ui.screens.main.MainScreen
 import com.spoolpainter.app.ui.screens.settings.SettingsScreen
 import com.spoolpainter.app.ui.theme.SpoolPainterTheme
+import com.spoolpainter.app.ui.whatsnew.WhatsNewController
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -33,11 +37,13 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var nfcRepository: NfcRepository
     @Inject lateinit var settingsRepository: SettingsRepository
     @Inject lateinit var spoolmanRepository: SpoolmanRepository
+    @Inject lateinit var whatsNewController: WhatsNewController
 
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        evaluateWhatsNew()
         setContent {
             val settings by settingsRepository.settings.collectAsStateWithLifecycle()
             val darkTheme = settings.themeOverride == ThemeOverride.Dark
@@ -49,9 +55,31 @@ class MainActivity : ComponentActivity() {
                 } else {
                     MainScreen(onNavigateToSettings = { showSettings = true })
                 }
+                val showWhatsNew by whatsNewController.visible.collectAsStateWithLifecycle()
+                WhatsNewSheet(
+                    visible = showWhatsNew,
+                    highlights = whatsNewV2Highlights,
+                    onDismiss = { whatsNewController.onDismiss() },
+                )
             }
         }
         intent?.let { tryDispatchNfcIntent(it) }
+    }
+
+    /**
+     * Decide the one-time "What's new" showcase. A fresh install (first-install
+     * time == last-update time) is suppressed; an in-place update is shown.
+     * Evaluated once per cold start, before setContent observes the flow.
+     */
+    private fun evaluateWhatsNew() {
+        val isFreshInstall = runCatching {
+            val info = packageManager.getPackageInfo(packageName, 0)
+            info.firstInstallTime == info.lastUpdateTime
+        }.getOrDefault(true)
+        whatsNewController.onColdStart(
+            currentVersion = BuildConfig.VERSION_CODE,
+            isFreshInstall = isFreshInstall,
+        )
     }
 
     override fun onNewIntent(intent: Intent) {

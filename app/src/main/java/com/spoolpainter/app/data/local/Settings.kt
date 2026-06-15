@@ -14,6 +14,10 @@ data class Settings(
     val bambuSalt: String = "",
     val crealitySalt: String = "",
     val crealityEncKey: String = "",
+    // Highest app versionCode whose "What's new" showcase the user has seen.
+    // 0 = never recorded; drives the one-time showcase trigger in
+    // WhatsNewController. Unknown to pre-U15 payloads, read back as 0.
+    val lastSeenWhatsNewVersion: Int = 0,
 )
 
 @Serializable

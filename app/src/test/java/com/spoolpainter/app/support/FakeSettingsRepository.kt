@@ -57,6 +57,10 @@ class FakeSettingsRepository(initial: Settings = Settings()) : SettingsRepositor
         _settings.update { it.copy(crealityEncKey = key) }
     }
 
+    override suspend fun setLastSeenWhatsNewVersion(version: Int) {
+        _settings.update { it.copy(lastSeenWhatsNewVersion = version) }
+    }
+
     fun pushSettings(value: Settings) {
         _settings.value = value
     }
