@@ -1266,3 +1266,149 @@ the maintainer.
 2. Drop the `LocalContext` + `Intent` + `Uri` imports if no other
    call site needs them (currently the only consumer in this file).
 3. Drop the test-tag from any test that asserts on it (none today).
+
+---
+
+## UI-38 — Can't edit remaining weight prefilled from Spoolman
+
+**State**: fixed (2026-06-20)
+**Found in**: field report on v2.1.2, 2026-06-20
+**Routing**: bugfix unit (FD / NFR-R / NFR-D / Infra-D SKIP; Code Gen direct)
+
+**Verbatim**: "still not able to edit remaining weight if the weight is
+saved in spoolman, when the weight comes from there, and i try to delete
+the numbers to update, delete don't work."
+
+**Root cause (CONFIRMED on-device via logcat, not assumed)**: the weight
+field had `if (input.length > 5) return@OutlinedTextField` *before* applying
+any edit. A Spoolman-prefilled value can be long (spool #71 showed
+`995.56146` = remaining 823.56 + empty 172, computed as a float), and every
+backspace produced an 8-char string still `> 5`, so the handler bailed and
+the local `text` reverted. logcat proved it: `current text` stayed
+`995.56146` across every keystroke. This explains the user's later clues:
+"some filaments work, some don't" (short weights like `730` fit under the
+cap) and "works initially then stops" (once long, the value is trapped).
+The `if (remaining < 0f) return` guard in the VM was a *secondary* swallow,
+also removed, but the input-length cap was the primary cause.
+
+NOTE: my first two attempts blamed the VM default / back-solve guard and
+"fixed" them without on-device proof — both failed. The fix only landed
+after adding logcat instrumentation to the actual text field and reading
+the real keystroke trace. Lesson: weight-edit bugs live in the Compose
+field, not the VM; unit tests don't exercise it. Verify on-device.
+
+**Fix**: in `WeightMethodRadio.ActiveValueField` (and the shared
+`DecimalField` in `MoreDetailsExpander`), the length cap no longer blocks a
+deletion — it only rejects growth past the cap (`sanitised.length >
+text.length`), never a shrink. Also removed the VM's `if (remaining < 0f)
+return` swallow guard; a measured weight below the empty spool now commits
+`remainingWeightG = (measured − empty).coerceAtLeast(0f)` and always stashes
+the typed `measuredEntry` so the field displays what the user typed. A
+rounding experiment (`Math.round`) was tried and REVERTED — it would have
+written a rounded value back over Spoolman's exact float and lost precision;
+the field now shows Spoolman's value verbatim.
+
+**Code location**: `app/src/main/java/com/spoolpainter/app/ui/components/WeightMethodRadio.kt`
+(`ActiveValueField` input cap) + `MoreDetailsExpander.kt` (`DecimalField`
+cap) + `MainViewModel.kt` (`onActiveWeightChanged` Measured branch).
+
+**Verification**: on-device logcat on spool #71 — `995.56146 → 995.5614 →
+995.561 → 995.56`, each keystroke committed and echoed back cleanly.
+
+**Tests**: `FormMappingTest` +1 (Measured default + remaining prefill);
+`MainViewModelMoreDetailsExpanderTest` back-solve-skip test rewritten to
+assert clamp-to-0 + entry retained.
+
+---
+
+## UI-39 — Numeric keyboard on numeric fields
+
+**State**: fixed (2026-06-20)
+**Found in**: user request, 2026-06-20
+**Routing**: bugfix unit (rides UI-38)
+
+**Verbatim**: "for fields that are numeric like temp, weight etc just do
+numeric keyboard."
+
+**Root cause**: the temperature field in `TempPanel` had no
+`keyboardOptions`, so it popped the full alphanumeric keyboard even though
+it only accepts digits (input was already filtered to `isDigit()`).
+
+**Fix**: added `keyboardOptions = KeyboardOptions(keyboardType =
+KeyboardType.Number)` to the `TempPanel` field. Audit of the other numeric
+fields confirmed they were already correct — weight / empty-spool / filament
+weight / density / price (`DecimalField` in `MoreDetailsExpander` +
+`WeightMethodRadio`) all use `KeyboardType.Decimal`; the Spoolman URL field
+uses `KeyboardType.Uri`; currency + sort are dropdowns; color hex stays
+alphanumeric (accepts A–F). So the only gap was the temperature field.
+
+**Code location**: `app/src/main/java/com/spoolpainter/app/ui/components/TempPanel.kt`
+(field `keyboardOptions`).
+
+**Tests**: none added — keyboard type is a soft-input hint with no logic
+branch (input filtering unchanged).
+
+---
+
+## UI-40 — Empty-spool weight didn't match Spoolman (filament default vs per-spool)
+
+**State**: fixed (2026-06-20)
+**Found in**: field report on v2.1.3 (spool #71 screenshot), 2026-06-20
+**Routing**: bugfix unit (rides UI-38), v2.1.4
+
+When a spool has both a per-spool `spool.spool_weight` override AND a
+`filament.spool_weight` default, the app preferred the per-spool value while
+Spoolman's own edit UI shows the filament default. Spool #71 stored
+`spool.spool_weight = 172` but `filament.spool_weight = 193`; the app's
+Measured (remaining + 172 = 995.56) disagreed with Spoolman's
+Measured (remaining + 193 = 1016.56) by 21 g.
+
+**Decision (user)**: match Spoolman. `FormMapping.fromSpoolman` now uses
+`spool.filament.spool_weight ?: spool.spool_weight` (filament default first,
+per-spool only as fallback). Reverses the v2.0.2 "spool overrides filament"
+precedence for the empty-weight read.
+
+**Safety**: both `emptySpoolWeightG` and the `prefilledEmptySpoolWeightG`
+snapshot derive from the same source, so an untouched Save produces
+`emptyDirty == false` and does NOT clobber the stored per-spool 172.
+
+**Code location**: `app/src/main/java/com/spoolpainter/app/ui/screens/main/FormMapping.kt`
+(`effectiveSpoolWeight`).
+
+**Tests**: `FormMappingTest` +2 (filament-default-wins; per-spool fallback
+when filament has none).
+
+---
+
+## UI-41 — "What's new" modal showed on every launch
+
+**State**: fixed (2026-06-20)
+**Found in**: field report on v2.1.2, 2026-06-20
+**Routing**: bugfix unit (rides UI-38), v2.1.4
+
+**Verbatim**: "why the fuck modal that tell about app keep showing up, isnt
+that something supposed to happen only once, every time i close app and open
+this shows up."
+
+**Root cause (CONFIRMED on-device via logcat)**: `WhatsNewController
+.onColdStart` read `settingsRepository.settings.value` synchronously in
+`MainActivity.onCreate`. `settings` is `store.data.stateIn(initialValue =
+Settings())`, so `.value` returns the eager default (`lastSeenWhatsNewVersion
+= 0`) until DataStore's async first read lands. Every cold start raced that
+load, saw 0, and `shouldShow(version, 0, false)` returned true → sheet shown.
+`markSeen()` then wrote the version, but the next cold start hit the same
+race and read 0 again. So it showed on every launch.
+
+**Fix**: added `SettingsRepository.awaitSettings()` which reads the raw
+`store.data.first()` (genuinely suspends until disk). `onColdStart` now
+launches a coroutine, awaits the real persisted value, then decides.
+
+**Code location**: `SettingsRepository.kt` (`awaitSettings`) +
+`WhatsNewController.kt` (`onColdStart`).
+
+**Verification**: on-device logcat — 4 consecutive cold starts all read
+`lastSeen=107` and decided `show=false`; modal stayed dismissed.
+
+**Tests**: `WhatsNewControllerTest` updated for the now-async `onColdStart`
+(`advanceUntilIdle` before asserting visibility); `FakeSettingsRepository`
+gained `awaitSettings()`.

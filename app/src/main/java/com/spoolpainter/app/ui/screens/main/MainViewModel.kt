@@ -818,23 +818,26 @@ class MainViewModel @Inject constructor(
                 }
                 val measured = s.toFloatOrNull() ?: return
                 val empty = current.emptySpoolWeightG
-                if (empty != null) {
-                    val remaining = measured - empty
-                    if (remaining < 0f) return // mid-typing — keep user input
-                    _state.update {
-                        it.copy(
-                            form = it.form.copy(
-                                remainingWeightG = remaining,
-                                measuredEntry = measured,
-                            ),
-                        )
-                    }
-                } else {
-                    // No reference yet — stash the entry. Don't commit
-                    // remaining (we don't know what to subtract).
-                    _state.update {
-                        it.copy(form = it.form.copy(measuredEntry = measured))
-                    }
+                // Always stash exactly what the user typed in measuredEntry —
+                // it's the active field's display source (see
+                // activeWeightValueG in MainScreen), so committing it on every
+                // keystroke keeps the field editable (no remember(value) reset)
+                // and lets the user freely delete/retype. When the empty-spool
+                // reference is known, also commit the derived remaining,
+                // clamped ≥ 0 (a measured weight below the empty spool means an
+                // empty spool, not a negative). Without a reference we can't
+                // derive remaining, so leave it untouched.
+                _state.update {
+                    it.copy(
+                        form = it.form.copy(
+                            measuredEntry = measured,
+                            remainingWeightG = if (empty != null) {
+                                (measured - empty).coerceAtLeast(0f)
+                            } else {
+                                it.form.remainingWeightG
+                            },
+                        ),
+                    )
                 }
             }
         }

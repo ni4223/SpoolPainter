@@ -17,6 +17,8 @@ class FakeSettingsRepository(initial: Settings = Settings()) : SettingsRepositor
     private val _settings = MutableStateFlow(initial)
     override val settings: StateFlow<Settings> = _settings.asStateFlow()
 
+    override suspend fun awaitSettings(): Settings = _settings.value
+
     override suspend fun setUrl(url: String) {
         _settings.update { it.copy(url = url) }
     }

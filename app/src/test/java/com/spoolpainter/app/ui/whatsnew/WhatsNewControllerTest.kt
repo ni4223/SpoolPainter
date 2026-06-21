@@ -84,6 +84,7 @@ class WhatsNewControllerTest {
         val controller = controller(settings, this)
 
         controller.onColdStart(currentVersion = 107, isFreshInstall = false)
+        advanceUntilIdle()
         assertTrue(controller.visible.value)
         // Not marked seen until dismissed.
         assertEquals(0, settings.settings.value.lastSeenWhatsNewVersion)

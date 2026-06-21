@@ -183,10 +183,15 @@ private fun ActiveValueField(
     OutlinedTextField(
         value = text,
         onValueChange = { input ->
-            if (input.length > 5) return@OutlinedTextField
             val firstDot = input.indexOf('.')
             val sanitised = input.filterIndexed { i, c ->
                 c.isDigit() || (c == '.' && i == firstDot)
+            }
+            // Cap digit growth to a sane count, but NEVER block a deletion —
+            // a prefilled gross weight can be longer than the cap (e.g.
+            // "995.56"), and the user must be able to delete it down.
+            if (sanitised.count { it.isDigit() } > 6 && sanitised.length > text.length) {
+                return@OutlinedTextField
             }
             text = sanitised
             when {

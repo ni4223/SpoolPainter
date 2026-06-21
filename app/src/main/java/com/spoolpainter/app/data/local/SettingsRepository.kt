@@ -5,12 +5,23 @@ import com.spoolpainter.app.di.AppScope
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import javax.inject.Inject
 import javax.inject.Singleton
 
 interface SettingsRepository {
     val settings: StateFlow<Settings>
+
+    /**
+     * Suspends until the first real persisted value is read from disk.
+     *
+     * [settings] is a `stateIn` flow with an eager `Settings()` default, so its
+     * `.value` returns defaults until DataStore's async load completes. Callers
+     * that must observe the persisted value before acting (e.g. the one-time
+     * "What's new" decision at cold start) need this instead of `settings.value`.
+     */
+    suspend fun awaitSettings(): Settings
     suspend fun setUrl(url: String)
     suspend fun setSpoolSortKey(key: SpoolSortKey)
     suspend fun setSpoolSortDirection(direction: SortDirection)
@@ -35,6 +46,10 @@ class SettingsRepositoryImpl @Inject constructor(
         started = SharingStarted.Eagerly,
         initialValue = Settings(),
     )
+
+    // Reads the raw DataStore flow, which genuinely suspends until the on-disk
+    // value is loaded — unlike settings.value, which returns the eager default.
+    override suspend fun awaitSettings(): Settings = store.data.first()
 
     override suspend fun setUrl(url: String) {
         store.updateData { it.copy(url = url) }

@@ -161,17 +161,17 @@ class MainViewModelMoreDetailsExpanderTest {
         assertEquals(220f, form.emptySpoolWeightG)
     }
 
-    @Test fun `onActiveWeightChanged Measured with negative back-solve skips commit (mid-typing protection)`() = runTest {
-        // Lets the user type "9" → "95" → "950" without each intermediate
-        // state recomputing remaining=0/-125/-150 and resetting the
-        // DecimalField's local text via remember(value).
+    @Test fun `onActiveWeightChanged Measured below empty-spool clamps remaining to 0 and keeps the typed entry`() = runTest {
+        // The active field displays measuredEntry (not remaining), so typing
+        // freely doesn't reset the field — and a measured weight below the
+        // empty spool just means 0 filament left, not a negative remaining.
         val vm = newVm()
         vm.onWeightMethodPicked(WeightMethod.Measured)
         vm.onEmptySpoolWeightChanged("220")
-        vm.onActiveWeightChanged("950") // commits remaining=730
-        vm.onActiveWeightChanged("100") // would back-solve to negative — skip
-        // Remaining is unchanged from the prior commit, not coerced to 0.
-        assertEquals(730f, vm.state.value.form.remainingWeightG)
+        vm.onActiveWeightChanged("950") // remaining = 730
+        vm.onActiveWeightChanged("100") // below empty spool → remaining clamps to 0
+        assertEquals(0f, vm.state.value.form.remainingWeightG)
+        assertEquals(100f, vm.state.value.form.measuredEntry)
     }
 
     @Test fun `switching method drops measuredEntry`() = runTest {

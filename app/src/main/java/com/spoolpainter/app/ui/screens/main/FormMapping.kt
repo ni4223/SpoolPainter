@@ -36,11 +36,13 @@ internal object FormMapping {
         // fallback for legacy data without per-spool prices, and matches
         // Spoolman's COALESCE(spool.price, filament.price) sort behaviour.
         val effectivePrice = spool.price ?: spool.filament.price
-        // Same shape for empty-spool: spool.spool_weight overrides
-        // filament.spool_weight (Spoolman create-time inheritance from
-        // database/spool.py:56-58 — spools default to filament's
-        // spool_weight at create unless explicitly set).
-        val effectiveSpoolWeight = spool.spool_weight ?: spool.filament.spool_weight
+        // Empty-spool weight: prefer the filament default so the form matches
+        // Spoolman's own edit UI, which shows filament.spool_weight in its
+        // "Empty Weight" field and computes Measured (remaining + empty) from
+        // it. A per-spool spool.spool_weight is used only when the filament has
+        // no default, so spools whose filament defines an empty weight stay in
+        // lockstep with what Spoolman displays.
+        val effectiveSpoolWeight = spool.filament.spool_weight ?: spool.spool_weight
         return FormState(
             cardUid = resolvedUid,
             material = materialData,

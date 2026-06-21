@@ -2210,3 +2210,43 @@ Resume artefact lists: copy/paste-ready build commands, milestone-by-milestone t
 **Context**: Outward-facing release ops. Play Console Open testing upload of the AAB remains the one manual step on the user.
 
 ---
+
+## BUGFIX — UI-38 remaining-weight edit (Spoolman prefill)
+**Timestamp**: 2026-06-20T00:00:00Z
+**User Input**: "AIDLC Continue" → [answered Next step = Bug fixes; Bug source = A new field report] → "I am still not able to edit remaining weight if the weight is saved in spoolman, when the weight comes from there, and i try to delete the numbers to update, dleet dont work." → [answered Weight default = Default to Remaining (Recommended)]
+**AI Response**: Triaged + fixed as UI-38. Root cause: weight picker defaulted to WeightMethod.Measured even when an existing spool prefilled a saved remaining_weight; Measured mode shows gross weight and onActiveWeightChanged's `if (remaining < 0f) return` guard silently swallows deletions below the empty-spool weight, so deleting digits never commits. Fix: FormMapping.fromSpoolman now opens the picker in WeightMethod.Remaining when spool.remaining_weight != null; null keeps the Measured default. Added 2 FormMappingTest cases. `./gradlew testDebugUnitTest` ✅ 498/498 (Δ +2). Logged UI-38 in ui-followups.md; updated aidlc-state.md Current Status. Per-unit gate FD/NFR-R/NFR-D/Infra-D SKIP (bugfix unit). Close-out commit pending user go; no push/tag/publish.
+**Context**: CONSTRUCTION phase, bugfix unit on top of shipped v2.1.2.
+
+---
+
+## BUGFIX — UI-39 numeric keyboard on numeric fields
+**Timestamp**: 2026-06-20T00:00:00Z
+**User Input**: "additional request, for feilds that are mumeric like temp, weight etc just do mumreci keyboard"
+**AI Response**: Audited all OutlinedTextField/TextField call sites. Weight/empty-spool/filament-weight/density/price (DecimalField + WeightMethodRadio) already used KeyboardType.Decimal; Spoolman URL uses Uri; currency+sort are dropdowns; color hex stays alphanumeric (A-F). Only gap: TempPanel's temperature field had no keyboardOptions. Added KeyboardOptions(keyboardType = KeyboardType.Number) + the two imports. `./gradlew testDebugUnitTest` ✅ 498/498 (no new tests — soft-input hint, no logic branch). Logged UI-39 in ui-followups.md; updated aidlc-state.md. Rides the UI-38 close-out commit.
+**Context**: CONSTRUCTION phase, same bugfix unit as UI-38, on top of shipped v2.1.2.
+
+---
+
+## BUGFIX — UI-38 revised: keep Measured default, fix editing in Measured
+**Timestamp**: 2026-06-20T00:00:00Z
+**User Input**: "small change, i want measured as default"
+**AI Response**: Reverted the FormMapping "default to Remaining on prefill" change. Kept WeightMethod.Measured as the default. Fixed editing inside Measured so deletion works without the Remaining workaround: onActiveWeightChanged now always stashes measuredEntry = typed (the active field's display source, so no remember(value) reset) and commits derived remainingWeightG = (measured − empty).coerceAtLeast(0f) when empty-spool is known; removed the `if (remaining < 0f) return` swallow guard. Updated FormMappingTest (merged to 1 case asserting Measured default + remaining prefill) and rewrote the MoreDetailsExpander back-solve-skip test to assert clamp-to-0 + entry retained. `./gradlew testDebugUnitTest` ✅ 497/497. installDebug + launch on moto g stylus 2025 for on-device verification. Updated ui-followups.md UI-38 + aidlc-state.md.
+**Context**: CONSTRUCTION phase, UI-38 revision per user preference, on top of shipped v2.1.2.
+
+---
+
+## RELEASE — v2.1.3 (UI-38 + UI-39) + close-out gate
+**Timestamp**: 2026-06-20T00:00:00Z
+**User Input**: "Build for relase after updating version, then give me release notes for console" → "released, update AIDLc, commit and end gate"
+**AI Response**: Bumped versionCode 106→107, versionName 2.1.2→2.1.3. Built signed release: assembleRelease 7.41 MB APK + bundleRelease 8.20 MB AAB; APK verified v2 signature scheme. Supplied Play Console release notes (weight-edit fix + numeric keypads). User uploaded AAB to Open testing and released. Updated aidlc-state.md (v2.1.3 RELEASED; UI-38/UI-39 marked shipped). Close-out commit on branch v2 + annotated tag v2.1.3. Per per-unit close-out convention, commit lands locally; push left to user.
+**Context**: CONSTRUCTION phase — bugfix unit (UI-38 remaining-weight edit + UI-39 numeric keyboard) shipped as v2.1.3 on Play Store Open testing. End gate.
+
+---
+
+## RELEASE — v2.1.4 (UI-38/39/40/41) + close-out gate
+**Timestamp**: 2026-06-20T00:00:00Z
+**User Input**: "still not able to edit remaining weight..." → "agaIN MEASURED EDITING NOT WORKING, WHAT DID YOU EVEN fixed" → "some filament it works some dont" → "i think it works intaillay then it stops" → "why would be round off? when spoomna has this value" → "[spool #71 screenshot] this is what i am seeng" → "Match Spoolman: filament default" → "released, close gate, update aidlc, then commit"
+**AI Response**: Four bugfixes, all verified on-device with logcat after two failed VM-only attempts on the weight bug. UI-38: real cause was the `if (input.length > 5) return` cap in WeightMethodRadio.ActiveValueField blocking deletion of long prefilled values; fixed cap to reject only growth, removed VM negative-back-solve swallow guard, reverted a Math.round experiment. UI-40: flipped FormMapping empty-weight precedence to filament-default-first to match Spoolman UI (spool #71 193 vs 172). UI-41: WhatsNewController.onColdStart raced the eager DataStore default; added SettingsRepository.awaitSettings() (raw store.data.first()) and awaited it. UI-39: TempPanel numeric keypad. versionCode 107→108, versionName 2.1.3→2.1.4 (2.1.3 superseded). assembleRelease 7.43 MB / bundleRelease 8.20 MB, v2 signature. User released to Play Store Open testing. Tests 499/499. Stripped all debug logging. Updated ui-followups.md (UI-38 rewritten with confirmed root cause + UI-40 + UI-41) and aidlc-state.md. Close-out commit + tag v2.1.4 on branch v2; push left to user.
+**Context**: CONSTRUCTION phase — bugfix unit shipped as v2.1.4 on Play Store Open testing. End gate.
+
+---

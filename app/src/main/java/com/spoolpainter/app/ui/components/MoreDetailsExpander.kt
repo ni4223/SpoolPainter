@@ -257,11 +257,16 @@ private fun DecimalField(
     OutlinedTextField(
         value = text,
         onValueChange = { input ->
-            if (input.length > maxLength) return@OutlinedTextField
             // Keep digits + only the FIRST '.' (drop any subsequent dots).
             val firstDot = input.indexOf('.')
             val sanitised = input.filterIndexed { i, c ->
                 c.isDigit() || (c == '.' && i == firstDot)
+            }
+            // Cap growth at maxLength, but NEVER block a deletion — a value
+            // prefilled from Spoolman can already exceed maxLength (e.g. a long
+            // float), and the user must be able to delete it down.
+            if (sanitised.length > maxLength && sanitised.length > text.length) {
+                return@OutlinedTextField
             }
             text = sanitised
             when {

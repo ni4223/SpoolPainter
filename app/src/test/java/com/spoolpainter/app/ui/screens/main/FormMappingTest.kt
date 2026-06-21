@@ -99,6 +99,48 @@ class FormMappingTest {
     }
 
     @Test
+    fun `fromSpoolman prefills remaining_weight and keeps the Measured default`() {
+        // Picker stays in Measured by default (user preference). Editing works
+        // in Measured because the field displays measuredEntry directly and the
+        // handler clamps the derived remaining ≥ 0 instead of swallowing input.
+        val spool = SpoolmanSpool(
+            id = 1,
+            remaining_weight = 730f,
+            filament = SpoolmanFilament(id = 10, material = "PLA"),
+        )
+        val form = FormMapping.fromSpoolman(spool, uid, rawWriteMode = false)
+        assertEquals(WeightMethod.Measured, form.weightMethod)
+        assertEquals(730f, form.remainingWeightG)
+    }
+
+    @Test
+    fun `fromSpoolman empty-spool weight prefers filament default over per-spool override`() {
+        // Matches Spoolman's edit UI, which shows filament.spool_weight in its
+        // Empty Weight field and computes Measured from it. The per-spool
+        // override is used only when the filament has no default.
+        val spool = SpoolmanSpool(
+            id = 71,
+            remaining_weight = 823.56f,
+            spool_weight = 172f,
+            filament = SpoolmanFilament(id = 64, material = "PLA", spool_weight = 193f),
+        )
+        val form = FormMapping.fromSpoolman(spool, uid, rawWriteMode = false)
+        assertEquals(193f, form.emptySpoolWeightG)
+        assertEquals(193f, form.prefilledEmptySpoolWeightG)
+    }
+
+    @Test
+    fun `fromSpoolman empty-spool weight falls back to per-spool when filament has none`() {
+        val spool = SpoolmanSpool(
+            id = 71,
+            spool_weight = 172f,
+            filament = SpoolmanFilament(id = 64, material = "PLA"),
+        )
+        val form = FormMapping.fromSpoolman(spool, uid, rawWriteMode = false)
+        assertEquals(172f, form.emptySpoolWeightG)
+    }
+
+    @Test
     fun `fromOpenSpool parses int temps`() {
         val payload = OpenSpoolPayload(
             type = "PLA",

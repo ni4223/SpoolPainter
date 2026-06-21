@@ -36,14 +36,22 @@ class WhatsNewController @Inject constructor(
      * second launch, and a user who is shown it marks it seen on dismiss.
      */
     fun onColdStart(currentVersion: Int, isFreshInstall: Boolean) {
-        val lastSeen = settingsRepository.settings.value.lastSeenWhatsNewVersion
         pendingVersion = currentVersion
-        if (shouldShow(currentVersion, lastSeen, isFreshInstall)) {
-            _visible.value = true
-        } else {
-            // Suppressed (fresh install, or already current). Persist so we
-            // don't re-evaluate-and-show on a later version-equal relaunch.
-            markSeen()
+        externalScope.launch {
+            // settings is store.data.stateIn(initialValue = Settings()), so
+            // .value returns the default (lastSeen = 0) until DataStore's async
+            // first read lands. Reading .value synchronously here raced that
+            // load and saw 0 every cold start, re-showing the sheet on every
+            // launch. awaitSettings() reads the raw DataStore flow, which
+            // suspends until the real persisted value arrives.
+            val lastSeen = settingsRepository.awaitSettings().lastSeenWhatsNewVersion
+            if (shouldShow(currentVersion, lastSeen, isFreshInstall)) {
+                _visible.value = true
+            } else {
+                // Suppressed (fresh install, or already current). Persist so we
+                // don't re-evaluate-and-show on a later version-equal relaunch.
+                markSeen()
+            }
         }
     }
 
