@@ -7,14 +7,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -24,9 +19,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -35,6 +28,10 @@ import com.spoolpainter.app.domain.models.Brand
 /**
  * Brand picker styled to match v1's BrandSelector. "Other" reveals an inline
  * custom-name field; the typed value is forwarded via [onCustomNameChange].
+ *
+ * "Other" is a pinned action (see [PinnedActionMenu]) so it stays adjacent to
+ * the field whichever way the menu opens — the Brand list runs 30+ vendors, so
+ * without pinning "Other" scrolls off the bottom when the menu flips up (UI-46).
  *
  * The [brands] list is the merged set from MaterialBrandRepository
  * (presets ∪ Spoolman vendors), so vendors created in Spoolman appear here
@@ -52,11 +49,13 @@ fun BrandPicker(
     modifier: Modifier = Modifier,
 ) {
     var expanded by remember { mutableStateOf(false) }
-    // Keep the "Other" action nearest the anchor field whichever way the menu
-    // opens (see rememberDropdownDirection).
-    val direction = rememberDropdownDirection()
+    val anchor = rememberLazyDropdownAnchor()
     val displayValue = selected?.name ?: ""
     val isOther = displayValue == "Other"
+    val hasOther = brands.any { it.equals("Other", ignoreCase = true) }
+    val brandRows = remember(brands) {
+        brands.filterNot { it.equals("Other", ignoreCase = true) }
+    }
 
     Row(
         modifier = modifier
@@ -82,7 +81,7 @@ fun BrandPicker(
                 modifier = Modifier
                     .menuAnchor()
                     .fillMaxWidth()
-                    .then(direction.anchorModifier),
+                    .then(anchor.modifier),
                 textStyle = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = MaterialTheme.colorScheme.primary,
@@ -93,65 +92,25 @@ fun BrandPicker(
                 ),
                 shape = RoundedCornerShape(20.dp),
             )
-            if (enabled) {
-                val hasOther = brands.any { it.equals("Other", ignoreCase = true) }
-                val otherRow: @Composable () -> Unit = {
-                    if (hasOther) {
-                        DropdownMenuItem(
-                            text = {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Add,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary,
-                                    )
-                                    Text(
-                                        text = "Other",
-                                        style = MaterialTheme.typography.bodyLarge.copy(
-                                            fontWeight = FontWeight.SemiBold,
-                                        ),
-                                        color = MaterialTheme.colorScheme.primary,
-                                    )
-                                }
-                            },
-                            onClick = {
-                                expanded = false
-                                onSelect(Brand("Other"))
-                            },
-                        )
-                    }
-                }
-                val brandRows: @Composable () -> Unit = {
-                    brands
-                        .filterNot { it.equals("Other", ignoreCase = true) }
-                        .forEach { brand ->
-                            DropdownMenuItem(
-                                text = { Text(brand) },
-                                onClick = {
-                                    expanded = false
-                                    onSelect(Brand(brand))
-                                },
-                            )
-                        }
-                }
-                ExposedDropdownMenu(
+            if (enabled && hasOther) {
+                PinnedActionMenu(
                     expanded = expanded,
-                    onDismissRequest = { expanded = false },
-                    modifier = Modifier.clip(RoundedCornerShape(20.dp)),
-                ) {
-                    if (direction.opensUpward) {
-                        brandRows()
-                        if (hasOther) HorizontalDivider()
-                        otherRow()
-                    } else {
-                        otherRow()
-                        if (hasOther) HorizontalDivider()
-                        brandRows()
-                    }
-                }
+                    items = brandRows,
+                    anchor = anchor,
+                    onDismiss = { expanded = false },
+                    onItemClick = { brand ->
+                        expanded = false
+                        onSelect(Brand(brand))
+                    },
+                    itemKey = { it },
+                    itemContent = { brand -> Text(brand) },
+                    pinnedContent = {
+                        PinnedOtherAction(label = "Other") {
+                            expanded = false
+                            onSelect(Brand("Other"))
+                        }
+                    },
+                )
             }
         }
 

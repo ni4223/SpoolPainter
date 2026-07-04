@@ -1573,9 +1573,25 @@ uses-feature (`required="false"`) added.
 
 ## UI-46 — Dropdown action row can't be both always-visible and field-adjacent
 
-**State**: open (deferred — needs pinned-action menu rework)
+**State**: fixed — shipped as U18 (rides v2.2.0), 2026-07-04.
 **Found in**: U17 install-gate iteration, 2026-07-04
-**Routing**: v2.2.x polish. Not blocking U17 close-out.
+**Routing**: DONE — feature/polish unit U18.
+
+**Shipped shape**: new shared `PinnedActionMenu.kt` — a `Popup` + `Column` with
+the action row **pinned** at the field-adjacent edge and a `LazyColumn` list
+scrolling between it and the far edge. Open-direction is decided **once** (from
+the anchor bounds) and passed to the position provider, so the pinned edge and
+the popup placement can never disagree. Extends the existing `LazyDropdownAnchor`
+from `LazyDropdownMenu.kt`. All three pickers were rewired to it; the duplicated
+"Other +" row was extracted into a single `PinnedOtherAction(label, onClick)`
+composable shared by MaterialPicker + BrandPicker (Color's row stays inline — it
+carries two distinct tap targets, Color Wheel body + Scan color, not the same
+row with different data). `DropdownDirection.kt` **deleted** (no other callers).
+On a 30-vendor Brand list flipped upward, "Other" now sits at the bottom edge
+next to the field and never scrolls away. Tests held at 514 / 514 (presentation
+-only swap); install gate PASSED on moto g stylus 2025 / Android 16.
+
+---
 
 The Material / Brand / Color pickers put a high-value action at one end of the
 menu (Material/Brand: "Other"; Color: "Color Wheel" + "Scan color"). U17 added

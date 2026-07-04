@@ -2345,3 +2345,19 @@ Resume artefact lists: copy/paste-ready build commands, milestone-by-milestone t
 **Context**: U17 close-out — Code Gen Part 2 APPROVED; committing.
 
 ---
+
+## Session Resume — U18 open-up (UI-46 pinned-action dropdown)
+**Timestamp**: 2026-07-04T15:10:00Z
+**User Input**: "aidlc continue" → (AskUserQuestion) Next step = "Start UI-46 (pinned dropdown)"
+**AI Response**: Confirmed U17 close-out commit `5c9bf5d` actually landed (corrected stale "pending" note in aidlc-state.md). Read DropdownDirection.kt, BrandPicker.kt, MaterialPicker.kt, ColorPicker.kt, LazyDropdownMenu.kt, FilamentPicker.kt. Opening new construction unit U18 for UI-46. Per-unit gate: FD / NFR-R / NFR-D / Infra-D SKIP (small UI polish unit; design folds into Code Gen plan). Authoring Code Gen Part 1 plan.
+**Context**: CONSTRUCTION — U18 per-unit loop open; Code Gen Part 1 authoring.
+
+---
+
+## U18 Code Gen Part 2 + close-out (UI-46 pinned-action dropdown)
+**Timestamp**: 2026-07-04T15:40:00Z
+**User Input**: "approved" (Part 1 plan) → "did you just copy same code in all the places?" → "i am happy with this." → "no bump needed as last version was not released"
+**AI Response**: Executed Code Gen Part 2. First cut copy-pasted the "Other +" action row into MaterialPicker + BrandPicker; user flagged the duplication. Extracted shared `PinnedOtherAction(label, onClick)` composable in PinnedActionMenu.kt (Color's pinned row stays inline — two distinct tap targets). Deleted DropdownDirection.kt. Build matrix green: compileDebugKotlin ✅ / testDebugUnitTest ✅ 514/514 / assembleDebug ✅ 71 MB / assembleRelease ✅ 7.90 MB R8 / bundleRelease ✅ 8.72 MB AAB. Install gate PASSED (user sign-off "i am happy with this"). No version bump (v2.2.0 unreleased; U18 rides 110/2.2.0). Flipped ui-followups.md UI-46 → fixed; updated aidlc-state.md; marked plan checkboxes. Landing close-out commit on v2 (no push/tag/publish per [[feedback_aidlc_unit_close_out_commit]]).
+**Context**: CONSTRUCTION — U18 per-unit loop closed. Code Gen Part 2 stage-gate = user sign-off.
+
+---

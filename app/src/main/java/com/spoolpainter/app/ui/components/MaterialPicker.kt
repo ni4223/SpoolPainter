@@ -7,14 +7,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -24,9 +19,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -37,6 +30,10 @@ import com.spoolpainter.app.domain.models.Material
  * material from the dropdown invokes [onSelect]; choosing the "Other" entry
  * opens an inline custom-name field, with the typed name passed through
  * [onCustomNameChange].
+ *
+ * "Other" is a pinned action (see [PinnedActionMenu]) so it stays adjacent to
+ * the field whichever way the menu opens, without scrolling away on a long list
+ * (UI-46).
  *
  * The [materials] list is the merged set from MaterialBrandRepository
  * (presets ∪ distinct material strings on Spoolman filaments), so custom
@@ -55,11 +52,13 @@ fun MaterialPicker(
     modifier: Modifier = Modifier,
 ) {
     var expanded by remember { mutableStateOf(false) }
-    // Keep the "Other" action nearest the anchor field whichever way the menu
-    // opens (see rememberDropdownDirection).
-    val direction = rememberDropdownDirection()
+    val anchor = rememberLazyDropdownAnchor()
     val displayValue = selected?.name ?: ""
     val isOther = displayValue == "Other"
+    val other = materials.firstOrNull { it.name.equals("Other", ignoreCase = true) }
+    val materialRows = remember(materials) {
+        materials.filterNot { it.name.equals("Other", ignoreCase = true) }
+    }
 
     Row(
         modifier = modifier
@@ -85,7 +84,7 @@ fun MaterialPicker(
                 modifier = Modifier
                     .menuAnchor()
                     .fillMaxWidth()
-                    .then(direction.anchorModifier),
+                    .then(anchor.modifier),
                 textStyle = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = MaterialTheme.colorScheme.primary,
@@ -96,65 +95,25 @@ fun MaterialPicker(
                 ),
                 shape = RoundedCornerShape(20.dp),
             )
-            if (enabled) {
-                val other = materials.firstOrNull { it.name.equals("Other", ignoreCase = true) }
-                val otherRow: @Composable () -> Unit = {
-                    if (other != null) {
-                        DropdownMenuItem(
-                            text = {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Add,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary,
-                                    )
-                                    Text(
-                                        text = other.name,
-                                        style = MaterialTheme.typography.bodyLarge.copy(
-                                            fontWeight = FontWeight.SemiBold,
-                                        ),
-                                        color = MaterialTheme.colorScheme.primary,
-                                    )
-                                }
-                            },
-                            onClick = {
-                                expanded = false
-                                onSelect(other)
-                            },
-                        )
-                    }
-                }
-                val materialRows: @Composable () -> Unit = {
-                    materials
-                        .filterNot { it.name.equals("Other", ignoreCase = true) }
-                        .forEach { material ->
-                            DropdownMenuItem(
-                                text = { Text(material.name) },
-                                onClick = {
-                                    expanded = false
-                                    onSelect(material)
-                                },
-                            )
-                        }
-                }
-                ExposedDropdownMenu(
+            if (enabled && other != null) {
+                PinnedActionMenu(
                     expanded = expanded,
-                    onDismissRequest = { expanded = false },
-                    modifier = Modifier.clip(RoundedCornerShape(20.dp)),
-                ) {
-                    if (direction.opensUpward) {
-                        materialRows()
-                        if (other != null) HorizontalDivider()
-                        otherRow()
-                    } else {
-                        otherRow()
-                        if (other != null) HorizontalDivider()
-                        materialRows()
-                    }
-                }
+                    items = materialRows,
+                    anchor = anchor,
+                    onDismiss = { expanded = false },
+                    onItemClick = { material ->
+                        expanded = false
+                        onSelect(material)
+                    },
+                    itemKey = { it.name },
+                    itemContent = { material -> Text(material.name) },
+                    pinnedContent = {
+                        PinnedOtherAction(label = other.name) {
+                            expanded = false
+                            onSelect(other)
+                        }
+                    },
+                )
             }
         }
 

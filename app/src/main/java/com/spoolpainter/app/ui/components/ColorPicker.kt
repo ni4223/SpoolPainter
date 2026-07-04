@@ -25,11 +25,9 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -82,10 +80,10 @@ fun ColorPicker(
     var showWheel by remember { mutableStateOf(false) }
     var showCamera by remember { mutableStateOf(false) }
     var wheelOriginalColor by remember { mutableStateOf<String?>(null) }
-    // The action rows (Color Wheel / Scan color) belong nearest the anchor field
-    // so they're easy to reach whichever way the menu opens (see
-    // rememberDropdownDirection).
-    val direction = rememberDropdownDirection()
+    // The action row (Color Wheel / Scan color) is pinned nearest the anchor
+    // field so it's always reachable whichever way the menu opens (see
+    // PinnedActionMenu).
+    val anchor = rememberLazyDropdownAnchor()
     val current = colorHex.orEmpty()
     // Empty when nothing's selected — let the placeholder show. "No Color" is
     // a deliberate menu choice for clearing an existing selection, not the
@@ -131,7 +129,7 @@ fun ColorPicker(
             modifier = Modifier
                 .menuAnchor()
                 .fillMaxWidth()
-                .then(direction.anchorModifier),
+                .then(anchor.modifier),
             textStyle = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
             colors = OutlinedTextFieldDefaults.colors(
                 focusedBorderColor = MaterialTheme.colorScheme.primary,
@@ -145,14 +143,50 @@ fun ColorPicker(
         )
 
         if (enabled) {
-            // Action row (Color Wheel + Scan color) rendered as a lambda so it
-            // can be placed at the top (menu opens down) or bottom (opens up).
-            val actionRow: @Composable () -> Unit = {
-                DropdownMenuItem(
-                    text = {
+            PinnedActionMenu(
+                expanded = expanded,
+                items = COMMON_COLOR_ROWS,
+                anchor = anchor,
+                onDismiss = { expanded = false },
+                onItemClick = { row ->
+                    onChange(row.hex)
+                    expanded = false
+                },
+                itemKey = { it.name },
+                itemContent = { row ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(15.dp)
+                                .clip(CircleShape)
+                                .background(parseColor(row.hex)!!)
+                                .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape),
+                        )
+                        Text(row.name)
+                    }
+                },
+                pinnedContent = {
+                    // Color Wheel (row body) + Scan color (own tap target) share
+                    // the pinned action row. The camera Row consumes its own tap
+                    // so the wheel onClick doesn't also fire.
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                wheelOriginalColor = colorHex
+                                showWheel = true
+                                expanded = false
+                            }
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                    ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.weight(1f),
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Palette,
@@ -167,16 +201,10 @@ fun ColorPicker(
                                 color = MaterialTheme.colorScheme.primary,
                             )
                         }
-                    },
-                    trailingIcon = {
-                        // Camera sampler shares the Color Wheel row. Its own
-                        // clickable Row consumes the tap so the wheel onClick
-                        // doesn't also fire.
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                             modifier = Modifier
-                                .padding(start = 16.dp)
                                 .clip(RoundedCornerShape(12.dp))
                                 .clickable {
                                     showCamera = true
@@ -198,56 +226,9 @@ fun ColorPicker(
                                 color = MaterialTheme.colorScheme.primary,
                             )
                         }
-                    },
-                    onClick = {
-                        wheelOriginalColor = colorHex
-                        showWheel = true
-                        expanded = false
-                    },
-                )
-            }
-            val colorRows: @Composable () -> Unit = {
-                COMMON_COLORS.forEach { (name, hex) ->
-                    DropdownMenuItem(
-                        text = {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(15.dp)
-                                        .clip(CircleShape)
-                                        .background(parseColor(hex)!!)
-                                        .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape),
-                                )
-                                Text(name)
-                            }
-                        },
-                        onClick = {
-                            onChange(hex)
-                            expanded = false
-                        },
-                    )
-                }
-            }
-            ExposedDropdownMenu(
-                expanded = expanded,
-                onDismissRequest = { expanded = false },
-                modifier = Modifier.clip(RoundedCornerShape(20.dp)),
-            ) {
-                if (direction.opensUpward) {
-                    // Menu flipped up: named colors first, actions at the bottom
-                    // so Color Wheel / Scan color stay next to the field.
-                    colorRows()
-                    HorizontalDivider()
-                    actionRow()
-                } else {
-                    actionRow()
-                    HorizontalDivider()
-                    colorRows()
-                }
-            }
+                    }
+                },
+            )
         }
     }
 
@@ -527,6 +508,11 @@ private val COMMON_COLORS = linkedMapOf(
     "Pink" to "FFC0CB",
     "Black" to "000000",
 )
+
+@androidx.compose.runtime.Immutable
+private data class ColorRow(val name: String, val hex: String)
+
+private val COMMON_COLOR_ROWS = COMMON_COLORS.map { (name, hex) -> ColorRow(name, hex) }
 
 private fun parseColor(hex: String?): Color? {
     if (hex == null || hex.length != 6) return null
