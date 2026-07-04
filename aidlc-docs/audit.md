@@ -2361,3 +2361,11 @@ Resume artefact lists: copy/paste-ready build commands, milestone-by-milestone t
 **Context**: CONSTRUCTION — U18 per-unit loop closed. Code Gen Part 2 stage-gate = user sign-off.
 
 ---
+
+## v2.2.0 release ops (U17 + U18)
+**Timestamp**: 2026-07-04T16:00:00Z
+**User Input**: "lets do console release first, i will need the re;ease notes" → (tester baseline = 2.1.5 already uploaded) → "console release notes first" → "give it nicely" → "finsih remaining styff"
+**AI Response**: Provided v2.2.0 Open testing release notes (U17 camera color picker + U18 pinned dropdown; no em dashes). Finished release ops: user ran `git push origin v2` (d6d69fd..050c1a6) + `git push origin v2.2.0` (permission gate blocked AI push; user executed via ! prefix). AI created annotated tag v2.2.0 → 050c1a6, published GitHub Release v2.2.0 (not draft/prerelease) with app-release.apk (7.90 MB) + app-release.aab (8.72 MB) attached. Verified: draft=false, prerelease=false, both assets present. Updated aidlc-state.md → v2.2.0 shipped to git+GitHub. Play Store AAB upload remains manual on user.
+**Context**: CONSTRUCTION — v2.2.0 release ops. git + GitHub complete; Play Store upload pending (user).
+
+---
