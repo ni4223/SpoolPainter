@@ -2250,3 +2250,43 @@ Resume artefact lists: copy/paste-ready build commands, milestone-by-milestone t
 **Context**: CONSTRUCTION phase — bugfix unit shipped as v2.1.4 on Play Store Open testing. End gate.
 
 ---
+
+## RELEASE OPS — v2.1.4 pushed + GitHub Release published
+**Timestamp**: 2026-06-20T00:00:00Z
+**User Input**: "push it, then create release with this new build artifcats" → ran `git push origin v2 && git push origin v2.1.4` via ! (agent push auto-denied by harness)
+**AI Response**: Branch v2 (commit d15d794) + tag v2.1.4 pushed to origin. Created GitHub Release v2.1.4 (not draft/prerelease) via gh with combined release notes + both artifacts attached (app-release.apk 7.43 MB + app-release.aab 8.20 MB). Verified assets present. Play Store Open testing upload done earlier by user. All channels in sync. Updated aidlc-state.md.
+**Context**: CONSTRUCTION phase — v2.1.4 fully shipped (git + GitHub + Play Store). Gate closed.
+
+---
+
+## U16 (Write-fail UX + orphan-cleanup + pairing-count) — session open
+**Timestamp**: 2026-07-03T00:00:00Z
+**User Input**: "aidlc continue" → AskUserQuestion scope answer: "UI-42 + UI-43 + UI-44"
+**AI Response**: v2.1.4 confirmed fully shipped; branch v2 in sync with origin/v2. Working tree had 3 uncommitted doc files (state/audit release records + 4 new followups UI-42..UI-45 from a 2026-06-30 field report). Opened a new bugfix unit U16 scoped to UI-42 + UI-43 + UI-44 (UI-45 camera color-picker parked for v2.2+). Per-unit gate: FD / NFR-R / NFR-D / Infra-D SKIP (bugfix unit), Code Generation executes. Investigated the write-failure / orphan-cleanup / end-of-pairing code paths (Explore agent + direct reads of CreateAndPairUseCase, MainViewModel, SpoolmanRepository, NfcAdapterWrapper, ExtraCardUidsCodec). Confirmed the UI-42/UI-43 overlap: CreateAndPairUseCase.kt:100 appends the UID to Spoolman BEFORE deciding the write outcome, so on a failed write the spool↔UID mapping IS already committed, then applyWriteResult's NfcFailed branch (MainViewModel.kt:1132-1135) fires fireOrphanCleanup and chain-deletes the just-mapped spool. Authoring Code Gen plan next.
+**Context**: CONSTRUCTION phase — U16 bugfix unit opened.
+
+---
+
+## U16 Code Gen Part 1 — plan authored
+**Timestamp**: 2026-07-03T00:00:00Z
+**User Input**: (continuation of "aidlc continue" + UI-42+43+44 scope)
+**AI Response**: Authored `aidlc-docs/construction/plans/u16-write-fail-orphan-pairing-count-code-generation-plan.md`. Root-cause verified against code: (UI-43) two-button Write always calls launchCreateAndPair(isNewSpool=false) on a spool a prior Save deliberately created, so the orphan chain-delete in applyWriteResult's NfcFailed/Cancelled branches is a leftover from the old single-action flow and wrongly deletes a real spool on Write failure — removal must be NARROW (keep the vendor new-spool path's cleanup, which IS a genuine same-transaction orphan). (UI-42) NfcAdapterWrapper tags too-small failures "tag too small: ..." which survives into NfcFailed.reason; add a mapping-succeeded snackbar branch. (UI-44) count actual card_uids from spoolman.spools.value (repo StateFlow, synchronously current after appendCardUidToSpool's replaceSpoolInCache) not the async VM mirror; append a "N tags" suffix to the end-of-pairing snackbars. Test target ~499→~505. Release window v2.1.5 (108→109). Awaiting Part 1 stage-gate approval before Part 2 execution.
+**Context**: CONSTRUCTION phase — U16 Code Gen Part 1 (plan) complete, awaiting approval.
+
+---
+
+## U16 Code Gen Part 1 — plan revised (orphan cleanup fully removed)
+**Timestamp**: 2026-07-03T00:00:00Z
+**User Input**: "why do we even need cleanuo now? i mean create spool is differnt button compltetely" → "my question is why write has anything to do with spool other than mapping uid"
+**AI Response**: Agreed and verified the stronger claim. Write's only Spoolman job is appending the tag UID to the selected spool. Confirmed against code that EVERY Write path targets an existing spool: Spoolman path calls launchCreateAndPair(isNewSpool=false) (:572); vendor Write requires canWrite's selectedSpoolId != null (:188) and routes to VendorUidOnlyPairUseCase.existingSpoolPath (isNewSpool=false, :98) which never sets lastResolvedOrphan. The only orphan-setting branch (newSpoolPath, selectedSpoolId==null) is unreachable from Write. So orphan chain-delete guards nothing reachable — it is a fossil from the old v1 single-action (create+write in one tap) flow. Revised plan §1 from "narrow removal (keep vendor cleanup)" to "remove orphan chain-delete entirely as dead code": strip fireOrphanCleanup from all 5 failure branches (NfcFailed, Cancelled, vendor SpoolmanFailed/MoveOnBindPartial/Cancelled), delete fireOrphanCleanup + lastResolvedOrphan fields + chainDeleteOrphan + OrphanSpool + Fake support if grep confirms zero remaining callers. Updated test section (delete tests asserting cleanup fires) + non-goals. Still awaiting Part 1 approval before Part 2.
+**Context**: CONSTRUCTION phase — U16 plan revised per user challenge; orphan machinery slated for full removal.
+
+---
+
+## U16 Code Gen Part 2 — executed + install gate PASSED
+**Timestamp**: 2026-07-04T00:00:00Z
+**User Input**: "execute" → (install gate) "works but the messaging for this spool now has and the too small is lile pure shit" → "give me prompt for chat gpt" → "Paired only. This tag is too small to write full data. / Paired. This spool now has 1 tag. / ... %d tags" → (install) "all lokks good" → "i want this Tag written and paired. This spool now has 1 tag. / ... %d tags also i am hoping you took care of the messaging for vendor pairing as well" → "all lokks good, update version if not already, build, write me release note, update AIDLC and then final commit" → "yes continue aidlc"
+**AI Response**: Executed the full orphan-machinery removal (6 files) + UI-42 too-small copy branch + UI-44 write-aware pairing count. Build fix mid-run: deleting OrphanSpool.kt also dropped NewSpoolBundle + Resolved<T> (still used) → extracted them to new SpoolmanCreateModels.kt. Copy iterated on-device across two rounds: first too-small + count wording, then split the count prefix to be write-aware (vendor tags are UID-mapped only, can't claim "written") → pairedMessage(spoolId, written). Final copy: "Paired only. This tag is too small to write full data." / "Tag written and paired. This spool now has N tag(s)." / "Vendor tag linked. This spool now has N tag(s)." Tests 499 → 506 ✅. Build matrix green: compileDebugKotlin / testDebugUnitTest 506/506 / assembleDebug 67.6 MB / assembleRelease 7.41 MB R8 / bundleRelease 8.19 MB AAB (v2 signature verified). versionCode 108→109, versionName 2.1.4→2.1.5. Install gate PASSED on moto g stylus 2025 / Android 16 (spool survives failed write; too-small copy; count with written/vendor prefixes). Play Console + GitHub release notes drafted. Updated ui-followups (UI-42/43/44 → fixed), aidlc-state, u16-summary. Landing close-out commit on v2; push/tag/release await user go per [[feedback_aidlc_unit_close_out_commit]].
+**Context**: CONSTRUCTION phase — U16 DONE; close-out commit pending.
+
+---

@@ -12,6 +12,7 @@ import com.spoolpainter.app.domain.models.Material
 import com.spoolpainter.app.domain.models.SpoolmanFilament
 import com.spoolpainter.app.domain.models.SpoolmanSpool
 import com.spoolpainter.app.domain.models.TempRanges
+import com.spoolpainter.app.domain.primitives.ExtraCardUidsCodec
 import com.spoolpainter.app.domain.primitives.TagClassification
 import com.spoolpainter.app.domain.usecases.CreateAndPairInput
 import com.spoolpainter.app.domain.usecases.CreateAndPairResult
@@ -1081,11 +1082,6 @@ class MainViewModel @Inject constructor(
                 // The sheet's title acts as the success confirmation — a
                 // separate snackbar would slide up underneath the sheet and be
                 // immediately covered (UI-03).
-                //
-                // Clear orphan: the spool now has a UID linkage in Spoolman,
-                // so a subsequent failure path must not chain-delete a real
-                // paired spool.
-                saveToSpoolman.lastResolvedOrphan = null
                 _state.update { current ->
                     val filamentId = current.spoolman.spools
                         .firstOrNull { it.id == result.spoolId }?.filament?.id
@@ -1124,66 +1120,57 @@ class MainViewModel @Inject constructor(
                 _effects.trySend(UiEffect.ShowSnackbar(humanReadable(result.outcome)))
             }
             is CreateAndPairResult.NfcFailed -> {
-                // Chain-delete branch: if the use case is holding an orphan
-                // (spool was just created, no UID ever attached), clean it
-                // up in the background. We do NOT pin the spool selection
-                // in that case — the spoolId is about to disappear from
-                // Spoolman, pinning it would break the next tap.
-                val orphan = saveToSpoolman.lastResolvedOrphan
-                if (orphan != null) {
-                    _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
-                    fireOrphanCleanup(orphan)
-                } else {
-                    // No orphan to clean (existing-spool path or UID was
-                    // already PATCHed). Pin spool/filament so a retry tap
-                    // appends to the existing record instead of duplicating.
-                    _state.update { current ->
-                        val pinSpoolId = result.spoolId
-                        val filamentId = pinSpoolId?.let { id ->
-                            current.spoolman.spools.firstOrNull { it.id == id }?.filament?.id
-                        }
-                        current.copy(
-                            activeFlow = ActiveFlow.Idle,
-                            form = current.form.copy(
-                                selectedSpoolId = pinSpoolId ?: current.form.selectedSpoolId,
-                                selectedFilamentId = filamentId ?: current.form.selectedFilamentId,
-                            ),
-                            spoolman = current.spoolman.copy(
-                                selectedSpoolId = pinSpoolId ?: current.spoolman.selectedSpoolId,
-                            ),
-                        )
+                // Write never creates or deletes a spool — Save did that on a
+                // separate tap. Pin the spool/filament selection so a retry
+                // Write appends to the existing record instead of duplicating.
+                _state.update { current ->
+                    val pinSpoolId = result.spoolId
+                    val filamentId = pinSpoolId?.let { id ->
+                        current.spoolman.spools.firstOrNull { it.id == id }?.filament?.id
                     }
+                    current.copy(
+                        activeFlow = ActiveFlow.Idle,
+                        form = current.form.copy(
+                            selectedSpoolId = pinSpoolId ?: current.form.selectedSpoolId,
+                            selectedFilamentId = filamentId ?: current.form.selectedFilamentId,
+                        ),
+                        spoolman = current.spoolman.copy(
+                            selectedSpoolId = pinSpoolId ?: current.spoolman.selectedSpoolId,
+                        ),
+                    )
                 }
                 val msg = when {
                     result.reason.contains("vendor-tag", ignoreCase = true) ->
                         "Vendor tag. Write blocked."
+                    // The UID was appended to the spool before the write
+                    // outcome was decided (CreateAndPairUseCase step 3), so
+                    // the tag IS mapped by serial even though its payload
+                    // didn't fit. Say so instead of a flat failure.
+                    result.reason.contains("too small", ignoreCase = true) ->
+                        "Paired only. This tag is too small to write full data."
                     else ->
                         "Tag write failed. Try again."
                 }
                 _effects.trySend(UiEffect.ShowSnackbar(msg))
             }
             is CreateAndPairResult.Cancelled -> {
-                val orphan = saveToSpoolman.lastResolvedOrphan
-                if (orphan != null) {
-                    _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
-                    fireOrphanCleanup(orphan)
-                } else {
-                    _state.update { current ->
-                        val pinSpoolId = result.spoolId
-                        val filamentId = pinSpoolId?.let { id ->
-                            current.spoolman.spools.firstOrNull { it.id == id }?.filament?.id
-                        }
-                        current.copy(
-                            activeFlow = ActiveFlow.Idle,
-                            form = current.form.copy(
-                                selectedSpoolId = pinSpoolId ?: current.form.selectedSpoolId,
-                                selectedFilamentId = filamentId ?: current.form.selectedFilamentId,
-                            ),
-                            spoolman = current.spoolman.copy(
-                                selectedSpoolId = pinSpoolId ?: current.spoolman.selectedSpoolId,
-                            ),
-                        )
+                // Write never deletes a spool — keep it and pin selection so a
+                // retry Write appends to the existing record.
+                _state.update { current ->
+                    val pinSpoolId = result.spoolId
+                    val filamentId = pinSpoolId?.let { id ->
+                        current.spoolman.spools.firstOrNull { it.id == id }?.filament?.id
                     }
+                    current.copy(
+                        activeFlow = ActiveFlow.Idle,
+                        form = current.form.copy(
+                            selectedSpoolId = pinSpoolId ?: current.form.selectedSpoolId,
+                            selectedFilamentId = filamentId ?: current.form.selectedFilamentId,
+                        ),
+                        spoolman = current.spoolman.copy(
+                            selectedSpoolId = pinSpoolId ?: current.spoolman.selectedSpoolId,
+                        ),
+                    )
                 }
                 viewModelScope.launch { nfc.disarm() }
                 // Move-on-bind decline already gave the user explicit choice
@@ -1284,8 +1271,9 @@ class MainViewModel @Inject constructor(
     fun onPairAnotherTagDismissed() {
         val current = _state.value.activeFlow as? ActiveFlow.PromptingPairAnother ?: return
         _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
-        val msg = if (current.isVendorPair) "Vendor tag linked." else "Saved with one tag."
-        _effects.trySend(UiEffect.ShowSnackbar(msg))
+        _effects.trySend(
+            UiEffect.ShowSnackbar(pairedMessage(current.spoolId, written = !current.isVendorPair)),
+        )
     }
 
     fun onRepairResult(confirm: Boolean) {
@@ -1295,8 +1283,11 @@ class MainViewModel @Inject constructor(
     private fun applyTwoTagResult(result: TwoTagResult) {
         when (result) {
             is TwoTagResult.Success.SecondTagPaired -> {
+                val spoolId = _state.value.form.selectedSpoolId
                 _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
-                _effects.trySend(UiEffect.ShowSnackbar("Both tags paired"))
+                val msg = spoolId?.let { pairedMessage(it, written = true) }
+                    ?: "Tag written and paired."
+                _effects.trySend(UiEffect.ShowSnackbar(msg))
             }
             is TwoTagResult.VendorTagRejected -> {
                 // Second tag is a vendor tag — re-route to the vendor
@@ -1344,7 +1335,9 @@ class MainViewModel @Inject constructor(
                                         observedTagUid = null,
                                     )
                                 }
-                                _effects.trySend(UiEffect.ShowSnackbar("Both tags paired."))
+                                _effects.trySend(
+                                    UiEffect.ShowSnackbar(pairedMessage(r.spoolId, written = false)),
+                                )
                             }
                             else -> applyVendorUidOnlyPairResult(r)
                         }
@@ -1446,12 +1439,10 @@ class MainViewModel @Inject constructor(
                 }
             }
             is VendorUidOnlyPairResult.SpoolmanFailed -> {
-                fireOrphanCleanup(vendorUidOnlyPair.lastResolvedOrphan)
                 _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
                 _effects.trySend(UiEffect.ShowSnackbar(humanReadable(result.outcome)))
             }
             is VendorUidOnlyPairResult.MoveOnBindPartial -> {
-                fireOrphanCleanup(vendorUidOnlyPair.lastResolvedOrphan)
                 _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
                 _effects.trySend(
                     UiEffect.ShowSnackbar(
@@ -1460,7 +1451,6 @@ class MainViewModel @Inject constructor(
                 )
             }
             is VendorUidOnlyPairResult.Cancelled -> {
-                fireOrphanCleanup(vendorUidOnlyPair.lastResolvedOrphan)
                 _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
                 // Suppress on explicit user decline (RepairConfirmSheet Cancel)
                 // — same UI-12 logic as create-and-pair.
@@ -1475,10 +1465,29 @@ class MainViewModel @Inject constructor(
         }
     }
 
-    private fun fireOrphanCleanup(orphan: com.spoolpainter.app.data.remote.spoolman.OrphanSpool?) {
-        if (orphan == null) return
-        viewModelScope.launch {
-            runCatching { spoolman.chainDeleteOrphan(orphan) }
+    /**
+     * UI-44 — how many tags are paired with [spoolId], read from Spoolman's
+     * `extra.card_uids`. Sourced from the repo StateFlow (`spoolman.spools`),
+     * which [SpoolmanRepository.appendCardUidToSpool] updates synchronously via
+     * `replaceSpoolInCache` right after the PATCH — so it reflects the UID we
+     * just appended, unlike the async VM state mirror. Returns 0 if unknown.
+     */
+    private fun pairedTagCount(spoolId: Int): Int {
+        val spool = spoolman.spools.value.firstOrNull { it.id == spoolId } ?: return 0
+        return ExtraCardUidsCodec.decode(spool.extra?.get("card_uids") ?: "").size
+    }
+
+    /** End-of-pairing snackbar: confirmation + the true total tag count for
+     *  [spoolId]. [written] is false for vendor tags, which are UID-mapped
+     *  only (no NDEF payload written), so the prefix must not claim a write.
+     *  The count clause is dropped when unknown (0) so we never say "0 tags". */
+    private fun pairedMessage(spoolId: Int, written: Boolean): String {
+        val prefix = if (written) "Tag written and paired." else "Vendor tag linked."
+        val count = pairedTagCount(spoolId)
+        return if (count < 1) {
+            prefix
+        } else {
+            "$prefix This spool now has $count ${if (count == 1) "tag" else "tags"}."
         }
     }
 

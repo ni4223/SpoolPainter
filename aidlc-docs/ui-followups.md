@@ -1412,3 +1412,179 @@ launches a coroutine, awaits the real persisted value, then decides.
 **Tests**: `WhatsNewControllerTest` updated for the now-async `onColdStart`
 (`advanceUntilIdle` before asserting visibility); `FakeSettingsRepository`
 gained `awaitSettings()`.
+
+## UI-42 — NTAG213 write-fail copy ignores that the UID still got mapped
+
+**State**: fixed (U16, v2.1.5, 2026-07-04)
+**Found in**: field report on v2.1.4, 2026-06-30
+**Routing**: next bugfix unit (copy + flow), v2.1.x.
+
+**Fix**: `MainViewModel.applyWriteResult` NfcFailed branch now matches
+`reason.contains("too small")` (the string `NfcAdapterWrapper` already tags)
+and surfaces "Paired only. This tag is too small to write full data." The UID
+append already happened in `CreateAndPairUseCase` step 3 before the outcome was
+decided, so the tag is genuinely mapped by serial. Install-gate verified.
+
+When the target tag is too small for our NDEF payload (NTAG213: ~144 B
+capacity vs our ~216 B payload), the write fails and we surface a flat
+"Tag write failed. Try again." But in the two-button flow the spool's UID
+is committed to Spoolman's `extra.card_uids` *before* the NDEF write outcome
+is decided, so the tag IS already mapped to the spool by serial. Telling the
+user only "write failed" understates what actually happened and reads as a
+total failure.
+
+**Fix scope**: when the write fails specifically because the tag is too small
+(the capacity branch in `NfcAdapterWrapper.writeViaNdef` already detects this
+and tags the message "tag too small: …"), surface copy that says the mapping
+succeeded but the on-tag write didn't, e.g. "Tag mapped to this spool, but
+it's too small to store the full data." Spoolman-side UID resolution still
+works; only the on-tag OpenSpool payload is missing.
+
+**Code locations**:
+- `app/src/main/java/com/spoolpainter/app/hardware/nfc/NfcAdapterWrapper.kt`
+  (`writeViaNdef`, capacity probe ~line 117-131 — already distinguishes the
+  "too small" IOException).
+- `app/src/main/java/com/spoolpainter/app/ui/screens/main/MainViewModel.kt`
+  (`CreateAndPairResult.NfcFailed` / `VerifyFailed` snackbar branches
+  ~line 1108-1163 — needs a too-small-aware message; thread the capacity
+  reason through `result.reason`).
+
+**Open question**: does the "too small" case currently route through
+`NfcFailed` (with the orphan-cleanup branch) or `VerifyFailed`? If it hits
+the orphan chain-delete path, this overlaps with UI-43 — the UID/spool must
+NOT be torn down on a too-small write, since the mapping is the useful result.
+
+---
+
+## UI-43 — Remove orphan chain-delete on write failure (two-button flow made it obsolete)
+
+**State**: fixed (U16, v2.1.5, 2026-07-04)
+**Found in**: field report on v2.1.4, 2026-06-30
+**Routing**: next bugfix unit, v2.1.x. Pairs with UI-42.
+
+**Fix**: orphan chain-delete removed *entirely* as dead code, not just gated —
+every Write path now targets an already-existing spool (Save creates it on a
+separate button; `canWrite` requires a selected spool), so the `newSpoolPath`
+branch that set an orphan is unreachable from Write. Deleted `fireOrphanCleanup`
++ all 5 call sites, `SaveToSpoolmanUseCase`/`VendorUidOnlyPairUseCase.lastResolvedOrphan`,
+`SpoolmanRepository.chainDeleteOrphan` + 3 now-unused private cache helpers,
+and the `OrphanSpool` type (`NewSpoolBundle` + `Resolved<T>` moved to new
+`SpoolmanCreateModels.kt`). Write failure now keeps the spool and pins the
+selection so a retry appends. Install-gate verified: failed Write no longer
+deletes the spool.
+
+Legacy single-action flow created a spool and wrote the tag in one shot, so a
+write failure left an orphan spool with no tag — hence the chain-delete
+cleanup (`fireOrphanCleanup` → `SpoolmanRepository.chainDeleteOrphan`, deletes
+spool + filament + vendor we created in the same transaction).
+
+With the two-button Save / Write split, Save creates the Spoolman records on
+purpose and Write is a separate deliberate action. Deleting the spool when a
+Write fails is now wrong: user reports creating a spool, tapping Write, the
+write failing, and the spool **disappearing**. They expect the spool to stay
+so they can retry Write (or map a different tag).
+
+**Fix scope**: remove (or gate off) the orphan chain-delete on the
+write-failure paths. Keep the spool; pin the selection so a retry appends to
+the existing record instead of duplicating (the no-orphan branch already does
+this). Verify no path still constructs/holds an `OrphanSpool` that would fire
+cleanup on a plain Write failure.
+
+**Code locations**:
+- `app/src/main/java/com/spoolpainter/app/ui/screens/main/MainViewModel.kt`
+  — `fireOrphanCleanup` (~line 1478) and its call sites in
+  `CreateAndPairResult.NfcFailed` (~1135), `.Cancelled` (~1169), and the
+  `VendorUidOnlyPairResult` failure branches (~1449-1463).
+- `app/src/main/java/com/spoolpainter/app/domain/usecases/CreateAndPairUseCase.kt`
+  + `SaveToSpoolmanUseCase.kt` (`lastResolvedOrphan` plumbing).
+- `app/src/main/java/com/spoolpainter/app/data/remote/spoolman/SpoolmanRepository.kt`
+  (`chainDeleteOrphan`, ~line 780) — may become dead code; remove if no
+  remaining caller.
+
+**Risk**: confirm the orphan-cleanup wasn't also covering a genuine
+"Save succeeded but UID never attached" case that should still clean up. If
+it was, narrow the removal to the Write-failure path only, not all of
+`NfcFailed`.
+
+---
+
+## UI-44 — End-of-pairing count should reflect actual UIDs in Spoolman, not the flow
+
+**State**: fixed (U16, v2.1.5, 2026-07-04)
+**Found in**: field report on v2.1.4, 2026-06-30
+**Routing**: next bugfix unit, v2.1.x.
+
+**Fix**: new `MainViewModel.pairedTagCount(spoolId)` counts `extra.card_uids`
+(via `ExtraCardUidsCodec`) from `spoolman.spools.value` — the repo StateFlow,
+updated synchronously by `appendCardUidToSpool` → `replaceSpoolInCache` right
+after the PATCH, so it reflects the just-appended UID (the async VM mirror can
+lag a tick). `pairedMessage(spoolId, written)` builds the line with a
+**write-aware prefix**: "Tag written and paired." for NDEF writes,
+"Vendor tag linked." for UID-only vendor pairs, each followed by
+"This spool now has N tag(s)." (clause dropped at count 0). Install-gate
+verified for both prefixes + singular/plural.
+
+At the end of a pairing flow we report how many tags were paired based on the
+flow that just ran ("Both tags paired", "Saved with one tag", etc.). The user
+wants the count to reflect the **actual number of UIDs in the spool's
+`extra.card_uids` in Spoolman** — the true total paired with that spool, not
+just what this session did. Example desired copy: "Total paired: N tags."
+
+**Fix scope**: on pair completion, read back the spool's `extra.card_uids`
+length (decode with `ExtraCardUidsCodec`) and report the total. This also
+correctly reflects tags paired in earlier sessions or directly in Spoolman.
+
+**Code locations**:
+- `app/src/main/java/com/spoolpainter/app/ui/screens/main/MainViewModel.kt`
+  — `onPairAnotherTagDismissed` (~line 1284, "Saved with one tag." /
+  "Vendor tag linked."), `applyTwoTagResult.SecondTagPaired` (~1297-1299,
+  "Both tags paired"), and the vendor UidPaired branch (~1347).
+- `app/src/main/java/com/spoolpainter/app/domain/primitives/ExtraCardUidsCodec.kt`
+  (`decode` → count).
+- Source the spool from `state.spoolman.spools` by `selectedSpoolId`, or
+  re-fetch if the local copy may be stale after the just-completed PATCH.
+
+**Open question**: the local `spools` list may not yet reflect the UID we
+just appended (PATCH round-trip). Decide whether to count
+`stored card_uids + (this session's new UID if not already present)`, or to
+re-read the spool from Spoolman before composing the snackbar.
+
+---
+
+## UI-45 — Pick color hex from the camera
+
+**State**: open (feasibility spike)
+**Found in**: feature idea on v2.1.4, 2026-06-30
+**Routing**: TBD — feature unit, v2.2+. Needs a feasibility/perf assessment first.
+
+Let the user point the camera at a physical spool/filament and pull the color
+hex from the live preview (tap-to-sample a pixel, or average a center
+reticle), then feed it into the existing color field. Avoids hand-matching a
+hex to the real filament color.
+
+**Open questions / scope to assess before committing**:
+- **Permission cost**: adds `CAMERA` permission. Currently the app is
+  NFC-only (see `product.md` constraints) — a camera permission is a visible
+  new ask on the Play Store listing and at runtime.
+- **Library weight**: CameraX (`androidx.camera:*`) is the standard path;
+  assess the APK-size hit against the current ~7.4 MB R8 release. Could be a
+  meaningful jump. A lighter alternative is a one-shot `ACTION_IMAGE_CAPTURE`
+  intent + sample a pixel from the returned bitmap (no live preview, far less
+  weight) — likely the right first cut.
+- **Color accuracy**: raw camera pixels are wildly affected by white balance
+  and lighting; the sampled hex will rarely match the "true" filament color.
+  Set expectations as an approximate starting point the user can tweak, not a
+  spectrophotometer.
+- **UX**: where does it live? An icon next to "Color Wheel" / "Other" in
+  `ColorPicker.kt` that opens a sampler, returning the hex into the same field
+  that `ColorPicker` already drives.
+
+**Code locations (target)**:
+- `app/src/main/java/com/spoolpainter/app/ui/components/ColorPicker.kt`
+  (entry point + result wiring).
+- `AndroidManifest.xml` (CAMERA permission + feature flag, only if live
+  preview path chosen).
+
+**Recommendation**: start with the lightweight image-capture-intent +
+center-pixel sample to prove the UX with near-zero size cost, before
+considering CameraX live preview.

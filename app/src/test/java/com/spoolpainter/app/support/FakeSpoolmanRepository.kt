@@ -3,7 +3,6 @@ package com.spoolpainter.app.support
 import com.spoolpainter.app.data.remote.spoolman.ConnectivityState
 import com.spoolpainter.app.data.remote.spoolman.ExpanderOverrides
 import com.spoolpainter.app.data.remote.spoolman.NewSpoolBundle
-import com.spoolpainter.app.data.remote.spoolman.OrphanSpool
 import com.spoolpainter.app.data.remote.spoolman.PatchFilamentBody
 import com.spoolpainter.app.data.remote.spoolman.SpoolPatchBody
 import com.spoolpainter.app.data.remote.spoolman.SpoolmanApi
@@ -170,14 +169,6 @@ class FakeSpoolmanRepository(
 
     var createSpoolBundleCalls: Int = 0
     var nextCreateSpoolBundleResult: SpoolmanOutcome<NewSpoolBundle>? = null
-
-    override suspend fun chainDeleteOrphan(orphan: OrphanSpool): SpoolmanOutcome<Unit> {
-        chainDeleteOrphanCalls += orphan
-        return nextChainDeleteOrphanResult ?: SpoolmanOutcome.Success(Unit)
-    }
-
-    val chainDeleteOrphanCalls: MutableList<OrphanSpool> = mutableListOf()
-    var nextChainDeleteOrphanResult: SpoolmanOutcome<Unit>? = null
 
     override suspend fun createSpoolForExistingFilament(
         filamentId: Int,

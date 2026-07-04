@@ -1,6 +1,5 @@
 package com.spoolpainter.app.domain.usecases
 
-import com.spoolpainter.app.data.remote.spoolman.OrphanSpool
 import com.spoolpainter.app.data.remote.spoolman.SpoolmanOutcome
 import com.spoolpainter.app.data.remote.spoolman.SpoolmanRepository
 import com.spoolpainter.app.domain.primitives.CardUid
@@ -51,15 +50,7 @@ open class VendorUidOnlyPairUseCase @Inject constructor(
     protected val moveOnBind: MoveOnBindUseCase,
 ) {
 
-    /** Set after a fresh spool is POSTed and cleared the moment the UID
-     *  PATCH succeeds. Lets the VM fire chain-delete cleanup if the outer
-     *  withTimeoutOrNull cancels mid-flow or any post-create step fails. */
-    @Volatile
-    var lastResolvedOrphan: OrphanSpool? = null
-        private set
-
     open suspend operator fun invoke(input: VendorUidOnlyPairInput): VendorUidOnlyPairResult {
-        lastResolvedOrphan = null
         val targetId = input.form.selectedSpoolId
         return if (targetId != null) {
             existingSpoolPath(input, targetId)
@@ -146,21 +137,13 @@ open class VendorUidOnlyPairUseCase @Inject constructor(
             input.observedUid,
             SpoolmanOutcome.ParseError(IllegalStateException("no spool id from createSpool")),
         )
-        lastResolvedOrphan = OrphanSpool(
-            spoolId = newId,
-            filamentId = if (bundle.filamentWasFresh) bundle.filamentId else null,
-            vendorId = if (bundle.vendorWasFresh) bundle.vendorId else null,
-        )
 
         return when (val append = spoolman.appendCardUidToSpool(newId, input.observedUid)) {
-            is SpoolmanOutcome.Success -> {
-                lastResolvedOrphan = null
-                VendorUidOnlyPairResult.Success.UidPaired(
-                    spoolId = newId,
-                    uid = input.observedUid,
-                    isNewSpool = true,
-                )
-            }
+            is SpoolmanOutcome.Success -> VendorUidOnlyPairResult.Success.UidPaired(
+                spoolId = newId,
+                uid = input.observedUid,
+                isNewSpool = true,
+            )
             else -> VendorUidOnlyPairResult.SpoolmanFailed(input.observedUid, append)
         }
     }

@@ -1,7 +1,6 @@
 package com.spoolpainter.app.domain.usecases
 
 import com.spoolpainter.app.data.remote.spoolman.ExpanderOverrides
-import com.spoolpainter.app.data.remote.spoolman.OrphanSpool
 import com.spoolpainter.app.data.remote.spoolman.SpoolPatchBody
 import com.spoolpainter.app.data.remote.spoolman.SpoolmanOutcome
 import com.spoolpainter.app.data.remote.spoolman.SpoolmanRepository
@@ -34,19 +33,13 @@ data class SaveToSpoolmanInput(
  *
  * Failures from 1a / 1b are logged non-fatal — they don't roll the spool back.
  *
- * `lastResolvedOrphan` + `lastResolvedSpoolId` ride here so a follow-up Write
- * failure can chain-delete a freshly-created-but-never-paired spool. The
- * Write half clears the orphan once it commits a UID link to Spoolman.
+ * `lastResolvedSpoolId` rides here so the caller can pin the dropdown selection
+ * after a Save. Save creates spools; Write only maps a UID and never deletes
+ * one, so there is no orphan-cleanup handoff.
  */
 open class SaveToSpoolmanUseCase @Inject constructor(
     protected val spoolman: SpoolmanRepository,
 ) {
-
-    /** Set after a successful Save when a NEW spool was created. Cleared once a
-     *  UID gets attached to it (in [CreateAndPairUseCase] step 3). The caller
-     *  can chain-delete this on a subsequent Write failure if no UID landed. */
-    @Volatile
-    var lastResolvedOrphan: OrphanSpool? = null
 
     /** Spool id from the most recent invoke(), regardless of new-vs-existing.
      *  Lets the caller pin selection after Save. */
@@ -55,16 +48,12 @@ open class SaveToSpoolmanUseCase @Inject constructor(
         private set
 
     open suspend operator fun invoke(snapshot: SaveToSpoolmanInput): SaveToSpoolmanResult {
-        lastResolvedOrphan = null
         lastResolvedSpoolId = null
 
         // 1. Resolve the spool: existing selection or fresh create.
         val (spoolId, isNewSpool) = when (val resolved = resolveSpool(snapshot)) {
             is ResolvedSpool.Existing -> resolved.id to false
-            is ResolvedSpool.Created -> {
-                lastResolvedOrphan = resolved.orphan
-                resolved.id to true
-            }
+            is ResolvedSpool.Created -> resolved.id to true
             is ResolvedSpool.Failed -> return resolved.result
         }
         lastResolvedSpoolId = spoolId
@@ -130,7 +119,7 @@ open class SaveToSpoolmanUseCase @Inject constructor(
 
     private sealed interface ResolvedSpool {
         data class Existing(val id: Int) : ResolvedSpool
-        data class Created(val id: Int, val orphan: OrphanSpool) : ResolvedSpool
+        data class Created(val id: Int) : ResolvedSpool
         data class Failed(val result: SaveToSpoolmanResult) : ResolvedSpool
     }
 
@@ -151,7 +140,7 @@ open class SaveToSpoolmanUseCase @Inject constructor(
                     SpoolmanOutcome.ParseError(IllegalStateException("no spool id from createSpool")),
                 ),
             )
-            ResolvedSpool.Created(newId, OrphanSpool(spoolId = newId))
+            ResolvedSpool.Created(newId)
         } else {
             val bundleOutcome = spoolman.createSpoolForNewFilamentBundle(newFilamentRequest(snapshot))
             translateCreateFailure(bundleOutcome)?.let { return it }
@@ -161,12 +150,7 @@ open class SaveToSpoolmanUseCase @Inject constructor(
                     SpoolmanOutcome.ParseError(IllegalStateException("no spool id from createSpool")),
                 ),
             )
-            val orphan = OrphanSpool(
-                spoolId = newId,
-                filamentId = if (bundle.filamentWasFresh) bundle.filamentId else null,
-                vendorId = if (bundle.vendorWasFresh) bundle.vendorId else null,
-            )
-            ResolvedSpool.Created(newId, orphan)
+            ResolvedSpool.Created(newId)
         }
     }
 

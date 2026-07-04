@@ -561,6 +561,74 @@ class MainViewModelTest {
     }
 
     @Test
+    fun `UI-42 nfcFailed tooSmall reports mapping succeeded`() = runTest {
+        val vm = newVm()
+        primeFormForWrite(vm)
+        vm.onSpoolSelected(sampleSpool)
+        // The UID was appended to the spool before the write outcome was
+        // decided; the tag is too small only for the NDEF payload.
+        createAndPair.nextResult = CreateAndPairResult.NfcFailed(
+            uid = sampleUid,
+            reason = "write failed: tag too small: payload 216B > capacity 144B",
+            spoolId = 42,
+        )
+
+        vm.effects.test {
+            vm.onWriteTapped()
+            val emission = awaitNonAmbientSnackbar()
+            assertEquals(
+                "Paired only. This tag is too small to write full data.",
+                emission.message,
+            )
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `UI-43 write failure keeps the spool and pins selection`() = runTest {
+        val vm = newVm()
+        primeFormForWrite(vm)
+        // Save created spool #42 (deliberate, separate button). A later Write
+        // that fails must NOT delete it — Write never deletes a spool.
+        spoolman.setSpools(listOf(sampleSpool))
+        vm.onSpoolSelected(sampleSpool)
+        createAndPair.nextResult = CreateAndPairResult.NfcFailed(
+            uid = sampleUid, reason = "tag lost", spoolId = 42,
+        )
+
+        vm.effects.test {
+            vm.onWriteTapped()
+            awaitNonAmbientSnackbar()
+            cancelAndIgnoreRemainingEvents()
+        }
+        // Spool survives in Spoolman and stays selected for a retry Write.
+        assertTrue(spoolman.spools.value.any { it.id == 42 })
+        assertEquals(42, vm.state.value.form.selectedSpoolId)
+        assertEquals(42, vm.state.value.spoolman.selectedSpoolId)
+        assertEquals(ActiveFlow.Idle, vm.state.value.activeFlow)
+    }
+
+    @Test
+    fun `UI-43 write cancelled keeps the spool and pins selection`() = runTest {
+        val vm = newVm()
+        primeFormForWrite(vm)
+        spoolman.setSpools(listOf(sampleSpool))
+        vm.onSpoolSelected(sampleSpool)
+        createAndPair.nextResult = CreateAndPairResult.Cancelled(
+            reason = "timeout", spoolId = 42,
+        )
+
+        vm.effects.test {
+            vm.onWriteTapped()
+            awaitNonAmbientSnackbar()
+            cancelAndIgnoreRemainingEvents()
+        }
+        assertTrue(spoolman.spools.value.any { it.id == 42 })
+        assertEquals(42, vm.state.value.form.selectedSpoolId)
+        assertEquals(ActiveFlow.Idle, vm.state.value.activeFlow)
+    }
+
+    @Test
     fun `onWriteTapped concurrentReadTapped is dropped`() = runTest {
         val vm = newVm()
         primeFormForWrite(vm)

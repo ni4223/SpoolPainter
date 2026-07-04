@@ -160,7 +160,8 @@ class MainViewModelTwoTagTest {
         vm.effects.test {
             vm.onPairAnotherTagDismissed()
             val emission = awaitNonAmbientSnackbar()
-            assertEquals("Saved with one tag.", emission.message)
+            // No card_uids seeded on the sample spool → count 0 → bare prefix.
+            assertEquals("Tag written and paired.", emission.message)
             cancelAndIgnoreRemainingEvents()
         }
         assertEquals(ActiveFlow.Idle, vm.state.value.activeFlow)
@@ -171,7 +172,7 @@ class MainViewModelTwoTagTest {
     }
 
     @Test
-    fun `applyTwoTagResult Success preserves form and selection and emits Both tags paired snackbar`() = runTest {
+    fun `applyTwoTagResult Success preserves form and selection and emits Paired snackbar`() = runTest {
         val vm = newVm()
         stagePromptingPairAnother(vm)
         twoTag.nextResult = TwoTagResult.Success.SecondTagPaired(spoolId = 42, uid = CardUid("11223344"))
@@ -179,7 +180,9 @@ class MainViewModelTwoTagTest {
         vm.effects.test {
             vm.onPairAnotherTagAccepted()
             val emission = awaitNonAmbientSnackbar()
-            assertEquals("Both tags paired", emission.message)
+            // UI-44: no card_uids seeded on the sample spool → count 0 → bare
+            // prefix. See the dedicated count tests below for the count copy.
+            assertEquals("Tag written and paired.", emission.message)
             cancelAndIgnoreRemainingEvents()
         }
         assertEquals(ActiveFlow.Idle, vm.state.value.activeFlow)
@@ -187,6 +190,98 @@ class MainViewModelTwoTagTest {
         assertNotNull(vm.state.value.form.material)
         assertNotNull(vm.state.value.form.selectedSpoolId)
         assertNotNull(vm.state.value.spoolman.selectedSpoolId)
+    }
+
+    @Test
+    fun `UI-44 dismiss with one tag reports actual card_uids count from Spoolman`() = runTest {
+        val vm = newVm()
+        // Seed the target spool with 2 UIDs already in extra.card_uids so the
+        // end-of-pairing snackbar reports the true total, not just this flow.
+        val paired = sampleSpool.copy(
+            extra = mapOf("card_uids" to "\"AABBCCDD,11223344\""),
+        )
+        primeFormForWrite(vm)
+        spoolman.setSpools(listOf(paired))
+        vm.onSpoolSelected(paired)
+        createAndPair.nextResult = CreateAndPairResult.Success.WrittenAndPaired(
+            spoolId = 42, uid = sampleUid, isNewSpool = false,
+        )
+        vm.onWriteTapped()
+
+        vm.effects.test {
+            vm.onPairAnotherTagDismissed()
+            val emission = awaitNonAmbientSnackbar()
+            assertEquals(
+                "Tag written and paired. This spool now has 2 tags.",
+                emission.message,
+            )
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `UI-44 single-tag spool uses singular tag in count suffix`() = runTest {
+        val vm = newVm()
+        val paired = sampleSpool.copy(extra = mapOf("card_uids" to "\"AABBCCDD\""))
+        primeFormForWrite(vm)
+        spoolman.setSpools(listOf(paired))
+        vm.onSpoolSelected(paired)
+        createAndPair.nextResult = CreateAndPairResult.Success.WrittenAndPaired(
+            spoolId = 42, uid = sampleUid, isNewSpool = false,
+        )
+        vm.onWriteTapped()
+
+        vm.effects.test {
+            vm.onPairAnotherTagDismissed()
+            val emission = awaitNonAmbientSnackbar()
+            assertEquals("Tag written and paired. This spool now has 1 tag.", emission.message)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `UI-44 vendor pair dismiss uses Vendor tag linked prefix not written`() = runTest {
+        val vm = newVm()
+        // Vendor tags are UID-mapped only (no NDEF write), so the prefix must
+        // say "Vendor tag linked." rather than claiming a write.
+        val paired = sampleSpool.copy(extra = mapOf("card_uids" to "\"AABBCCDD\""))
+        primeFormForWrite(vm)
+        spoolman.setSpools(listOf(paired))
+        vm.onSpoolSelected(paired)
+        createAndPair.nextResult = CreateAndPairResult.Success.WrittenAndPaired(
+            spoolId = 42, uid = sampleUid, isNewSpool = false, isVendorPair = true,
+        )
+        vm.onWriteTapped()
+
+        vm.effects.test {
+            vm.onPairAnotherTagDismissed()
+            val emission = awaitNonAmbientSnackbar()
+            assertEquals("Vendor tag linked. This spool now has 1 tag.", emission.message)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `UI-44 both tags paired appends count suffix`() = runTest {
+        val vm = newVm()
+        val paired = sampleSpool.copy(
+            extra = mapOf("card_uids" to "\"AABBCCDD,11223344\""),
+        )
+        primeFormForWrite(vm)
+        spoolman.setSpools(listOf(paired))
+        vm.onSpoolSelected(paired)
+        createAndPair.nextResult = CreateAndPairResult.Success.WrittenAndPaired(
+            spoolId = 42, uid = sampleUid, isNewSpool = false,
+        )
+        vm.onWriteTapped()
+        twoTag.nextResult = TwoTagResult.Success.SecondTagPaired(spoolId = 42, uid = CardUid("11223344"))
+
+        vm.effects.test {
+            vm.onPairAnotherTagAccepted()
+            val emission = awaitNonAmbientSnackbar()
+            assertEquals("Tag written and paired. This spool now has 2 tags.", emission.message)
+            cancelAndIgnoreRemainingEvents()
+        }
     }
 
     @Test

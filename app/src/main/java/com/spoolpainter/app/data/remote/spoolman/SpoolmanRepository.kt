@@ -753,69 +753,6 @@ open class SpoolmanRepository @Inject constructor(
         _filaments.value = _filaments.value.map { if (it.id == filament.id) filament else it }
     }
 
-    private fun removeSpoolFromCache(id: Int) {
-        _spools.value = _spools.value.filter { it.id != id }
-    }
-
-    private fun removeFilamentFromCache(id: Int) {
-        _filaments.value = _filaments.value.filter { it.id != id }
-    }
-
-    private fun removeVendorFromCache(id: Int) {
-        _vendors.value = _vendors.value.filter { it.id != id }
-    }
-
-    /**
-     * Best-effort chain delete of an orphan spool plus the filament/vendor
-     * created in the same transaction (if they're not referenced by any other
-     * record). Called from create-and-pair / vendor-uid-only-pair failure
-     * paths when no UID was ever attached to the spool.
-     *
-     * Spool DELETE is unconditional. Filament + vendor DELETEs are
-     * best-effort: if Spoolman returns 4xx because they're still referenced,
-     * we swallow and stop (no cascading attempt). The caller doesn't surface
-     * these failures to the user — they care about the write that failed,
-     * not about cleanup details.
-     */
-    open suspend fun chainDeleteOrphan(orphan: OrphanSpool): SpoolmanOutcome<Unit> {
-        val api = cachedApi ?: return urlNotConfigured()
-        val spoolDelete = performHttp("deleteSpool") { api.deleteSpool(orphan.spoolId) }
-        if (spoolDelete is SpoolmanOutcome.Success) {
-            removeSpoolFromCache(orphan.spoolId)
-        } else {
-            android.util.Log.w(
-                "SpoolmanRepo",
-                "chainDeleteOrphan: spool DELETE failed (id=${orphan.spoolId}); skipping filament/vendor",
-            )
-            @Suppress("UNCHECKED_CAST")
-            return spoolDelete as SpoolmanOutcome<Unit>
-        }
-        if (orphan.filamentId != null) {
-            val filamentDelete = performHttp("deleteFilament") { api.deleteFilament(orphan.filamentId) }
-            if (filamentDelete is SpoolmanOutcome.Success) {
-                removeFilamentFromCache(orphan.filamentId)
-            } else {
-                android.util.Log.w(
-                    "SpoolmanRepo",
-                    "chainDeleteOrphan: filament DELETE failed (id=${orphan.filamentId}); skipping vendor",
-                )
-                return SpoolmanOutcome.Success(Unit)
-            }
-        }
-        if (orphan.vendorId != null) {
-            val vendorDelete = performHttp("deleteVendor") { api.deleteVendor(orphan.vendorId) }
-            if (vendorDelete is SpoolmanOutcome.Success) {
-                removeVendorFromCache(orphan.vendorId)
-            } else {
-                android.util.Log.w(
-                    "SpoolmanRepo",
-                    "chainDeleteOrphan: vendor DELETE failed (id=${orphan.vendorId}); cleanup partial",
-                )
-            }
-        }
-        return SpoolmanOutcome.Success(Unit)
-    }
-
     /**
      * Trims a variant string and treats blank as null. Used in the filament
      * matcher so `null`, `""`, and `"  "` all collapse to the same bucket.

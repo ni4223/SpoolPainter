@@ -86,17 +86,12 @@ open class CreateAndPairUseCase @Inject constructor(
                     )
             }
             // PATCH the spool to record the UID we just tapped. Idempotent.
-            // We do this even on Verify/Failed write outcomes so the user
-            // doesn't end up with an orphan spool when a write dies mid-
-            // tag. If the append itself fails, fall through to the write
-            // outcome — the user can retry.
-            //
-            // Side effect: when this Append succeeds against a spool that
-            // [SaveToSpoolmanUseCase] just created (orphan), the orphan is
-            // no longer dangling. The caller is responsible for clearing
-            // [SaveToSpoolmanUseCase.lastResolvedOrphan] on a successful
-            // pair so a subsequent Write failure doesn't chain-delete a
-            // real, paired spool.
+            // We do this even on Verify/Failed write outcomes so the tag is
+            // still mapped to the spool by serial when the on-tag write dies
+            // mid-tap (e.g. an NTAG213 too small for our payload). If the
+            // append itself fails, fall through to the write outcome — the
+            // user can retry. The spool always pre-exists (Save created it);
+            // Write only maps a UID, never creates or deletes a spool.
             when (val append = spoolman.appendCardUidToSpool(spoolId, observedUid)) {
                 is SpoolmanOutcome.Success -> Unit
                 else -> if (writeResult is WriteResult.Success) {
