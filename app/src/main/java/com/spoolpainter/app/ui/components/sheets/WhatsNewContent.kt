@@ -4,6 +4,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Nfc
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.SaveAlt
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -51,6 +52,12 @@ val whatsNewV2Highlights: List<WhatsNewHighlight> = listOf(
         body = "Pair both tags for a spool without repeating the setup. Move " +
             "a tag to a different spool anytime and we'll automatically " +
             "update the pairing.",
+    ),
+    WhatsNewHighlight(
+        icon = Icons.Filled.PhotoCamera,
+        title = "Scan a color with the camera",
+        body = "Point your camera at a spool and SpoolPainter samples the " +
+            "color for you.",
     ),
     WhatsNewHighlight(
         icon = Icons.Filled.Palette,

@@ -3,7 +3,7 @@
 
 Android app for managing 3D printer filament spools via NFC tags. Reads / writes filament metadata in [OpenSpool](https://openspool.io/) format and syncs with a self-hosted [Spoolman](https://github.com/Donkie/Spoolman) inventory.
 
-`v2.1` · `applicationId` `com.spoolpainter.app` · `minSdk 29` (Android 10+) · `targetSdk 36`
+`v2.2` · `applicationId` `com.spoolpainter.app` · `minSdk 29` (Android 10+) · `targetSdk 36`
 
 ### [Join the testing program](https://play.google.com/apps/testing/com.spoolpainter.app)
 
@@ -30,9 +30,13 @@ It is a single-user, sideloadable Android app. No accounts, no cloud, no analyti
 |---|---|---|
 | ![Move-on-bind confirm](screenshots/06-move-on-bind.png) | ![Vendor tag classification](screenshots/07-vendor-chip.png) | ![Vendor tag prefilled](screenshots/08-vendor-read.png) |
 
-| Weight: Remaining / Measured |
-|---|
-| ![Weight radio with Measured selected](screenshots/09-weight-radio.png) |
+| Weight: Remaining / Measured | Scan color with the camera |
+|---|---|
+| ![Weight radio with Measured selected](screenshots/09-weight-radio.png) | ![Camera color sampler over a spool](screenshots/10-camera-color.png) |
+
+## What's new in v2.2
+
+- **Scan a color with the camera.** In the Color picker, tap **Scan color** to open a live camera view with a center reticle and a live hex readout. Point it at a spool and the app samples the color under the reticle into the Color field. It's an approximate starting point you can fine-tune in the Color Wheel, not an exact match (lighting and white balance shift raw camera pixels). Adds the `CAMERA` permission; the camera is optional (the feature is a convenience, NFC stays the core).
 
 ## What's new in v2.1
 

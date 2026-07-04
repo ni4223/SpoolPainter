@@ -2298,3 +2298,50 @@ Resume artefact lists: copy/paste-ready build commands, milestone-by-milestone t
 **Context**: CONSTRUCTION phase — v2.1.5 shipped to git + GitHub; Play Store upload pending on user.
 
 ---
+
+## SESSION PAUSE
+**Timestamp**: 2026-07-04T00:00:00Z
+**User Input**: "aidlc pause"
+**AI Response**: Session paused at user request. State on pause: U16 (v2.1.5) DONE and shipped to git + GitHub (commit d6d69fd, tag v2.1.5, GitHub Release published with APK+AAB). Docs-only commit b0579f2 (release-ops record) is LOCAL — will ride the next `git push origin v2`. Working tree clean. Tests 506/506. RESUME POINTS: (1) push docs commit b0579f2 to origin/v2; (2) user uploads app-release.aab (versionCode 109 / 2.1.5) to Play Store Open testing — only remaining ship step; (3) next unit candidate = UI-45 (camera color-picker) parked for v2.2+, needs feasibility spike before commit. No open unit in flight.
+**Context**: CONSTRUCTION phase — paused; v2.1.5 shipped bar Play Store upload.
+
+---
+
+## SESSION RESUME
+**Timestamp**: 2026-07-04T00:00:00Z
+**User Input**: "aidlc continue"
+**AI Response**: Session resumed. Loaded aidlc-state.md + ui-followups.md + git status. Confirmed state matches pause snapshot: U16 (v2.1.5) DONE, no open unit in flight. Local docs commit b0579f2 (release-ops record) still unpushed; origin/v2 is 1 behind. Working tree has only the audit.md session-log edit. Tests last recorded 506/506. Presenting welcome-back status with resume options; awaiting user direction before any push, new unit, or feasibility spike.
+**Context**: CONSTRUCTION phase — resumed at v2.1.5 close-out; no unit in flight.
+
+---
+
+## New Unit U17 — Camera Color Picker (UI-45)
+**Timestamp**: 2026-07-04T00:00:00Z
+**User Input**: "lets do camera things,"
+**AI Response**: Opened new construction unit U17 for UI-45 (pick color hex from the camera). Per-unit gate resolves FD / NFR-R / NFR-D / Infra-D SKIP (feature unit; design folded into Code Gen plan per the U14–U16 cadence). Two design decisions collected via AskUserQuestion: (Q1 capture approach) = **CameraX live preview** (in-app preview + center reticle + live hex readout + tap-to-lock); (Q2 sampling) = **averaged center patch** (mean RGB of an NxN center block). Trade-offs acknowledged with user: adds CAMERA permission (new Play Store + runtime ask on a currently NFC-only app) and androidx.camera:* dependencies (APK-size hit over the current 7.41 MB R8 release). Read ColorPicker.kt (self-contained; onChange (String?) seam; existing "Color Wheel" menu item is the sibling pattern), FilamentForm.kt:125 (only call site), AndroidManifest.xml (NFC+INTERNET only today), build.gradle.kts + libs.versions.toml (no camera dep yet), proguard-rules.pro. Authoring Code Gen Part 1 plan next.
+**Context**: CONSTRUCTION phase — U17 per-unit loop opened; Code Gen Part 1 (Planning).
+
+---
+
+## U17 Code Gen Part 1 — Approval Prompt
+**Timestamp**: 2026-07-04T00:00:00Z
+**AI Response**: Authored `aidlc-docs/construction/plans/u17-camera-color-picker-code-generation-plan.md` — 10 numbered steps, 5 stories (S-U17-1..5), file impact (4 build/config modified, 2 new app files, 1 modified app file, 1 new test file), 5 open Q-U17-* questions, test target ~513. Presenting the standardized 2-option completion message (Request Changes / Continue to Next Stage). Awaiting explicit approval before Code Gen Part 2. Not yet approved.
+**Context**: Code Generation Part 1 (Planning) approval gate for U17.
+
+---
+
+## U17 Code Gen Part 1 — Approval Response
+**Timestamp**: 2026-07-04T00:00:00Z
+**User Input**: "next"
+**AI Response**: Interpreted "next" as Continue to Next Stage — plan APPROVED. Open Q-U17-* questions resolved to their recommended defaults: Q-U17-1=A (ImageAnalysis frame sampling), Q-U17-2=A (20×20 patch), Q-U17-3=A (~5 fps throttle), Q-U17-4=A (inline message + auto-dismiss), Q-U17-5=A ("From camera" label). Marking Code Gen Part 1 complete; beginning Part 2 execution step-by-step.
+**Context**: Code Generation Part 1 APPROVED → Part 2 (Generation) begins.
+
+---
+
+## U17 Code Gen Part 2 + Install Gate — Complete
+**Timestamp**: 2026-07-04T00:00:00Z
+**User Input**: "looks good, continue"
+**AI Response**: U17 Code Gen Part 2 executed + install gate PASSED on moto g stylus 2025 / Android 16 (all scenarios). Iteration: sampler inset clipping (fixed via activity-view insets + 40dp clearance), button label → "Scan color", in-view copy, dropdown open-direction ordering. Reuse refactor to shared `DropdownDirection.kt` on user feedback. New follow-up UI-46 logged (long-list pinned-action menu, deferred). What's New showcase verified on-device via `pm clear` (new "Scan a color with the camera" row reads well). versionCode 109→110 / 2.1.5→2.2.0; tests 506→514; `assembleRelease` 7.53 MB / `bundleRelease` 8.31 MB (+0.12 MB CameraX). Docs done: u17-summary.md, ui-followups UI-45→fixed + UI-46, README v2.2 + screenshot 10-camera-color.png, aidlc-state.md. Proceeding to stage the close-out commit on `v2` per [[feedback_aidlc_unit_close_out_commit]]; push/tag/GitHub Release/Play Store await explicit user go.
+**Context**: U17 close-out — Code Gen Part 2 APPROVED; committing.
+
+---

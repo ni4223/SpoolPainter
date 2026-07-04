@@ -24,6 +24,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
@@ -54,6 +55,9 @@ fun MaterialPicker(
     modifier: Modifier = Modifier,
 ) {
     var expanded by remember { mutableStateOf(false) }
+    // Keep the "Other" action nearest the anchor field whichever way the menu
+    // opens (see rememberDropdownDirection).
+    val direction = rememberDropdownDirection()
     val displayValue = selected?.name ?: ""
     val isOther = displayValue == "Other"
 
@@ -78,7 +82,10 @@ fun MaterialPicker(
                 trailingIcon = if (enabled) {
                     { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) }
                 } else null,
-                modifier = Modifier.menuAnchor().fillMaxWidth(),
+                modifier = Modifier
+                    .menuAnchor()
+                    .fillMaxWidth()
+                    .then(direction.anchorModifier),
                 textStyle = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = MaterialTheme.colorScheme.primary,
@@ -90,17 +97,13 @@ fun MaterialPicker(
                 shape = RoundedCornerShape(20.dp),
             )
             if (enabled) {
-                ExposedDropdownMenu(
-                    expanded = expanded,
-                    onDismissRequest = { expanded = false },
-                    modifier = Modifier.clip(RoundedCornerShape(20.dp)),
-                ) {
-                    val other = materials.firstOrNull { it.name.equals("Other", ignoreCase = true) }
+                val other = materials.firstOrNull { it.name.equals("Other", ignoreCase = true) }
+                val otherRow: @Composable () -> Unit = {
                     if (other != null) {
                         DropdownMenuItem(
                             text = {
                                 Row(
-                                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                                    verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 ) {
                                     Icon(
@@ -122,8 +125,9 @@ fun MaterialPicker(
                                 onSelect(other)
                             },
                         )
-                        HorizontalDivider()
                     }
+                }
+                val materialRows: @Composable () -> Unit = {
                     materials
                         .filterNot { it.name.equals("Other", ignoreCase = true) }
                         .forEach { material ->
@@ -135,6 +139,21 @@ fun MaterialPicker(
                                 },
                             )
                         }
+                }
+                ExposedDropdownMenu(
+                    expanded = expanded,
+                    onDismissRequest = { expanded = false },
+                    modifier = Modifier.clip(RoundedCornerShape(20.dp)),
+                ) {
+                    if (direction.opensUpward) {
+                        materialRows()
+                        if (other != null) HorizontalDivider()
+                        otherRow()
+                    } else {
+                        otherRow()
+                        if (other != null) HorizontalDivider()
+                        materialRows()
+                    }
                 }
             }
         }

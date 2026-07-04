@@ -1553,38 +1553,55 @@ re-read the spool from Spoolman before composing the snackbar.
 
 ## UI-45 — Pick color hex from the camera
 
-**State**: open (feasibility spike)
+**State**: fixed — shipped as U17 (v2.2.0), 2026-07-04.
 **Found in**: feature idea on v2.1.4, 2026-06-30
-**Routing**: TBD — feature unit, v2.2+. Needs a feasibility/perf assessment first.
+**Routing**: DONE — feature unit U17.
 
-Let the user point the camera at a physical spool/filament and pull the color
-hex from the live preview (tap-to-sample a pixel, or average a center
-reticle), then feed it into the existing color field. Avoids hand-matching a
-hex to the real filament color.
+**Shipped shape** (differs from the original recommendation): went with the
+**CameraX live preview** path (per user direction), not the lightweight
+image-capture intent. Live preview + fixed center reticle + live `#HEX` chip;
+"Use this color" locks the averaged center-patch sample into the Color field.
+Sampling math is a pure, unit-tested `ColorSampling` object (averaged N×N
+center patch); the CameraX preview/permission flow is verified on-device.
+Entry point is a "Scan color" action sharing the "Color Wheel" row in
+`ColorPicker.kt`. **CameraX APK-size impact = +0.12 MB only** (7.41 → 7.53 MB
+release; R8 strips the unused surface), so the size concern that motivated the
+lighter fallback never materialised. `CAMERA` permission + `camera.any`
+uses-feature (`required="false"`) added.
 
-**Open questions / scope to assess before committing**:
-- **Permission cost**: adds `CAMERA` permission. Currently the app is
-  NFC-only (see `product.md` constraints) — a camera permission is a visible
-  new ask on the Play Store listing and at runtime.
-- **Library weight**: CameraX (`androidx.camera:*`) is the standard path;
-  assess the APK-size hit against the current ~7.4 MB R8 release. Could be a
-  meaningful jump. A lighter alternative is a one-shot `ACTION_IMAGE_CAPTURE`
-  intent + sample a pixel from the returned bitmap (no live preview, far less
-  weight) — likely the right first cut.
-- **Color accuracy**: raw camera pixels are wildly affected by white balance
-  and lighting; the sampled hex will rarely match the "true" filament color.
-  Set expectations as an approximate starting point the user can tweak, not a
-  spectrophotometer.
-- **UX**: where does it live? An icon next to "Color Wheel" / "Other" in
-  `ColorPicker.kt` that opens a sampler, returning the hex into the same field
-  that `ColorPicker` already drives.
+---
 
-**Code locations (target)**:
-- `app/src/main/java/com/spoolpainter/app/ui/components/ColorPicker.kt`
-  (entry point + result wiring).
-- `AndroidManifest.xml` (CAMERA permission + feature flag, only if live
-  preview path chosen).
+## UI-46 — Dropdown action row can't be both always-visible and field-adjacent
 
-**Recommendation**: start with the lightweight image-capture-intent +
-center-pixel sample to prove the UX with near-zero size cost, before
-considering CameraX live preview.
+**State**: open (deferred — needs pinned-action menu rework)
+**Found in**: U17 install-gate iteration, 2026-07-04
+**Routing**: v2.2.x polish. Not blocking U17 close-out.
+
+The Material / Brand / Color pickers put a high-value action at one end of the
+menu (Material/Brand: "Other"; Color: "Color Wheel" + "Scan color"). U17 added
+`rememberDropdownDirection()` (`DropdownDirection.kt`) so the action sits
+nearest the anchor field: top when the menu opens down, bottom when it flips
+up. That fixed the short menus (Color, Material) but **regressed the long one
+(Brand, 30+ vendors)**: when Brand opens upward the action moves to the bottom
+of a long scroll, so the user must scroll the whole list to reach "Other".
+
+The fundamental limitation: inside a single scrolling menu you can guarantee
+the action is **always visible** (pin it at top) OR **field-adjacent** (put it
+at the near end), but not both on a long list.
+
+**Proper fix**: build a shared menu where the action row is **pinned** (does
+not scroll with the list) at the field-adjacent edge, with the item list
+scrolling underneath. Standard `ExposedDropdownMenu` scrolls its entire content,
+so this needs a custom menu (fixed action row + separate scrolling `LazyColumn`
+list), used by all three pickers so it stays a single component (no
+duplication). Alternatives considered and parked: move the action into the text
+field itself (icon), or add type-to-filter search to kill the long-list scroll.
+
+**Code locations**:
+- `app/src/main/java/com/spoolpainter/app/ui/components/DropdownDirection.kt`
+  (the current reorder helper the pinned menu would replace).
+- `ColorPicker.kt`, `MaterialPicker.kt`, `BrandPicker.kt` (call sites).
+- `LazyDropdownMenu.kt` (existing custom-menu precedent for the spool/filament
+  pickers — the pinned-action menu could extend this pattern).
+
+---

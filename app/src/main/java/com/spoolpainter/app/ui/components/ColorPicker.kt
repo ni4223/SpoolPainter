@@ -4,6 +4,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -19,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -78,7 +80,12 @@ fun ColorPicker(
 ) {
     var expanded by remember { mutableStateOf(false) }
     var showWheel by remember { mutableStateOf(false) }
+    var showCamera by remember { mutableStateOf(false) }
     var wheelOriginalColor by remember { mutableStateOf<String?>(null) }
+    // The action rows (Color Wheel / Scan color) belong nearest the anchor field
+    // so they're easy to reach whichever way the menu opens (see
+    // rememberDropdownDirection).
+    val direction = rememberDropdownDirection()
     val current = colorHex.orEmpty()
     // Empty when nothing's selected — let the placeholder show. "No Color" is
     // a deliberate menu choice for clearing an existing selection, not the
@@ -123,7 +130,8 @@ fun ColorPicker(
             } else null,
             modifier = Modifier
                 .menuAnchor()
-                .fillMaxWidth(),
+                .fillMaxWidth()
+                .then(direction.anchorModifier),
             textStyle = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
             colors = OutlinedTextFieldDefaults.colors(
                 focusedBorderColor = MaterialTheme.colorScheme.primary,
@@ -137,11 +145,9 @@ fun ColorPicker(
         )
 
         if (enabled) {
-            ExposedDropdownMenu(
-                expanded = expanded,
-                onDismissRequest = { expanded = false },
-                modifier = Modifier.clip(RoundedCornerShape(20.dp)),
-            ) {
+            // Action row (Color Wheel + Scan color) rendered as a lambda so it
+            // can be placed at the top (menu opens down) or bottom (opens up).
+            val actionRow: @Composable () -> Unit = {
                 DropdownMenuItem(
                     text = {
                         Row(
@@ -162,13 +168,45 @@ fun ColorPicker(
                             )
                         }
                     },
+                    trailingIcon = {
+                        // Camera sampler shares the Color Wheel row. Its own
+                        // clickable Row consumes the tap so the wheel onClick
+                        // doesn't also fire.
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier
+                                .padding(start = 16.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable {
+                                    showCamera = true
+                                    expanded = false
+                                }
+                                .padding(horizontal = 8.dp, vertical = 6.dp)
+                                .testTag("main-form-color-camera"),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.PhotoCamera,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                            Text(
+                                text = "Scan color",
+                                style = MaterialTheme.typography.bodyLarge.copy(
+                                    fontWeight = FontWeight.SemiBold,
+                                ),
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                    },
                     onClick = {
                         wheelOriginalColor = colorHex
                         showWheel = true
                         expanded = false
                     },
                 )
-                HorizontalDivider()
+            }
+            val colorRows: @Composable () -> Unit = {
                 COMMON_COLORS.forEach { (name, hex) ->
                     DropdownMenuItem(
                         text = {
@@ -193,6 +231,23 @@ fun ColorPicker(
                     )
                 }
             }
+            ExposedDropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
+                modifier = Modifier.clip(RoundedCornerShape(20.dp)),
+            ) {
+                if (direction.opensUpward) {
+                    // Menu flipped up: named colors first, actions at the bottom
+                    // so Color Wheel / Scan color stay next to the field.
+                    colorRows()
+                    HorizontalDivider()
+                    actionRow()
+                } else {
+                    actionRow()
+                    HorizontalDivider()
+                    colorRows()
+                }
+            }
         }
     }
 
@@ -205,6 +260,16 @@ fun ColorPicker(
                 onChange(wheelOriginalColor)
                 showWheel = false
             },
+        )
+    }
+
+    if (showCamera) {
+        CameraColorSampler(
+            onPick = { hex ->
+                onChange(hex)
+                showCamera = false
+            },
+            onDismiss = { showCamera = false },
         )
     }
 }

@@ -17,8 +17,8 @@ android {
         applicationId = "com.spoolpainter.app"
         minSdk = 29
         targetSdk = 36
-        versionCode = 109
-        versionName = "2.1.5"
+        versionCode = 110
+        versionName = "2.2.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -105,6 +105,12 @@ dependencies {
 
     // v2 — Datetime (U4: kotlinx.datetime.Clock for NfcRepository TTL)
     implementation(libs.kotlinx.datetime)
+
+    // v2.2 — CameraX (U17: camera color sampler)
+    implementation(libs.androidx.camera.core)
+    implementation(libs.androidx.camera.camera2)
+    implementation(libs.androidx.camera.lifecycle)
+    implementation(libs.androidx.camera.view)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)

@@ -52,6 +52,9 @@ fun BrandPicker(
     modifier: Modifier = Modifier,
 ) {
     var expanded by remember { mutableStateOf(false) }
+    // Keep the "Other" action nearest the anchor field whichever way the menu
+    // opens (see rememberDropdownDirection).
+    val direction = rememberDropdownDirection()
     val displayValue = selected?.name ?: ""
     val isOther = displayValue == "Other"
 
@@ -76,7 +79,10 @@ fun BrandPicker(
                 trailingIcon = if (enabled) {
                     { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) }
                 } else null,
-                modifier = Modifier.menuAnchor().fillMaxWidth(),
+                modifier = Modifier
+                    .menuAnchor()
+                    .fillMaxWidth()
+                    .then(direction.anchorModifier),
                 textStyle = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = MaterialTheme.colorScheme.primary,
@@ -88,12 +94,9 @@ fun BrandPicker(
                 shape = RoundedCornerShape(20.dp),
             )
             if (enabled) {
-                ExposedDropdownMenu(
-                    expanded = expanded,
-                    onDismissRequest = { expanded = false },
-                    modifier = Modifier.clip(RoundedCornerShape(20.dp)),
-                ) {
-                    if (brands.any { it.equals("Other", ignoreCase = true) }) {
+                val hasOther = brands.any { it.equals("Other", ignoreCase = true) }
+                val otherRow: @Composable () -> Unit = {
+                    if (hasOther) {
                         DropdownMenuItem(
                             text = {
                                 Row(
@@ -119,8 +122,9 @@ fun BrandPicker(
                                 onSelect(Brand("Other"))
                             },
                         )
-                        HorizontalDivider()
                     }
+                }
+                val brandRows: @Composable () -> Unit = {
                     brands
                         .filterNot { it.equals("Other", ignoreCase = true) }
                         .forEach { brand ->
@@ -132,6 +136,21 @@ fun BrandPicker(
                                 },
                             )
                         }
+                }
+                ExposedDropdownMenu(
+                    expanded = expanded,
+                    onDismissRequest = { expanded = false },
+                    modifier = Modifier.clip(RoundedCornerShape(20.dp)),
+                ) {
+                    if (direction.opensUpward) {
+                        brandRows()
+                        if (hasOther) HorizontalDivider()
+                        otherRow()
+                    } else {
+                        otherRow()
+                        if (hasOther) HorizontalDivider()
+                        brandRows()
+                    }
                 }
             }
         }
