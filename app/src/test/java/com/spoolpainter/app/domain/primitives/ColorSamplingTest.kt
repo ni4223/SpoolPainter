@@ -64,4 +64,22 @@ class ColorSamplingTest {
         assertEquals(60, right)
         assertEquals(50, bottom)
     }
+
+    @Test
+    fun `patchForFraction scales with the frame's shorter side`() {
+        // 0.10 * 480 = 48; 0.10 * 1080 = 108.
+        assertEquals(48, ColorSampling.patchForFraction(480))
+        assertEquals(108, ColorSampling.patchForFraction(1080))
+    }
+
+    @Test
+    fun `patchForFraction floors at 1px for a tiny frame`() {
+        // 0.10 * 2 = 0.2 -> 0, coerced up to 1 so the region is sampleable.
+        assertEquals(1, ColorSampling.patchForFraction(2))
+    }
+
+    @Test
+    fun `patchForFraction honors an explicit fraction`() {
+        assertEquals(96, ColorSampling.patchForFraction(480, fraction = 0.20f))
+    }
 }

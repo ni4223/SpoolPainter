@@ -1621,3 +1621,46 @@ field itself (icon), or add type-to-filter search to kill the long-list scroll.
   pickers — the pinned-action menu could extend this pattern).
 
 ---
+
+## UI-47 — Camera color sampler: reticle didn't match the analyzed area
+
+**State**: fixed — shipped as U19 (v2.2.1), 2026-07-04.
+**Found in**: user review of the U17 camera sampler, 2026-07-04
+**Routing**: DONE — bugfix unit U19.
+
+The U17 sampler drew a fixed **64dp** circle reticle but averaged a fixed
+**20px square** at the center of the camera *analysis frame*. Those are two
+different coordinate spaces (screen dp vs. frame px) and two different shapes
+(circle vs. square), so the ring told the user nothing about how big the
+sampled region actually was — a WYSIWYG bug. Aim worked (both dead-center under
+`PreviewView.ScaleType.FILL_CENTER`), but the circle's *size* was decorative.
+
+**Fix**: couple both to a single fraction of their respective shorter sides.
+`ColorSampling.DEFAULT_PATCH_FRACTION` (0.10) now drives:
+- the sampled patch — `ColorSampling.patchForFraction(minOf(frameW, frameH))`
+  in `CameraColorSampler.sampleCenterHex` (replaces the hardcoded 20px);
+- the reticle — `minOf(maxWidth, maxHeight) * DEFAULT_PATCH_FRACTION` via a
+  `BoxWithConstraints` wrapping the preview (replaces the hardcoded 64dp).
+
+FILL_CENTER center-crops, so equal fractions of each shorter side map onto the
+same real-world spot: the square patch is inscribed in the circle the user aims
+with, so everything sampled is visibly inside the ring. Shrinking the fraction
+shrinks both together — they can't drift apart. Circle size was taken from 0.18
+→ 0.10 per user ("can circle be smaller?").
+
+**Considered and declined**: camera zoom (pinch / slider / fixed default) —
+color is a large flat property and patch-averaging is already robust to a spool
+filling most of the frame; zoom is a narrow win for multicolor/stripe spools
+only, so parked until a real need surfaces. Exact circle==sample match (square
+reticle, or circular sampling region) also declined — inscribed square is close
+enough for "point and read."
+
+**Code locations**:
+- `app/src/main/java/com/spoolpainter/app/domain/primitives/ColorSampling.kt`
+  (`DEFAULT_PATCH_FRACTION`, `patchForFraction`).
+- `app/src/main/java/com/spoolpainter/app/ui/components/CameraColorSampler.kt`
+  (`BoxWithConstraints` reticle size + `sampleCenterHex` patch size).
+- `app/src/test/java/com/spoolpainter/app/domain/primitives/ColorSamplingTest.kt`
+  (3 new `patchForFraction` cases).
+
+---

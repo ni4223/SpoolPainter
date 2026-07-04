@@ -15,6 +15,29 @@ object ColorSampling {
     const val DEFAULT_PATCH: Int = 20
 
     /**
+     * Reticle diameter as a fraction of the frame's shorter side. The camera
+     * preview uses FILL_CENTER (center-crop), so sizing both the on-screen
+     * reticle AND the sampled patch to the same fraction of their respective
+     * shorter sides keeps them aligned: the square patch is inscribed in the
+     * circle the user aims with, so everything sampled is visibly inside the
+     * ring (WYSIWYG — UI-47).
+     */
+    const val DEFAULT_PATCH_FRACTION: Float = 0.10f
+
+    /**
+     * Square patch edge in pixels for a frame whose shorter side is
+     * [frameShortSide], sized to [fraction] of that side. Floors at 1px so a
+     * degenerate frame still yields a sampleable region.
+     */
+    fun patchForFraction(
+        frameShortSide: Int,
+        fraction: Float = DEFAULT_PATCH_FRACTION,
+    ): Int {
+        require(frameShortSide > 0) { "frameShortSide must be positive" }
+        return (frameShortSide * fraction).toInt().coerceAtLeast(1)
+    }
+
+    /**
      * Inclusive-exclusive pixel bounds of an [patch]×[patch] square centered in
      * an image of [width]×[height], clamped so it never runs off an edge.
      * Returns (left, top, right, bottom); right/bottom are exclusive.

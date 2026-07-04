@@ -2369,3 +2369,19 @@ Resume artefact lists: copy/paste-ready build commands, milestone-by-milestone t
 **Context**: CONSTRUCTION — v2.2.0 release ops. git + GitHub complete; Play Store upload pending (user).
 
 ---
+
+## U19 — Camera reticle matches analyzed area (UI-47)
+**Timestamp**: 2026-07-04T16:30:00Z
+**User Input**: "for camera thing do we provide size of circle?" → "wtf it dont even match?" → "show 1" → "fix it" → "can circle be smaller?" → "will circle size match the area being analyzed?" → "do we need zooming" / "leave it" → "leave it, just commit on top, but make sure all aidlc stuff is commit along, nothig should be remaining after. But first build it for release" → "update the version, last version got fucked up"
+**AI Response**: Diagnosed the U17 WYSIWYG bug (64dp circle vs 20px square in different coordinate spaces). Coupled reticle + sampled patch to ColorSampling.DEFAULT_PATCH_FRACTION (0.10) of their respective shorter sides via patchForFraction() + BoxWithConstraints. Circle 0.18→0.10 per user. Zoom declined (color is a flat property; patch-averaging robust). No history rewrite (commit-on-top per user); version bumped 110/2.2.0 → 111/2.2.1 since v2.2.0 already public. Tests 514→517. assembleRelease 7.90 MB / bundleRelease 8.72 MB, 111/2.2.1 verified via aapt2 badging. All AIDLC docs (ui-followups UI-47, aidlc-state U19 + Current Status, this audit) committed alongside code.
+**Context**: CONSTRUCTION — U19 bugfix unit closed. Commit-on-top; release ops pending user go.
+
+---
+
+## v2.2.1 release ops (U19) — docs folded into fd4c2b6 pre-push
+**Timestamp**: 2026-07-04T16:45:00Z
+**User Input**: "release, and no commit after release" → "do all aidlc updates now and add to tgis commit alrey"
+**AI Response**: Folded all release-ops doc updates (aidlc-state U19 entry + Current Status → SHIPPED, this audit) into the unpushed U19 commit fd4c2b6 via git commit --amend (no public history rewrite — commit was local-only). Then push origin v2, tag v2.2.1 → fd4c2b6, GitHub Release v2.2.1 with app-release.apk (7.90 MB) + app-release.aab (8.72 MB). No commit created after the release, per user direction. Play Store AAB upload remains manual on user.
+**Context**: CONSTRUCTION — v2.2.1 release ops. Docs pre-folded so nothing remains post-release.
+
+---

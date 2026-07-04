@@ -15,6 +15,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -203,7 +204,12 @@ private fun SamplerContent(
         onDispose { analysisExecutor.shutdown() }
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        // Reticle diameter = same fraction of the preview's shorter side that
+        // the patch uses of the frame's shorter side. FILL_CENTER center-crops,
+        // so equal fractions map onto each other at the center: the ring bounds
+        // exactly what's sampled (UI-47).
+        val reticleSize = minOf(maxWidth, maxHeight) * ColorSampling.DEFAULT_PATCH_FRACTION
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { ctx ->
@@ -242,11 +248,11 @@ private fun SamplerContent(
             },
         )
 
-        // Center reticle.
+        // Center reticle — sized to match the sampled patch (see reticleSize).
         Box(
             modifier = Modifier
                 .align(Alignment.Center)
-                .size(64.dp)
+                .size(reticleSize)
                 .border(3.dp, Color.White, CircleShape)
                 .border(1.dp, Color.Black.copy(alpha = 0.4f), CircleShape),
         )
@@ -340,7 +346,10 @@ private fun sampleCenterHex(image: ImageProxy): String? {
     val height = image.height
     if (width <= 0 || height <= 0) return null
 
-    val bounds = ColorSampling.patchBounds(width, height, ColorSampling.DEFAULT_PATCH)
+    // Size the sampled patch to the same fraction of the frame the on-screen
+    // reticle uses, so the ring bounds exactly what's averaged (UI-47).
+    val patchPx = ColorSampling.patchForFraction(minOf(width, height))
+    val bounds = ColorSampling.patchBounds(width, height, patchPx)
     val (left, top, right, bottom) = bounds
     val patchW = right - left
     val patchH = bottom - top
