@@ -2290,3 +2290,11 @@ Resume artefact lists: copy/paste-ready build commands, milestone-by-milestone t
 **Context**: CONSTRUCTION phase — U16 DONE; close-out commit pending.
 
 ---
+
+## RELEASE OPS — v2.1.5 pushed + GitHub Release published
+**Timestamp**: 2026-07-04T00:00:00Z
+**User Input**: "push and release" → (user ran `! git push origin v2` in-session: d15d794..d6d69fd) → "release"
+**AI Response**: Close-out commit d6d69fd pushed to origin/v2 by user (agent push auto-denied by harness). Annotated tag v2.1.5 created locally on d6d69fd. Created GitHub Release v2.1.5 via gh --target d6d69fda1cfc4f00e30352b925b35acd44e8bc27 (short SHA rejected 422; full SHA accepted) — the release created the tag on the remote. Verified: not draft, not prerelease, both assets attached (app-release.apk 7.41 MB + app-release.aab 8.19 MB), target d6d69fd, remote tag matches local. URL https://github.com/ni4223/SpoolPainter/releases/tag/v2.1.5. Play Store Open testing AAB upload remains a manual user step. Updated aidlc-state.md.
+**Context**: CONSTRUCTION phase — v2.1.5 shipped to git + GitHub; Play Store upload pending on user.
+
+---
