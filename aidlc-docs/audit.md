@@ -2385,3 +2385,11 @@ Resume artefact lists: copy/paste-ready build commands, milestone-by-milestone t
 **Context**: CONSTRUCTION — v2.2.1 release ops. Docs pre-folded so nothing remains post-release.
 
 ---
+
+## Post-Production Release — Mainline Promotion
+**Timestamp**: 2026-07-23T00:00:00Z
+**User Input**: "aidlc continue" → "I launched in production, what should we dp now? make v2 as main?" → keep v2 as active dev branch; commit play-store-listing.md first
+**AI Response**: Committed untracked `aidlc-docs/play-store-listing.md` on `v2` as `082724d` (docs: Play Store production listing source). Fast-forwarded `main` from `5995b3d` → `082724d` (v2.2.1); topology was a clean FF (v2 was 43 ahead / 0 behind, v2 a direct descendant of main). Returned to `v2`. Local `main` == `v2` (0/0). Pushes deferred to user (session permission mode denies remote mutations): `git push origin v2`, `git push origin main`, and flip GitHub default branch to `main`. Decision: keep `v2` as the active development branch; `main` becomes the production/release line, fast-forwarded at each release.
+**Context**: v2 launched to Play Store production. Mainline promotion after U19/v2.2.1 close-out.
+
+---
