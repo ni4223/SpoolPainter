@@ -5,7 +5,7 @@ Android app for managing 3D printer filament spools via NFC tags. Reads / writes
 
 `v2.2` · `applicationId` `com.spoolpainter.app` · `minSdk 29` (Android 10+) · `targetSdk 36`
 
-### [Join the testing program](https://play.google.com/apps/testing/com.spoolpainter.app)
+### [Get it on Google Play](https://play.google.com/store/apps/details?id=com.spoolpainter.app)
 
 ## What it is
 
@@ -71,13 +71,13 @@ It is a single-user, sideloadable Android app. No accounts, no cloud, no analyti
 
 ## How to install
 
-### From the Play Store testing track
+### From the Play Store
 
-v2 is on the Play Store **open testing track** — anyone with the link below can opt in.
+v2 is live on Google Play.
 
-[Join the testing program](https://play.google.com/apps/testing/com.spoolpainter.app)
+[Get it on Google Play](https://play.google.com/store/apps/details?id=com.spoolpainter.app)
 
-Once you've joined, the app shows up in the Play Store like any other install. You'll get v2 updates as testing-track releases land.
+Install it like any other app; updates arrive automatically as new releases land.
 
 ### Build from source
 
@@ -120,11 +120,12 @@ For release builds (signed APK / AAB), you also need a local keystore at `~/spoo
 - The Spoolman URL you configure in Settings is the only network destination. The app uses HTTP (cleartext) by default because Spoolman is typically self-hosted on a LAN.
 - Tag data is read / written directly between the phone and the NFC tag — nothing else sees it.
 
-## What's coming next (v2.1.x, planned)
+## What's coming next (planned)
 
+- **Type-to-search the spool and filament pickers.** Start typing to filter the dropdown by material / brand / name instead of scrolling a long list.
+- **Closest-match suggestion on tag read.** When a tag is read but not already paired, suggest the closest-matching spool or filament in your Spoolman inventory (by material / brand / colour / temperatures) so you can confirm a link in one tap instead of hunting for it.
 - Re-pair flow for changing a spool's material / brand after pairing (today material + brand are locked on existing-spool because changing them means "wrong filament picked"; a re-pair flow lets you switch to a different filament cleanly).
 - Archive a spool / filament from the app (today archiving requires the Spoolman web UI).
-- Additional vendor tag formats on the same opt-in key model.
 
 ## Tech stack (developer notes)
 
@@ -154,7 +155,7 @@ This repo follows the AIDLC (AI Development Lifecycle) workflow under `aidlc-doc
 
 ## Contributing
 
-Bug reports and testing feedback welcome — open a GitHub issue. PRs against the `v2` branch are welcome.
+Bug reports and testing feedback welcome — open a GitHub issue. PRs against the `main` branch are welcome.
 
 ## License
 

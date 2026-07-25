@@ -43,8 +43,7 @@ import com.spoolpainter.app.data.local.SpoolSortKey
 import com.spoolpainter.app.ui.common.UiEffect
 import com.spoolpainter.app.ui.components.ThemeToggleSwitch
 
-// TODO(open-test-only): remove the Send feedback row + this URL before promoting
-//   to production. Tester feedback channel; not for general release.
+// General feedback channel — kept in production (UI-37 closed 2026-07-25).
 private const val FEEDBACK_URL = "https://forms.gle/Yx94vLHCSaBWRL1m9"
 
 // Vendor-tag-specific report form. Pre-filled via the diagnostic entry ID

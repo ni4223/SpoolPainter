@@ -1237,10 +1237,15 @@ push lands.
 
 ## UI-37 — Send feedback row in Settings (open-test only)
 
-**State**: open (intentional, must remove before prod promotion)
+**State**: closed — kept intentionally (2026-07-25). Decision at the
+v2 production launch: feedback links are appropriate in production
+(both "Send feedback" and "Report a tag issue" stay). The
+`TODO(open-test-only)` marker was removed from `SettingsScreen.kt`.
+The "why remove" rationale below is retained for the audit trail but no
+longer applies — the personal-Google-Form noise concern was accepted.
 **Found in**: U14 close-out, 2026-06-07
-**Routing**: remove before promoting v2.1 from Open testing to
-production track.
+**Routing**: ~~remove before promoting v2.1 from Open testing to
+production track~~ → superseded; kept.
 
 A "Send feedback" `OutlinedButton` was added to the bottom of
 Settings as part of v2.1, opening a Google Form
@@ -1662,5 +1667,70 @@ enough for "point and read."
   (`BoxWithConstraints` reticle size + `sampleCenterHex` patch size).
 - `app/src/test/java/com/spoolpainter/app/domain/primitives/ColorSamplingTest.kt`
   (3 new `patchForFraction` cases).
+
+---
+
+## UI-48 — Type-to-search the spool / filament pickers (HIGH PRIORITY)
+
+**State**: open (planned — high priority, requested 2026-07-25)
+**Routing**: next feature unit.
+
+Today the Spool dropdown and Filament picker are scroll-only
+(`LazyDropdownMenu` / `PinnedActionMenu` over a `LazyColumn`). With a
+large Spoolman inventory (50+ spools), finding an entry means scrolling.
+
+**Ask**: add a text input at the top of the picker that filters the list
+as the user types. Match against material / brand / name (and likely the
+Spoolman spool id). Case-insensitive substring is the v1 bar; fuzzy match
+is a nice-to-have but not required for the first cut.
+
+**Code location (starting points)**:
+- `app/src/main/java/com/spoolpainter/app/ui/components/LazyDropdownMenu.kt`
+  (the Spool + Filament dropdown host — where the search field would mount).
+- `app/src/main/java/com/spoolpainter/app/ui/components/PinnedActionMenu.kt`
+  (pinned-action variant used by Material / Brand / Color; may share the
+  search affordance or stay scroll-only — Material/Brand lists are short).
+- Filtering logic belongs in a pure helper (testable) that takes the query
+  + the spool/filament list and returns the filtered, still-sorted list.
+  Reuse the existing sort comparators.
+
+**Not**: the `OutlinedTextField`s already in `MaterialPicker.kt` /
+`BrandPicker.kt` are the "Other" custom-entry field, not search — do not
+conflate them.
+
+---
+
+## UI-49 — Closest-match suggestion on tag read (HIGH PRIORITY)
+
+**State**: open (planned — high priority, requested 2026-07-25)
+**Routing**: next feature unit (pairs naturally with UI-48).
+
+**Ask**: on a tag Read that is *not* already paired to a spool (blank tag,
+or a vendor / OpenSpool tag with no matching `card_uids` link), run a
+heuristic over the Spoolman inventory and surface the closest-matching
+**spool or filament** so the user can confirm the link in one tap instead
+of manually finding it.
+
+**Signal for matching** (the decoded payload / prefilled form already
+carries these): material `type`, `brand`, `color_hex`, temperature range
+(`min_temp` / `max_temp`), and `subtype`/variant. Rank candidates by a
+weighted score (exact material+brand strong; colour-hex distance; temp
+proximity) and present the top match (or top few).
+
+**Where it plugs in**:
+- The read path resolves in `NfcRepository.handleTag` / classify, and the
+  form prefill happens in `MainViewModel.applyResult` (BlankForm / vendor
+  `parsedHint` branches). The suggestion is computed after prefill, against
+  `spoolman.spools.value` / the filament list.
+- Matching logic must be a pure, unit-tested scorer (parallels
+  `ColorSampling` / the filament matcher in `SpoolmanRepository`
+  `resolveOrCreateFilament` — reuse `ColorHexCodec` for colour distance).
+- UI surface: a suggestion chip / row ("Closest match: <spool> — pair?")
+  near the picker, non-destructive (never auto-selects; user confirms).
+
+**Relation to existing behaviour**: distinct from `card_uids` exact
+resolution (that already auto-selects an already-paired spool) and from
+`resolveOrCreateFilament` (server-side exact-identity match on
+create-and-pair). This is a *fuzzy* suggestion for the unpaired case.
 
 ---
