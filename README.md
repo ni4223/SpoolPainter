@@ -20,9 +20,9 @@ It is a single-user, sideloadable Android app. No accounts, no cloud, no analyti
 
 ## Screenshots
 
-| Main screen | Spool dropdown | Form + filament metadata |
+| Main screen | Spool picker + search | Form + filament metadata |
 |---|---|---|
-| ![Main screen with paired spool](screenshots/01-main.png) | ![Spool dropdown open with colour swatches](screenshots/02-spool-dropdown.png) | ![Form with metadata expander](screenshots/03-form-expanded.png) |
+| ![Main screen with paired spool](screenshots/01-main.png) | ![Spool picker open with search box and colour swatches](screenshots/02-spool-dropdown.png) | ![Form with metadata expander](screenshots/03-form-expanded.png) |
 
 | Pair another tag | Settings | Vendor key field |
 |---|---|---|
@@ -35,6 +35,10 @@ It is a single-user, sideloadable Android app. No accounts, no cloud, no analyti
 | Weight: Remaining / Measured | Scan color with the camera |
 |---|---|
 | ![Weight radio with Measured selected](screenshots/09-weight-radio.png) | ![Camera color sampler over a spool](screenshots/10-camera-color.png) |
+
+| Type to search the pickers |
+|---|
+| ![Spool picker filtered live by a typed query](screenshots/11-search.png) |
 
 ## What's new in v2.2
 
