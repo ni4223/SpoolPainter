@@ -186,10 +186,13 @@ private fun VariantField(
     OutlinedTextField(
         value = value.orEmpty(),
         onValueChange = { input ->
-            // Sanitisation: alphanumeric + spaces + hyphens, max 25 chars.
-            // No forced casing — user types whatever they want.
-            val sanitised = input.filter { it.isLetterOrDigit() || it in " -" }
-                .take(25)
+            // Sanitisation: alphanumeric + common label punctuation, max 50
+            // chars (UI-50 Ask 2 — descriptive variants like "PLA (Matte)" and
+            // "PLA+" were getting stripped/cut). No forced casing — user types
+            // whatever they want. Drop control chars only.
+            val sanitised = input
+                .filter { it.isLetterOrDigit() || it in " -+()" }
+                .take(50)
             onChange(sanitised.takeIf { it.isNotBlank() })
         },
         label = { Text("Variant (Wood, Pro, HS, etc.)") },

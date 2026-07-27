@@ -1822,6 +1822,12 @@ val sanitised = input.filter { it.isLetterOrDigit() || it in " -" }
 **Fix:** raise the cap (Spoolman `extra.variant` is generous) and loosen the
 filter to allow common punctuation. Small, self-contained change.
 
+**Ask 2 DONE 2026-07-27** (`FilamentForm.kt` `VariantField`): cap 25 → 50;
+filter now allows `+ ( )` in addition to letters/digits/space/hyphen, so
+"PLA (Matte)" and "PLA+" survive (the exact cases in the issue). Kept the
+allowlist tight — no other symbols added. **Ask 1 (multi-color hex) still
+open** — that's the real feature lift, left for a later unit.
+
 **User-reply drafted** (not yet posted) acknowledging both asks; v1 history
 intentionally left out of the public reply.
 
