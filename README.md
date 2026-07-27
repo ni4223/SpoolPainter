@@ -7,6 +7,8 @@ Android app for managing 3D printer filament spools via NFC tags. Reads / writes
 
 ### [Get it on Google Play](https://play.google.com/store/apps/details?id=com.spoolpainter.app)
 
+The latest build is rolling out on **Open testing** first. [Join the testing program](https://play.google.com/apps/testing/com.spoolpainter.app) to try new features a few days before they hit the stable track.
+
 ## What it is
 
 SpoolPainter is for 3D printing hobbyists who:
@@ -78,6 +80,8 @@ v2 is live on Google Play.
 [Get it on Google Play](https://play.google.com/store/apps/details?id=com.spoolpainter.app)
 
 Install it like any other app; updates arrive automatically as new releases land.
+
+New releases go out on **Open testing** for a few days before the stable track. [Join the testing program](https://play.google.com/apps/testing/com.spoolpainter.app) to opt in and get them early.
 
 ### Build from source
 
