@@ -45,17 +45,31 @@ fun FilamentPicker(
     onSelect: (SpoolmanFilament?) -> Unit,
     modifier: Modifier = Modifier,
     prominent: Boolean = false,
+    // U20 (UI-49, F2) — scan-suggested filament ids float to the top when the
+    // picker is opened, in scorer-rank order (best first), separated by a thin
+    // divider (no header). Passive: never changes the selection.
+    scanSuggestedFilamentIds: List<Int> = emptyList(),
 ) {
     var expanded by remember { mutableStateOf(false) }
     val anchor = rememberLazyDropdownAnchor()
     val sorted = remember(filaments, sortKey, sortDirection) {
         filaments.sortedWith(filamentComparator(sortKey, sortDirection))
     }
+    val filamentRank = remember(scanSuggestedFilamentIds) {
+        scanSuggestedFilamentIds.withIndex().associate { (i, id) -> id to i }
+    }
+    val ranked = remember(sorted, filamentRank) {
+        com.spoolpainter.app.domain.primitives.PickerRanking.partitionRanked(sorted) {
+            filamentRank[it.id]
+        }
+    }
+    val orderedFilaments = ranked.rows
+    val suggestedCount = ranked.suggestedCount
     // Cache the per-row display tuple so a recompose doesn't re-run the
     // string formatters on every entry. ExposedDropdownMenu renders all
     // items eagerly, so this is per-row work multiplied by N filaments.
-    val rows = remember(sorted) {
-        sorted.map { filament ->
+    val rows = remember(orderedFilaments) {
+        orderedFilaments.map { filament ->
             FilamentRowDisplay(
                 filament = filament,
                 primary = filament.primaryRowText(),
@@ -63,6 +77,9 @@ fun FilamentPicker(
                 colorHex = filament.color_hex,
             )
         }
+    }
+    val dividerRowKey = remember(rows, suggestedCount) {
+        if (suggestedCount in 1 until rows.size) rows[suggestedCount].filament.id else null
     }
     val selected = sorted.firstOrNull { it.id == selectedFilamentId }
     val displayValue = selected?.selectedDisplay().orEmpty()
@@ -145,6 +162,7 @@ fun FilamentPicker(
                         modifier = Modifier.testTag("filament-picker-row-${row.filament.id}"),
                     )
                 },
+                dividerBefore = dividerRowKey?.let { key -> { row -> row.filament.id == key } },
             )
         }
     }

@@ -12,7 +12,9 @@ import com.spoolpainter.app.domain.models.Material
 import com.spoolpainter.app.domain.models.SpoolmanFilament
 import com.spoolpainter.app.domain.models.SpoolmanSpool
 import com.spoolpainter.app.domain.models.TempRanges
+import com.spoolpainter.app.domain.models.OpenSpoolPayload
 import com.spoolpainter.app.domain.primitives.ExtraCardUidsCodec
+import com.spoolpainter.app.domain.primitives.SpoolMatchScorer
 import com.spoolpainter.app.domain.primitives.TagClassification
 import com.spoolpainter.app.domain.usecases.CreateAndPairInput
 import com.spoolpainter.app.domain.usecases.CreateAndPairResult
@@ -446,7 +448,16 @@ class MainViewModel @Inject constructor(
         viewModelScope.launch {
             runCatching { spoolman.refreshIfStale() }
         }
-        _state.update { it.copy(activeFlow = ActiveFlow.ReadingForPair) }
+        // Clear any prior scan surfacing hints at read-start so none survives
+        // into a new read regardless of which outcome branch runs. The prefill
+        // branches re-populate them fresh when they apply.
+        _state.update {
+            it.copy(
+                activeFlow = ActiveFlow.ReadingForPair,
+                scanSuggestedSpoolIds = emptyList(),
+                scanSuggestedFilamentIds = emptyList(),
+            )
+        }
         readJob = viewModelScope.launch {
             val result = withTimeoutOrNull(readTimeoutMs) { readAndPair.invoke() }
             if (result == null) {
@@ -687,6 +698,9 @@ class MainViewModel @Inject constructor(
                 ),
                 spoolman = current.spoolman.copy(selectedSpoolId = spool.id),
                 ambiguity = null,
+                // User picked deliberately — drop the scan surfacing hints.
+                scanSuggestedSpoolIds = emptyList(),
+                scanSuggestedFilamentIds = emptyList(),
             )
         }
         _customMaterial.value = ""
@@ -731,6 +745,10 @@ class MainViewModel @Inject constructor(
                 form = prefilled,
                 spoolman = current.spoolman.copy(selectedSpoolId = null),
                 ambiguity = null,
+                // A filament is now selected — F3 (this filament's spools) takes
+                // over the Spool picker's floated group; drop the scan hints.
+                scanSuggestedSpoolIds = emptyList(),
+                scanSuggestedFilamentIds = emptyList(),
             )
         }
         _customMaterial.value = ""
@@ -943,6 +961,49 @@ class MainViewModel @Inject constructor(
         return canonical ?: raw
     }
 
+    /**
+     * U20 (UI-49) — score the current filament inventory against a decoded tag
+     * payload and return the (spoolIds, filamentIds) to float to the top of the
+     * pickers when the user next opens them, **in scorer-rank order** (best
+     * first). Passive hints only: this NEVER changes any selection or flow.
+     * Signals are material / brand / color only (no temps, per Q-U20-2). Empty
+     * pair = nothing floated.
+     */
+    private fun computeScanSuggestions(payload: OpenSpoolPayload): Pair<List<Int>, List<Int>> {
+        val query = SpoolMatchScorer.Query(
+            material = payload.type,
+            brand = payload.brand,
+            colorHex = payload.colorHex,
+            // Vendor tags decode their material modifier into subtype (e.g.
+            // Bambu "Matte"); "Basic"/blank is the no-variant default and must
+            // not match. Same rule FormMapping.fromOpenSpool uses.
+            variant = payload.subtype.takeUnless { it == "Basic" || it.isBlank() },
+        )
+        val candidates = filaments.value.map { f ->
+            SpoolMatchScorer.Candidate(
+                filamentId = f.id,
+                material = f.material,
+                brand = f.vendor?.name,
+                colorHex = f.color_hex,
+                // Spoolman stores variant as a JSON-encoded string in extra.
+                variant = FormMapping.decodeExtraVariant(f.extra?.get("variant")),
+            )
+        }
+        // Rank order (best match first). The pickers float in exactly this order.
+        val filamentIds = SpoolMatchScorer.suggestedFilamentIds(query, candidates)
+        if (filamentIds.isEmpty()) return emptyList<Int>() to emptyList()
+        // A suggested filament implies its unarchived spools are suggested too;
+        // order the spools by their filament's rank so the best match floats
+        // first there as well.
+        val rankByFilament = filamentIds.withIndex().associate { (i, id) -> id to i }
+        val spoolIds = spoolman.spools.value
+            .filterNot { it.archived }
+            .filter { it.filament.id in rankByFilament }
+            .sortedBy { rankByFilament[it.filament.id] }
+            .mapNotNull { it.id }
+        return spoolIds to filamentIds
+    }
+
     private fun applyResult(result: ReadAndPairResult) {
         when (result) {
             is ReadAndPairResult.Success.PrefillFromSpoolman -> {
@@ -969,12 +1030,19 @@ class MainViewModel @Inject constructor(
                         spoolman = current.spoolman.copy(selectedSpoolId = result.spool.id),
                         ambiguity = null,
                         activeFlow = ActiveFlow.Idle,
+                        // Paired read resolved a concrete spool — no need to
+                        // suggest anything; clear any prior scan hints.
+                        scanSuggestedSpoolIds = emptyList(),
+                        scanSuggestedFilamentIds = emptyList(),
                     )
                 }
                 _customMaterial.value = ""
                 _customBrand.value = ""
             }
             is ReadAndPairResult.Success.PrefillFromTag -> {
+                // Unpaired OpenSpool tag: score the inventory so the pickers can
+                // float the closest matches when opened (passive; no auto-select).
+                val (spoolIds, filamentIds) = computeScanSuggestions(result.payload)
                 _state.update { current ->
                     current.copy(
                         form = FormMapping.fromOpenSpool(result.uid, result.payload, current.form.rawWriteMode),
@@ -984,6 +1052,8 @@ class MainViewModel @Inject constructor(
                         // Tag carried OpenSpool data, not vendor-encoded.
                         observedTagKind = ObservedTagKind.OpenSpool,
                         observedTagUid = result.uid,
+                        scanSuggestedSpoolIds = spoolIds,
+                        scanSuggestedFilamentIds = filamentIds,
                     )
                 }
                 _customMaterial.value = ""
@@ -1003,6 +1073,14 @@ class MainViewModel @Inject constructor(
                 val vendor = result.classification as? TagClassification.Vendor
                 val isVendor = vendor != null
                 val parsedHint = vendor?.parsedHint
+                // Unpaired vendor tag with a decoded payload: score the inventory
+                // for picker surfacing (passive; no auto-select). No hint / a plain
+                // blank tag carries no metadata, so nothing to suggest.
+                val (scanSpoolIds, scanFilamentIds) = if (parsedHint != null) {
+                    computeScanSuggestions(parsedHint)
+                } else {
+                    emptyList<Int>() to emptyList()
+                }
                 _state.update { current ->
                     val nextForm = if (parsedHint != null) {
                         // Vendor tag with a successful Bambu/Snapmaker parse:
@@ -1024,6 +1102,8 @@ class MainViewModel @Inject constructor(
                         } else current.spoolman,
                         ambiguity = null,
                         activeFlow = ActiveFlow.Idle,
+                        scanSuggestedSpoolIds = scanSpoolIds,
+                        scanSuggestedFilamentIds = scanFilamentIds,
                     )
                 }
                 if (parsedHint != null) {

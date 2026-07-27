@@ -235,6 +235,8 @@ fun MainScreen(
                                 selectedId = state.spoolman.selectedSpoolId,
                                 enabled = state.activeFlow == ActiveFlow.Idle && state.spoolman.reachable,
                                 onSelect = viewModel::onSpoolSelected,
+                                selectedFilamentId = state.form.selectedFilamentId,
+                                scanSuggestedSpoolIds = state.scanSuggestedSpoolIds,
                             )
                         }
                     }
@@ -253,6 +255,7 @@ fun MainScreen(
                             brands = brands,
                             filamentSortKey = state.filamentSortKey,
                             filamentSortDirection = state.filamentSortDirection,
+                            scanSuggestedFilamentIds = state.scanSuggestedFilamentIds,
                             onChange = { change ->
                                 when (change) {
                                     is FormChange.MaterialPicked -> viewModel.onMaterialPicked(change.value)
@@ -744,6 +747,13 @@ internal fun SpoolmanDropdown(
     selectedId: Int?,
     enabled: Boolean,
     onSelect: (SpoolmanSpool?) -> Unit,
+    // U20 — picker surfacing. F3: the currently-selected filament's id; its
+    // unarchived spools float to the top. F2: scan-suggested spool ids from an
+    // unpaired tag read. Precedence F3 > F2 (both float; never both at once
+    // because selecting a filament clears the scan hints). Passive: floating
+    // never changes selection.
+    selectedFilamentId: Int? = null,
+    scanSuggestedSpoolIds: List<Int> = emptyList(),
 ) {
     var expanded by remember { mutableStateOf(false) }
     val anchor = com.spoolpainter.app.ui.components.rememberLazyDropdownAnchor()
@@ -751,10 +761,32 @@ internal fun SpoolmanDropdown(
     // every recomposition that re-runs filter+sort+row-string-builder
     // multiplies by N spools. Cache the sorted list + per-row display
     // tuple so a tap-toggle isn't paying for the work again.
-    val visibleSpools = remember(spools, sortKey, sortDirection) {
+    val sortedSpools = remember(spools, sortKey, sortDirection) {
         spools.filterNot { it.archived }
             .sortedWith(spoolComparator(sortKey, sortDirection))
     }
+    // Rank map for the floated group. F3 (a selected filament's spools) wins
+    // over F2 (scan matches). F3 spools all share rank 0 (deterministic set,
+    // keep the picker's sort among them); F2 spools rank by their position in
+    // the scorer-ordered list so the best match floats first. A spool not in
+    // the map stays in "rest" (normal sort).
+    val spoolRank: Map<Int, Int> = remember(sortedSpools, selectedFilamentId, scanSuggestedSpoolIds) {
+        when {
+            selectedFilamentId != null ->
+                sortedSpools.filter { it.filament.id == selectedFilamentId }
+                    .mapNotNull { it.id }
+                    .associateWith { 0 }
+            else ->
+                scanSuggestedSpoolIds.withIndex().associate { (i, id) -> id to i }
+        }
+    }
+    val ranked = remember(sortedSpools, spoolRank) {
+        com.spoolpainter.app.domain.primitives.PickerRanking.partitionRanked(sortedSpools) { spool ->
+            spool.id?.let { spoolRank[it] }
+        }
+    }
+    val visibleSpools = ranked.rows
+    val suggestedCount = ranked.suggestedCount
     val visibleRows = remember(visibleSpools) {
         visibleSpools.map { spool ->
             SpoolRowDisplay(
@@ -763,6 +795,16 @@ internal fun SpoolmanDropdown(
                 secondary = spoolSecondaryRow(spool),
                 colorHex = spool.filament.color_hex,
             )
+        }
+    }
+    // The divider is drawn before the first non-suggested row. Cache its key
+    // so LazyDropdownMenu can identify it. Null when nothing floated / all
+    // floated (no boundary to mark).
+    val dividerRowKey = remember(visibleRows, suggestedCount) {
+        if (suggestedCount in 1 until visibleRows.size) {
+            visibleRows[suggestedCount].let { it.spool.id ?: it.primary.hashCode() }
+        } else {
+            null
         }
     }
     val selected = spools.firstOrNull { it.id == selectedId }
@@ -835,6 +877,9 @@ internal fun SpoolmanDropdown(
                         secondary = row.secondary,
                         colorHex = row.colorHex,
                     )
+                },
+                dividerBefore = dividerRowKey?.let { key ->
+                    { row -> (row.spool.id ?: row.primary.hashCode()) == key }
                 },
             )
         }

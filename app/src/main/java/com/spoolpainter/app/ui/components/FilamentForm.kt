@@ -87,6 +87,7 @@ fun FilamentForm(
     filamentSortDirection: SortDirection,
     onChange: (FormChange) -> Unit,
     modifier: Modifier = Modifier,
+    scanSuggestedFilamentIds: List<Int> = emptyList(),
 ) {
     val identityEnabled = enabled && !identityLocked
     Column(
@@ -104,6 +105,7 @@ fun FilamentForm(
                 sortKey = filamentSortKey,
                 sortDirection = filamentSortDirection,
                 onSelect = { onChange(FormChange.FilamentSelected(it)) },
+                scanSuggestedFilamentIds = scanSuggestedFilamentIds,
             )
         }
 

@@ -33,6 +33,14 @@ data class MainUiState(
     val filamentSortKey: FilamentSortKey = FilamentSortKey.Id,
     val filamentSortDirection: SortDirection = SortDirection.Desc,
     val priceSuffix: String = "$",
+    // U20 (UI-49) — scan-time surfacing. Passive hints only: when an unpaired
+    // tag is read, the scorer records the good-match ids here **in rank order
+    // (best match first)**. The Spool / Filament pickers float these to the top
+    // WHEN OPENED, in this order; nothing selects, no other flow changes. Empty
+    // = no floated group (pickers render as today). Cleared on a paired read, a
+    // manual selection, and a new read.
+    val scanSuggestedSpoolIds: List<Int> = emptyList(),
+    val scanSuggestedFilamentIds: List<Int> = emptyList(),
 )
 
 data class FormState(

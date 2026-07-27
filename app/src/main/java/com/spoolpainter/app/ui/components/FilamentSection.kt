@@ -24,6 +24,7 @@ fun FilamentSection(
     sortDirection: SortDirection,
     onSelect: (SpoolmanFilament?) -> Unit,
     modifier: Modifier = Modifier,
+    scanSuggestedFilamentIds: List<Int> = emptyList(),
 ) {
     Column(
         modifier = modifier
@@ -64,6 +65,7 @@ fun FilamentSection(
             onSelect = onSelect,
             prominent = true,
             modifier = Modifier.testTag("expander-filament-content"),
+            scanSuggestedFilamentIds = scanSuggestedFilamentIds,
         )
     }
 }

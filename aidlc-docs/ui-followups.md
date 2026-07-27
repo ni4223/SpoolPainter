@@ -1673,7 +1673,11 @@ enough for "point and read."
 ## UI-48 — Type-to-search the spool / filament pickers (HIGH PRIORITY)
 
 **State**: open (planned — high priority, requested 2026-07-25)
-**Routing**: next feature unit.
+**Routing**: **own follow-up unit** — split OUT of U20 per user direction
+2026-07-27 ("we should do search write thing seprate"). Will reuse U20's
+`PickerRanking` helper (extend with a `filter(query, rows, textOf)` mode) and
+needs the `LazyDropdownMenu` search-slot + empty-result-guard work that U20
+intentionally does not touch. See U20 plan §8.
 
 Today the Spool dropdown and Filament picker are scroll-only
 (`LazyDropdownMenu` / `PinnedActionMenu` over a `LazyColumn`). With a
@@ -1702,8 +1706,26 @@ conflate them.
 
 ## UI-49 — Closest-match suggestion on tag read (HIGH PRIORITY)
 
-**State**: open (planned — high priority, requested 2026-07-25)
-**Routing**: next feature unit (pairs naturally with UI-48).
+**State**: **fixed — shipped as U20 (F2), 2026-07-27.** Reframed to a
+rendering-only reorder: unpaired read → scorer floats top-3 material/brand/color
+matches (best first) to the top of both pickers, thin divider, no label, no
+auto-select. On-device rank order verified after an ordering fix (was floating in
+picker sort order, not match quality). Version HELD (batched bump later).
+**Routing**: U20 (done, uncommitted close-out).
+
+**Reframe 2026-07-27 (supersedes the original chip-based ask below)**: per user
+direction, this is a **rendering-only reorder**, not a chip. On an unpaired read
+(vendor tag, or OpenSpool tag with no `card_uids` link and no resolvable spool
+id), a pure `SpoolMatchScorer` scores the inventory on **material / brand / color
+only** (temps excluded per user) and remembers the good-match filament + spool id
+sets. **When the user opens** the Spool or Filament picker, the **top 3** matches
+float to the top with a **thin divider only (no "Suggested" label)**; the rest of
+the list follows in normal sort order. **No confirm chip, no auto-select, no
+behaviour change** — purely how the picker renders when opened. If nothing
+scores, the pickers look exactly as today. See U20 plan §0 (invariant) + §1 F2 +
+§2 LOCKED answers.
+
+**Original ask (kept for record; superseded by the reorder reframe above):**
 
 **Ask**: on a tag Read that is *not* already paired to a spool (blank tag,
 or a vendor / OpenSpool tag with no matching `card_uids` link), run a
@@ -1734,3 +1756,199 @@ resolution (that already auto-selects an already-paired spool) and from
 create-and-pair). This is a *fuzzy* suggestion for the unpaired case.
 
 ---
+
+## UI-50 — Multi-color hex + variant field limits (GitHub issue #5)
+
+**State**: open (feasibility confirmed 2026-07-26; requested by user jdkluck)
+**Found in**: GitHub issue https://github.com/ni4223/SpoolPainter/issues/5
+**Routing**: next feature unit candidate. Two independent asks; the variant
+half is a quick win, the multi-color half is a real feature.
+
+### Ask 1 — Multi-color hex (dual/tri-silk, e.g. Polymaker Panchroma)
+
+Support more than one color per filament so multi-color spools show
+correctly instead of forcing an averaged/dominant single hex.
+
+**Feasibility: fully supported by the U1 extended firmware, via Spoolman.**
+Traced end to end 2026-07-26:
+- **Spoolman native field** `multi_color_hexes` — `models.py` `String(128)`,
+  added upstream in the 2024-05-28 `415a8f855e14_multi_colors` migration.
+  Format is a single comma-separated string, e.g. `"C49449,786BB0"`
+  (Spoolman client stores `color_hexes.join(",")`). NOT an extra field, so
+  no `ensureExtraFieldsRegistered`-style registration needed (unlike
+  `card_uids` / `variant`).
+- **U1 firmware SpoolLink** (`spoollink.py`) reads
+  `filament.get("multi_color_hexes")`, splits on comma, uppercases, trims to
+  6 chars, pads to 5 slots, pushes `RGB_1..RGB_5` to the printer. So the U1
+  renders it. This is the path that matters (Spoolman link, not the tag).
+- **OpenSpool tag** also defines `additional_color_hexes` (JSON array, up to
+  4 additional); firmware `filament_protocol_ndef.py` maps it to
+  `RGB_1..RGB_N` with `COLOR_NUMS` derived. Per user direction the tag write
+  is only a backup, so this is secondary / later pass.
+
+**Work required (SpoolPainter side):**
+- Add `multi_color_hexes: String?` to `SpoolmanFilament` model +
+  `CreateFilamentRequest` + `PatchFilamentBody` (plain top-level field).
+- `sparseDiff` / `resolveOrCreateFilament` need to account for it (matching,
+  patch). Reuse/extend `ColorHexCodec` (currently single-value).
+- UI: `ColorPicker.kt` currently captures exactly one 6-char hex
+  (`.take(6)`, `singleLine`, `seedColor` single). Needs multi-hex entry +
+  a split/gradient swatch to display. This is the real lift.
+- Naming mismatch to handle: Spoolman/SpoolLink field is
+  `multi_color_hexes` (comma string); OpenSpool tag field is
+  `additional_color_hexes` (JSON array). A full impl bridges both.
+
+### Ask 2 — Variant character limit (quick win)
+
+Descriptive variant labels get cut. Real limitation, and it predates v2
+(inherited from v1 `5995b3d`; the v1 comment even mislabels it `// Max 10`
+next to `.take(25)`).
+
+**Current behaviour** (`FilamentForm.kt` `VariantField`, ~line 186):
+```kotlin
+val sanitised = input.filter { it.isLetterOrDigit() || it in " -" }
+    .take(25)
+```
+- Hard **25-char cap** (`.take(25)`).
+- Character filter allows only letters, digits, space, hyphen. Strips
+  parens, `+`, `/`, `#`, `&`, etc. — so "PLA (Matte)" → "PLA Matte",
+  "PLA+" → "PLA". (v1 allowed `+`; v2 dropped it — minor regression.)
+
+**Fix:** raise the cap (Spoolman `extra.variant` is generous) and loosen the
+filter to allow common punctuation. Small, self-contained change.
+
+**User-reply drafted** (not yet posted) acknowledging both asks; v1 history
+intentionally left out of the public reply.
+
+---
+
+## UI-51 — NFC stops scanning after opening the camera color picker (BUG)
+
+**State**: NOT REPRODUCED on NTAG (2026-07-27). Reframed → likely a slow/flaky
+Snapmaker (MifareClassic) read + weak on-screen feedback, NOT an NFC-dispatch
+/ camera-lifecycle bug. See "2026-07-27 investigation" below.
+
+### 2026-07-27 investigation (on-device, moto g stylus 2025 / Android 16)
+
+Ran the camera + permission repro multiple times on the debug build with an
+NTAG (uid `0465B693DA2A81`, NfcA/MifareUltralight/Ndef). **Could not
+reproduce** any NFC failure:
+- Camera permission revoked → cold launch → tap tag (scans) → Color picker →
+  Scan color → Allow camera → close → clear form → tap tag again: **scanned
+  fine, same data.** `handleTag` fired on every tap.
+- Also ran the write path (fill form → camera flow → write to tag → read
+  again): **everything worked.**
+
+So the `attach()` guard / camera-lifecycle theory (below) did NOT pan out on
+an NTAG. Key realisation: **the reporter's failing tag was a Snapmaker
+(MifareClassic) tag; all our tests used a fast NTAG.** The code confirms
+MifareClassic reads are inherently slow/flaky:
+- `TagFormatParser.MAX_READ_ATTEMPTS = 3` — MifareClassic retries the whole
+  read+parse up to 3x (NTAG tries once).
+- Each attempt authenticates all 16 sectors trying each vendor's keys in
+  registry order (`MifareClassicReader.tryReadRawCountedMulti`). Many NFC
+  round-trips; the tag must stay perfectly still the whole time.
+- Read timeout 10s; ambient buffer TTL 5s.
+
+**Reinterpreted report**: "Snapmaker tag wouldn't scan" = the slow
+MifareClassic read failed (tag lifted early, or no Bambu/Snapmaker key set),
+so it felt like "won't scan". The camera-permission mention is most likely
+coincidental (nothing in code ties camera perm to NFC read; couldn't repro a
+link). Their workaround (scan a non-blank NTAG, edit, write to a blank)
+worked because it avoided the MifareClassic read entirely and used fast
+NTAGs. The pasted diagnostic (`outcome: Blank`, NfcA/Ultralight/Ndef) is from
+that blank NTAG, NOT the Snapmaker tag — the Snapmaker tag never read cleanly
+enough to log.
+
+**Reframed fix direction** (not the lifecycle stuff): improve **vendor-read
+UX** — clearer/longer "still reading, hold the tag still" feedback during a
+multi-second MifareClassic read, and guidance to keep the tag flat/still.
+Possibly surface "no key set for this vendor" when a MifareClassic read
+auths 0 sectors. Cannot test further without a real Snapmaker/Bambu
+MifareClassic tag on hand (user doesn't have one either).
+
+**Old theory (kept for record; did NOT reproduce):**
+
+**Found in**: user feedback-form submission, SpoolPainter 2.2.1 build 111,
+Snapmaker tag. Reporter's words: "Would scan initially when opening the app,
+after giving it permission to use my camera, would not allow scanning ...
+I got it to work by scanning a rfid that was not blank, changing the
+elements, then wrote to a blank rfid."
+
+**Severity**: high-ish. Breaks the core NFC flow after a user touches the
+U17 camera color scanner. Workaround exists (force a full read/edit/write
+cycle) but it's non-obvious.
+
+**Diagnostic from the report** (this part is a red herring — the tag really
+is blank, classification is correct):
+```
+uid: 04275C41C82A81
+techList: NfcA, MifareUltralight, Ndef
+outcome: Blank
+```
+The bug is NOT tag parsing. It's NFC foreground-dispatch lifecycle,
+regressed by the U17 camera feature.
+
+**Suspected root cause** (two candidate mechanisms, confirm which on-device):
+- NFC uses `enableForegroundDispatch` tied to `onResume`/`onPause`
+  (`MainActivity.onResume → nfcRepository.attach`,
+  `onPause → detach`). `NfcAdapterWrapper.enableForegroundDispatch`.
+- Tapping "Scan color" fires the CAMERA permission dialog
+  (`CameraColorSampler.kt:111` `permissionLauncher.launch`). On some Android
+  versions a permission dialog does NOT deliver a clean onPause/onResume to
+  the host activity, so dispatch is left disabled and never re-armed.
+- **The guard in `NfcRepository.attach` (line 62) `if (attached === activity)
+  return` is the trap**: it assumes "same activity instance ⇒ dispatch still
+  armed", but the OS/permission flow can disable dispatch while `attached`
+  still points at the same activity. A re-`attach(sameActivity)` then
+  no-ops and never calls `enableForegroundDispatch` again.
+- Also worth checking: CameraX `bindToLifecycle(lifecycleOwner)` at
+  `CameraColorSampler.kt:240` binds to the activity lifecycle; interaction
+  with dispatch re-arm timing on the permission-grant resume.
+
+**Repro to run on-device (moto g stylus 2025 / Android 16):**
+1. Fresh launch (camera permission NOT yet granted). Confirm a tag scans.
+2. Open Color picker → Scan color → grant camera permission when prompted.
+3. Close the sampler, tap a tag. Does it scan? (report says no.)
+4. Compare against: permission ALREADY granted (no dialog) — does the bug
+   still happen? This isolates "permission dialog pause" vs "camera bind".
+
+**Candidate fixes (pick after repro):**
+- Make `attach()` idempotent-safe: always call `enableForegroundDispatch`
+  even when `attached === activity` (cheap; re-arming is safe), OR drop the
+  early-return guard.
+- Explicitly disable NFC dispatch while the camera sampler is open and
+  re-arm on dismiss (DisposableEffect), so the two subsystems don't race.
+- Ensure onResume re-arm survives the permission-dialog return path.
+
+
+---
+
+## UI-52 — Select a filament → float its spools in the Spool picker
+
+**State**: **fixed — shipped as U20 (F3), 2026-07-27.** On-device VERIFIED
+(moto g stylus 2025 / Android 16): B1 multiple spools float, B2 archived excluded,
+B3 never auto-selects, B4 clear returns to normal sort. Selecting a spool also
+floats its filament's siblings (spool-pick sets selectedFilamentId) — reviewed and
+kept intentionally per user ("i actually like all siblings together").
+**Routing**: U20 (done, uncommitted close-out).
+
+**Ask**: when a filament is selected, surface the spools that belong to it. This
+is the deterministic sibling of UI-49's heuristic reorder (a spool carries
+`filament.id`, so "spools of this filament" is an exact lookup, not a guess).
+
+**Behaviour** (rendering-only, matches the UI-49 reframe): selecting a filament
+does NOT change the spool selection. **When the user opens** the Spool picker,
+that filament's **unarchived** spools float to the top with a **thin divider only
+(no label, no main-screen hint)**. The rest of the list follows in normal sort
+order. **Never auto-select** (even when the filament has exactly one spool). No
+behaviour change to any existing flow. (Q-U20-4 = no hint; Q-U20-1 = no header.)
+
+**Precedence** (both UI-49 and UI-52 can float spools): filament selected →
+UI-52 ("This filament"); else scan suggestion active → UI-49 ("Suggested"); else
+normal sort. See U20 plan §2 D7/D9.
+
+**Spool-select mirror**: user confirmed 2026-07-27 that selecting a *spool* needs
+no distinct behaviour (spool→filament is one-to-one/trivial); "same for spool"
+meant applying the same surfacing style, which the shared section-header
+rendering already provides.

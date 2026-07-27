@@ -2393,3 +2393,45 @@ Resume artefact lists: copy/paste-ready build commands, milestone-by-milestone t
 **Context**: v2 launched to Play Store production. Mainline promotion after U19/v2.2.1 close-out.
 
 ---
+## Open Next Unit — U20 (search + closest-match)
+**Timestamp**: 2026-07-27T00:00:00Z
+**User Input**: "aidlc continue"
+**AI Response**: Detected state — v2 live in production (v2.2.1 / versionCode 111), no per-unit loop open, `v2` in sync with `origin/v2`. Working tree has uncommitted docs (reddit-launch-post.md, play-store-listing.md open-source line, ui-followups.md UI-50/UI-51 notes). Asked user (1) which backlog item is the next unit and (2) how to handle the pending docs. User chose **UI-48 + UI-49** (type-to-search pickers + closest-match suggestion on tag read; both flagged HIGH PRIORITY, pair naturally, share a pure testable matching/filter helper) and **leave pending docs uncommitted**. Opening U20 per-unit loop; feature unit → FD/NFR-R/NFR-D/Infra-D SKIP per established convention (design folds into Code Gen plan), Code Gen Part 1 plan → approval → Part 2.
+**Context**: CONSTRUCTION — opening U20 (UI-48 type-to-search pickers + UI-49 closest-match-on-read). Next unit after U19/v2.2.1.
+
+---
+## U20 Scope Discussion — "lets discuss what i want"
+**Timestamp**: 2026-07-27T00:00:00Z
+**User Input**: "lets discuss what i want" → "multiple things, first when i scan a tag that do not have UID mapped or spool id on it, let say vendor tag or tag without spool id, we do hurestic search bring the spools and filament we think on top and maybe some UI element to show user is this it? has to be good match. second when i select a filament in filament tab, same for spool bring spool up that belongs to that filament, all un archived ones, similar UI that shows we did that, what elese this task has it?" → (answers) scan surfacing = reorder lists only; spool-select = same surfacing style only (no distinct action); filament→spools = reorder + hint, never auto-select; keep search box in U20 = yes → then "remember it should show when useropen the diloug no aut selecting, we are not changing behaviour only enhance" → then "we should do search write thing seprate"
+**AI Response**: Reshaped U20 to TWO rendering-only reorder features and SPLIT type-to-search (UI-48) to its own follow-up unit. Final U20 scope: (F2, UI-49 reframed) scan an unmapped tag (vendor / OpenSpool-no-card_uids-no-spoolid) → pure `SpoolMatchScorer` remembers good-match filament+spool id sets; when the user OPENS the Spool/Filament picker, matches float to top under a "Suggested" section. (F3, UI-52 new) select a filament → when the user OPENS the Spool picker, that filament's unarchived spools float to top under "This filament" + "This filament has N spools" hint. OVERRIDING INVARIANT (§0): rendering-only at picker-open time, passive hints, NO auto-select, NO change to read/prefill/pair/save/write behaviour. Confidence floor (material must match). Precedence: filament-selected → F3, else scan → F2, else normal sort. New pure helpers `PickerRanking` (partition) + `SpoolMatchScorer` + `ColorHexCodec.toRgb`, parallel to ColorSampling. Version 112 / 2.3.0. Plan at `aidlc-docs/construction/plans/u20-search-and-match-code-generation-plan.md`. Q-U20-1..5 open for Part 2. UI-48 (search) deferred to a separate unit; will reuse PickerRanking + needs LazyDropdownMenu search-slot work U20 avoids.
+**Context**: CONSTRUCTION — U20 Code Gen Part 1 plan authored + revised. Awaiting stage-gate approval + Q-U20-1..5.
+
+---
+## U20 Part 2 Q&A — answered
+**Timestamp**: 2026-07-27T00:00:00Z
+**User Input**: (Q-U20-1) "Float, no header"; (Q-U20-2) "huerestic, like whatever we have we narrow down and show" + "i dont care about temps for the search though"; (Q-U20-3) "just 3"; (Q-U20-4) "No hint, just reorder" (after asking "whar? explain"); (Q-U20-5) N/A
+**AI Response**: Locked all five. Q-U20-1 = floated group at top with a thin divider only, NO "Suggested"/"This filament" label row (both F2 + F3). Q-U20-2 = heuristic additive scorer over material/brand/color ONLY (temps explicitly excluded); missing signals contribute nothing (graceful degradation); suggested set = score>0. Q-U20-3 = SUGGESTED_CAP = 3 (top 3 descending). Q-U20-4 = NO main-screen hint text for F3 — the in-picker reorder is the whole feature. Q-U20-5 = N/A (no header). Simplifies D2 to an opt-in `dividerBefore` two-group render on LazyDropdownMenu (no header-label machinery). Plan §2 "LOCKED answers" + D3/D7/D9/D10 + §4/§5 updated. Plan fully specified; ready for Code Gen Part 2 on approval.
+**Context**: CONSTRUCTION — U20 Code Gen Part 1 plan locked. Awaiting stage-gate approval to run Part 2.
+
+---
+## U20 Code Gen Part 2 — approved
+**Timestamp**: 2026-07-27T00:00:00Z
+**User Input**: "go"
+**AI Response**: Stage-gate approval to run Code Gen Part 2. Executing S1-S11 (PickerRanking + SpoolMatchScorer + ColorHexCodec.toRgb pure helpers with tests; LazyDropdownMenu dividerBefore two-group render; MainUiState scan-suggested sets; MainViewModel scan-branch scorer wiring; SpoolmanDropdown + FilamentPicker float+divider rendering; version bump 112/2.3.0; full build matrix). S12 on-device install gate returns to user.
+**Context**: CONSTRUCTION — U20 Code Gen Part 2 execution start.
+
+---
+## U20 Code Gen Part 2 — executed (S1–S11 done, S12 install gate pending)
+**Timestamp**: 2026-07-27T00:00:00Z
+**User Input**: (approval "go" recorded above)
+**AI Response**: Executed S1–S11. New pure helpers: PickerRanking (partition suggested-first + count), SpoolMatchScorer (additive material/brand/color, NO temps, score>0, cap 3), ColorHexCodec.toRgb (color distance). LazyDropdownMenu gained opt-in dividerBefore (thin divider, no header — Q-U20-1). MainUiState gained scanSuggestedSpoolIds + scanSuggestedFilamentIds; MainViewModel.computeScanSuggestions wired into applyResult BlankForm(vendor parsedHint) + PrefillFromTag branches, cleared on read-start / paired read / manual spool+filament select. SpoolmanDropdown floats F3 (selected filament's unarchived spools) with precedence over F2 (scan set); FilamentPicker floats F2; threaded scanSuggestedFilamentIds via FilamentForm→FilamentSection→FilamentPicker. INVARIANT held: passive, open-time rendering only, no auto-select, no flow change (guarded by MainViewModelSuggestionTest). Version 111→112 / 2.2.1→2.3.0. Build matrix green: compileDebugKotlin ✅ / testDebugUnitTest ✅ 551/551 (Δ+34) / assembleDebug ✅ 70.4 MB / assembleRelease ✅ 7.91 MB R8 / bundleRelease ✅ 8.74 MB AAB (112/2.3.0 verified via aapt2, v2 signature verified). Summary at aidlc-docs/construction/u20-search-and-match/code/u20-summary.md. **S12 on-device install gate pending (user); no close-out commit yet per [[feedback_aidlc_unit_close_out_commit]].**
+**Context**: CONSTRUCTION — U20 Code Gen Part 2 complete except on-device install gate.
+
+---
+## U20 Close-out — install gate passed, version held, local commit
+**Timestamp**: 2026-07-27T00:00:00Z
+**User Input**: (ranking fix) "this worked" → "i actually like all siblings together" → "close out, commit, do not increase the version as we will do it together for all"
+**AI Response**: On-device install gate PASSED — F3 (B1–B4) + F2 rank order (after an ordering fix: scan-suggested state Set→ordered List + PickerRanking.partitionRanked so best match floats first; regression test reproduces the red-Elegoo→red/black/white case). Sibling-spool float on spool-pick kept intentionally per user. **Reverted the version bump** — held at versionCode 111 / 2.2.1 (no per-unit bump; batched bump at a joint release with user). Tests 555/555 ✅. Updated aidlc-state.md (U20 entry), ui-followups.md (UI-49 + UI-52 → fixed), u20 summary. **Creating close-out commit on `v2`; NOT pushed/tagged/released; version bump + full assemble/bundle deferred to batched release.** Pending docs (reddit-launch-post.md, play-store-listing.md open-source line) left uncommitted per earlier user direction.
+**Context**: CONSTRUCTION — U20 close-out. Local commit only.
+
+---

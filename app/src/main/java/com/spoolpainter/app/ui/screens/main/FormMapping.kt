@@ -86,7 +86,7 @@ internal object FormMapping {
      * `matte` — per its `extra_fields.py:60-66` validator. Strip the wrapping
      * quotes if present so the raw value reaches the form.
      */
-    private fun decodeExtraVariant(raw: String?): String? {
+    internal fun decodeExtraVariant(raw: String?): String? {
         if (raw.isNullOrEmpty()) return null
         val unwrapped = if (raw.length >= 2 && raw.startsWith("\"") && raw.endsWith("\"")) {
             raw.substring(1, raw.length - 1)
