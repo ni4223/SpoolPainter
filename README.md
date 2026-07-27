@@ -3,7 +3,7 @@
 
 Android app for managing 3D printer filament spools via NFC tags. Reads / writes filament metadata in [OpenSpool](https://openspool.io/) format and syncs with a self-hosted [Spoolman](https://github.com/Donkie/Spoolman) inventory.
 
-`v2.2` · `applicationId` `com.spoolpainter.app` · `minSdk 29` (Android 10+) · `targetSdk 36`
+`v2.3` · `applicationId` `com.spoolpainter.app` · `minSdk 29` (Android 10+) · `targetSdk 36`
 
 ### [Get it on Google Play](https://play.google.com/store/apps/details?id=com.spoolpainter.app)
 
@@ -39,6 +39,12 @@ It is a single-user, sideloadable Android app. No accounts, no cloud, no analyti
 | Type to search the pickers |
 |---|
 | ![Spool picker filtered live by a typed query](screenshots/11-search.png) |
+
+## What's new in v2.3
+
+- **Type to search the pickers.** The Spool and Filament pickers now have a search box at the top. Start typing to filter the list by material, brand, colour, name, or Spoolman ID instead of scrolling a long inventory. Material / Brand / Colour pickers stay scroll-only (those lists are short).
+- **Closest-match suggestions on tag read.** When you read a tag that is not yet paired (a vendor tag, or an OpenSpool tag with no matching UID), the closest-matching filaments float to the top of the pickers, best match first, so you can confirm a link in one tap. Matching considers material, brand, colour, and variant (colour is graded by closeness; variant is a lighter tie-breaker). Selecting a filament also floats its own spools in the Spool picker. Nothing is auto-selected, the reorder happens only when you open a picker.
+- **Longer variant names.** The Variant field accepts more characters and allows spaces, hyphens, `+`, and `( )`, so labels like "PLA (Matte)", "PLA+", and "Silk-Rainbow" are no longer trimmed.
 
 ## What's new in v2.2
 
@@ -130,8 +136,7 @@ For release builds (signed APK / AAB), you also need a local keystore at `~/spoo
 
 ## What's coming next (planned)
 
-- **Type-to-search the spool and filament pickers.** Start typing to filter the dropdown by material / brand / name instead of scrolling a long list.
-- **Closest-match suggestion on tag read.** When a tag is read but not already paired, suggest the closest-matching spool or filament in your Spoolman inventory (by material / brand / colour / temperatures) so you can confirm a link in one tap instead of hunting for it.
+- **Multi-colour hex.** Support more than one colour per filament (dual / tri-silk spools like Polymaker Panchroma) instead of a single averaged hex.
 - Re-pair flow for changing a spool's material / brand after pairing (today material + brand are locked on existing-spool because changing them means "wrong filament picked"; a re-pair flow lets you switch to a different filament cleanly).
 - Archive a spool / filament from the app (today archiving requires the Spoolman web UI).
 
@@ -145,7 +150,7 @@ For release builds (signed APK / AAB), you also need a local keystore at `~/spoo
 - Native Android NFC API (NDEF; no third-party NFC lib)
 - R8 minify + resource shrinking on release; debug builds keep verbose logs
 
-The release build is ~7 MB after R8; debug is ~64 MB.
+The release build is ~7.6 MB after R8 (8.3 MB AAB); debug is ~70 MB.
 
 ## Architecture (developer notes)
 
