@@ -51,35 +51,49 @@ fun FilamentPicker(
     scanSuggestedFilamentIds: List<Int> = emptyList(),
 ) {
     var expanded by remember { mutableStateOf(false) }
+    // U21 (UI-48) — type-to-search query. Reset whenever the picker closes so
+    // the next open starts fresh (D5); a non-blank query drops the U20 float.
+    var query by remember { mutableStateOf("") }
     val anchor = rememberLazyDropdownAnchor()
     val sorted = remember(filaments, sortKey, sortDirection) {
         filaments.sortedWith(filamentComparator(sortKey, sortDirection))
     }
-    val filamentRank = remember(scanSuggestedFilamentIds) {
-        scanSuggestedFilamentIds.withIndex().associate { (i, id) -> id to i }
-    }
-    val ranked = remember(sorted, filamentRank) {
-        com.spoolpainter.app.domain.primitives.PickerRanking.partitionRanked(sorted) {
-            filamentRank[it.id]
-        }
-    }
-    val orderedFilaments = ranked.rows
-    val suggestedCount = ranked.suggestedCount
-    // Cache the per-row display tuple so a recompose doesn't re-run the
-    // string formatters on every entry. ExposedDropdownMenu renders all
-    // items eagerly, so this is per-row work multiplied by N filaments.
-    val rows = remember(orderedFilaments) {
-        orderedFilaments.map { filament ->
+    // Cache the per-row display tuple (built once per sorted change) so a
+    // recompose / keystroke doesn't re-run the string formatters per entry.
+    val sortedRows = remember(sorted) {
+        sorted.map { filament ->
             FilamentRowDisplay(
                 filament = filament,
                 primary = filament.primaryRowText(),
                 secondary = filament.secondaryRowText(),
                 colorHex = filament.color_hex,
+                searchText = "${filament.primaryRowText()} ${filament.secondaryRowText()}",
             )
         }
     }
-    val dividerRowKey = remember(rows, suggestedCount) {
-        if (suggestedCount in 1 until rows.size) rows[suggestedCount].filament.id else null
+    val filamentRank = remember(scanSuggestedFilamentIds) {
+        scanSuggestedFilamentIds.withIndex().associate { (i, id) -> id to i }
+    }
+    // With an active query, filter to matches in normal sort — the U20 float is
+    // suppressed (Q-U21-1). With a blank query, float scan-suggested rows to the
+    // top with a divider exactly as before.
+    val rows: List<FilamentRowDisplay>
+    val dividerRowKey: Int?
+    if (query.isNotBlank()) {
+        rows = com.spoolpainter.app.domain.primitives.PickerRanking.filter(
+            sortedRows, query,
+        ) { it.searchText }
+        dividerRowKey = null
+    } else {
+        val ranked = com.spoolpainter.app.domain.primitives.PickerRanking.partitionRanked(
+            sortedRows,
+        ) { filamentRank[it.filament.id] }
+        rows = ranked.rows
+        dividerRowKey = if (ranked.suggestedCount in 1 until rows.size) {
+            rows[ranked.suggestedCount].filament.id
+        } else {
+            null
+        }
     }
     val selected = sorted.firstOrNull { it.id == selectedFilamentId }
     val displayValue = selected?.selectedDisplay().orEmpty()
@@ -106,6 +120,7 @@ fun FilamentPicker(
                             // may toggle on trailing-icon taps and we don't
                             // want a clear to also pop the menu open.
                             expanded = false
+                            query = ""
                             onSelect(null)
                         },
                         modifier = Modifier
@@ -148,9 +163,13 @@ fun FilamentPicker(
                 expanded = expanded,
                 items = rows,
                 anchor = anchor,
-                onDismiss = { expanded = false },
+                onDismiss = {
+                    expanded = false
+                    query = ""
+                },
                 onItemClick = { row ->
                     expanded = false
+                    query = ""
                     onSelect(row.filament)
                 },
                 itemKey = { row -> row.filament.id },
@@ -163,6 +182,14 @@ fun FilamentPicker(
                     )
                 },
                 dividerBefore = dividerRowKey?.let { key -> { row -> row.filament.id == key } },
+                header = {
+                    PickerSearchField(
+                        query = query,
+                        onQueryChange = { query = it },
+                        placeholder = "Search filaments",
+                        testTag = "filament-picker-search",
+                    )
+                },
             )
         }
     }
@@ -174,6 +201,9 @@ private data class FilamentRowDisplay(
     val primary: String,
     val secondary: String,
     val colorHex: String?,
+    // U21 — precomputed lowercase-search target: primary + secondary text
+    // (which already folds in vendor, name, material, variant, and #id).
+    val searchText: String,
 )
 
 /**

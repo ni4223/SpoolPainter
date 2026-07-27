@@ -91,4 +91,46 @@ class PickerRankingTest {
         assertEquals(listOf("b", "c", "a", "d"), result.rows)
         assertEquals(2, result.suggestedCount)
     }
+
+    // --- filter (U21 / UI-48 type-to-search) ---
+
+    @Test
+    fun `filter blank query returns rows unchanged`() {
+        val input = listOf("Elegoo PLA Red", "Bambu PLA White")
+        assertEquals(input, PickerRanking.filter(input, "") { it })
+        assertEquals(input, PickerRanking.filter(input, "   ") { it })
+    }
+
+    @Test
+    fun `filter matches case-insensitive substring preserving order`() {
+        val input = listOf("Elegoo PLA Red", "Bambu PLA White", "Hatchbox PLA Red")
+        val result = PickerRanking.filter(input, "RED") { it }
+        assertEquals(listOf("Elegoo PLA Red", "Hatchbox PLA Red"), result)
+    }
+
+    @Test
+    fun `filter no match returns empty`() {
+        val input = listOf("Elegoo PLA Red", "Bambu PLA White")
+        assertEquals(emptyList<String>(), PickerRanking.filter(input, "PETG") { it })
+    }
+
+    @Test
+    fun `filter trims surrounding whitespace on query`() {
+        val input = listOf("Elegoo PLA Red", "Bambu PLA White")
+        assertEquals(listOf("Bambu PLA White"), PickerRanking.filter(input, "  bambu  ") { it })
+    }
+
+    @Test
+    fun `filter matches id via textOf projection`() {
+        // Caller folds the numeric id into textOf; a bare number finds the row.
+        data class Row(val name: String, val id: Int)
+        val input = listOf(Row("Elegoo PLA Red", 12), Row("Bambu PLA White", 40))
+        val result = PickerRanking.filter(input, "40") { "${it.name} #${it.id}" }
+        assertEquals(listOf(Row("Bambu PLA White", 40)), result)
+    }
+
+    @Test
+    fun `filter empty rows returns empty`() {
+        assertEquals(emptyList<String>(), PickerRanking.filter(emptyList<String>(), "x") { it })
+    }
 }

@@ -756,6 +756,9 @@ internal fun SpoolmanDropdown(
     scanSuggestedSpoolIds: List<Int> = emptyList(),
 ) {
     var expanded by remember { mutableStateOf(false) }
+    // U21 (UI-48) — type-to-search query. Reset when the picker closes (D5); a
+    // non-blank query drops the U20 float and shows a flat filtered list.
+    var query by remember { mutableStateOf("") }
     val anchor = com.spoolpainter.app.ui.components.rememberLazyDropdownAnchor()
     // ExposedDropdownMenu renders every row eagerly (no lazy column), so
     // every recomposition that re-runs filter+sort+row-string-builder
@@ -764,6 +767,17 @@ internal fun SpoolmanDropdown(
     val sortedSpools = remember(spools, sortKey, sortDirection) {
         spools.filterNot { it.archived }
             .sortedWith(spoolComparator(sortKey, sortDirection))
+    }
+    val sortedRows = remember(sortedSpools) {
+        sortedSpools.map { spool ->
+            SpoolRowDisplay(
+                spool = spool,
+                primary = spoolPrimaryRow(spool),
+                secondary = spoolSecondaryRow(spool),
+                colorHex = spool.filament.color_hex,
+                searchText = "${spoolPrimaryRow(spool)} ${spoolSecondaryRow(spool)}",
+            )
+        }
     }
     // Rank map for the floated group. F3 (a selected filament's spools) wins
     // over F2 (scan matches). F3 spools all share rank 0 (deterministic set,
@@ -780,29 +794,22 @@ internal fun SpoolmanDropdown(
                 scanSuggestedSpoolIds.withIndex().associate { (i, id) -> id to i }
         }
     }
-    val ranked = remember(sortedSpools, spoolRank) {
-        com.spoolpainter.app.domain.primitives.PickerRanking.partitionRanked(sortedSpools) { spool ->
-            spool.id?.let { spoolRank[it] }
-        }
-    }
-    val visibleSpools = ranked.rows
-    val suggestedCount = ranked.suggestedCount
-    val visibleRows = remember(visibleSpools) {
-        visibleSpools.map { spool ->
-            SpoolRowDisplay(
-                spool = spool,
-                primary = spoolPrimaryRow(spool),
-                secondary = spoolSecondaryRow(spool),
-                colorHex = spool.filament.color_hex,
-            )
-        }
-    }
-    // The divider is drawn before the first non-suggested row. Cache its key
-    // so LazyDropdownMenu can identify it. Null when nothing floated / all
-    // floated (no boundary to mark).
-    val dividerRowKey = remember(visibleRows, suggestedCount) {
-        if (suggestedCount in 1 until visibleRows.size) {
-            visibleRows[suggestedCount].let { it.spool.id ?: it.primary.hashCode() }
+    // With an active query, filter to matches in normal sort — the U20 float is
+    // suppressed (Q-U21-1). Blank query keeps today's float + divider.
+    val visibleRows: List<SpoolRowDisplay>
+    val dividerRowKey: Any?
+    if (query.isNotBlank()) {
+        visibleRows = com.spoolpainter.app.domain.primitives.PickerRanking.filter(
+            sortedRows, query,
+        ) { it.searchText }
+        dividerRowKey = null
+    } else {
+        val ranked = com.spoolpainter.app.domain.primitives.PickerRanking.partitionRanked(
+            sortedRows,
+        ) { row -> row.spool.id?.let { spoolRank[it] } }
+        visibleRows = ranked.rows
+        dividerRowKey = if (ranked.suggestedCount in 1 until visibleRows.size) {
+            visibleRows[ranked.suggestedCount].let { it.spool.id ?: it.primary.hashCode() }
         } else {
             null
         }
@@ -830,6 +837,7 @@ internal fun SpoolmanDropdown(
                     IconButton(
                         onClick = {
                             expanded = false
+                            query = ""
                             onSelect(null)
                         },
                         modifier = Modifier
@@ -865,10 +873,14 @@ internal fun SpoolmanDropdown(
                 expanded = expanded,
                 items = visibleRows,
                 anchor = anchor,
-                onDismiss = { expanded = false },
+                onDismiss = {
+                    expanded = false
+                    query = ""
+                },
                 onItemClick = { row ->
                     onSelect(row.spool)
                     expanded = false
+                    query = ""
                 },
                 itemKey = { row -> row.spool.id ?: row.primary.hashCode() },
                 itemContent = { row ->
@@ -880,6 +892,14 @@ internal fun SpoolmanDropdown(
                 },
                 dividerBefore = dividerRowKey?.let { key ->
                     { row -> (row.spool.id ?: row.primary.hashCode()) == key }
+                },
+                header = {
+                    com.spoolpainter.app.ui.components.PickerSearchField(
+                        query = query,
+                        onQueryChange = { query = it },
+                        placeholder = "Search spools",
+                        testTag = "main-spoolman-search",
+                    )
                 },
             )
         }
@@ -893,6 +913,9 @@ private data class SpoolRowDisplay(
     val primary: String,
     val secondary: String,
     val colorHex: String?,
+    // U21 — precomputed lowercase-search target: primary + secondary text
+    // (folds in vendor, name, material, and #id).
+    val searchText: String,
 )
 
 /**

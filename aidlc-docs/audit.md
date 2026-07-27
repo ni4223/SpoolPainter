@@ -2435,3 +2435,39 @@ Resume artefact lists: copy/paste-ready build commands, milestone-by-milestone t
 **Context**: CONSTRUCTION — U20 close-out. Local commit only.
 
 ---
+
+## U21 (UI-48 type-to-search) — kickoff
+**Timestamp**: 2026-07-27T00:00:00Z
+**User Input**: "aidlc contnue pick 48"
+**AI Response**: Picked up AIDLC session. Read state (U20 DONE, last unit), ui-followups.md UI-48 (type-to-search, HIGH PRIORITY, split OUT of U20 per user 2026-07-27), U20 plan §8 (deferred scope: reuse PickerRanking with a filter mode + LazyDropdownMenu search-slot + empty-result guard), and the two target callers (SpoolmanDropdown in MainScreen.kt, FilamentPicker.kt). Opening U21 as a rendering-only feature unit: FD / NFR-R / NFR-D / Infra-D SKIP (design folded into Code Gen plan, mirroring U20). Presenting Code Gen Part 1 plan + Part 2 Q&A questions; awaiting stage-gate approval before Part 2.
+**Context**: CONSTRUCTION — U21 Code Gen Part 1 start.
+
+---
+## U21 Code Gen Part 1 — Q&A locked
+**Timestamp**: 2026-07-27T00:00:00Z
+**User Input**: (AskUserQuestion) Q-U21-1="Drop float, flat filtered list"; Q-U21-3="Sticky row inside popup"; Q-U21-5="Always show"; Q-U21-4="No, tap to focus"
+**AI Response**: Locked all four. Q-U21-1 = while a query is active, drop the U20 floated group + divider and show a flat filtered list in normal sort (search overrides the passive hint; empty query = today's float path). Q-U21-2 = match row primary+secondary text + numeric id in one case-insensitive substring pass (RECOMMENDED, not separately asked; no field-extraction code). Q-U21-3 = sticky search TextField as first row inside the popup (stickyHeader); anchor stays readOnly. Q-U21-4 = NO autofocus/keyboard on open (tap to focus); Clear (X) still provided. Q-U21-5 = always show the search box (no SEARCH_MIN_ROWS threshold). Plan §2 LOCKED answers + D4 + S6/S7 updated. Scope confirmed: Spool + Filament pickers only; Material/Brand/Color scroll-only; substring (not fuzzy); version held at 111/2.2.1. Presenting stage gate.
+**Context**: CONSTRUCTION — U21 Code Gen Part 1 locked. Awaiting stage-gate approval to run Part 2.
+
+---
+## U21 Code Gen Part 2 — approved
+**Timestamp**: 2026-07-27T00:00:00Z
+**User Input**: "gi" (read as "go")
+**AI Response**: Stage-gate approval to run Code Gen Part 2. Executing S1-S8: PickerRanking.filter pure helper + tests; LazyDropdownMenu opt-in sticky header + no-match row; searchText on Spool + Filament row tuples; FilamentPicker + SpoolmanDropdown search field/query/filter/reset-on-close; tests; build matrix (compileDebugKotlin + testDebugUnitTest). Version HELD at 111/2.2.1. S9 on-device install gate returns to user.
+**Context**: CONSTRUCTION — U21 Code Gen Part 2 execution start.
+
+---
+## U21 Code Gen Part 2 — executed (S1–S8 done, S9 install gate pending)
+**Timestamp**: 2026-07-27T00:00:00Z
+**User Input**: (approval "gi" recorded above)
+**AI Response**: Executed S1–S8. PickerRanking gained pure filter(rows, query, textOf) (blank query = identity → §0 invariant; trim+lowercase substring, order preserved) + 6 tests. LazyDropdownMenu gained opt-in header slot (rendered in a Column above the LazyColumn so it pins without the experimental stickyHeader API, which does not resolve in this Compose version) + a non-clickable "No matches" row when header present and filtered list empty. New shared PickerSearchField.kt (leading search icon, trailing clear, ImeAction.Search, NO autofocus per Q-U21-4). FilamentPicker + SpoolmanDropdown wired: query state, searchText on row tuples (primary+secondary, folds in #id), filter-vs-float branch (non-blank query drops U20 float per Q-U21-1), reset query on dismiss/select/clear. Material/Brand/Color untouched (scroll-only). Version HELD 111/2.2.1. compileDebugKotlin ✅ / testDebugUnitTest ✅ 561/561 (Δ+6 from 555). Summary: aidlc-docs/construction/u21-type-to-search/code/u21-summary.md. **S9 on-device install gate pending (user); no close-out commit yet.**
+**Context**: CONSTRUCTION — U21 Code Gen Part 2 complete except on-device install gate.
+
+---
+## U21 install gate PASSED + variant follow-up + close-out
+**Timestamp**: 2026-07-27T00:00:00Z
+**User Input**: "install" → "all works" → (variant discussion: "question is can we identify varinat from brand" → "i mean branded tag" → "what weight ... red PLA marble and matte ... scanning matte how it will work" → "i feel varinat has more value than color, no" → "but varinat is something user put in spoolman manually, it wont really match, color is something we can grade" → "ok") → "works, amend the old commit, then close out AIDLC gate and commit next"
+**AI Response**: Install gate: installDebug initially failed INSTALL_FAILED_VERSION_DOWNGRADE (device held 112 from U20 session, source was reverted to 111). Per user direction bumped version 111→112 / 2.2.1→2.3.0 (same bump U20 had staged pre-revert) rather than uninstalling. Reinstalled, launched, all U21 search checks PASSED (filter both pickers, No-matches guard, clear/reset-on-close, empty-query U20 float intact). **Variant follow-up**: user asked whether the U20 scan-time float scorer accounts for variant. Discussed reliability: color is a hex we grade numerically, variant is hand-typed free text in Spoolman that rarely matches exactly, and brand cannot identify variant (orthogonal). Branded/vendor tags DO carry variant via OpenSpoolPayload.subtype. Locked: add variant to SpoolMatchScorer at **weight 1.0 (below color 2.0), lenient case-insensitive substring either direction** — only breaks ties, never overrides material/brand/color. Query variant from subtype (drop "Basic"/blank), candidate from extra["variant"] via FormMapping.decodeExtraVariant (made internal). +4 tests, 561→565. **Git**: variant work belongs to U20's float feature, so **amended into the U20 commit** (a81fa7d → 0ede6eb; versionCode stays 111 there); verified U20 has variant but NOT the U21 filter. **U21 close-out commit** (search + PickerSearchField + version bump 112/2.3.0 + AIDLC docs) to follow. Updated plan (S9 + §6), u21-summary, ui-followups (UI-48 → fixed), aidlc-state (U21 entry + U20 amend note + Current Stage). play-store-listing.md + reddit-launch-post.md left uncommitted per standing direction. Tests 565/565 ✅. **Full assemble/bundle + push/tag/release deferred to batched release with user.**
+**Context**: CONSTRUCTION — U21 DONE. Per-unit loop closed.
+
+---

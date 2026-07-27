@@ -3,6 +3,7 @@ package com.spoolpainter.app.ui.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -13,6 +14,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 // (items() replaced by itemsIndexed() for the U20 divider)
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -70,8 +72,16 @@ fun <T : Any> LazyDropdownMenu(
     // caller can float a "suggested" group to the top and separate it from the
     // rest with no header label (Q-U20-1). Omit for today's flat list.
     dividerBefore: ((T) -> Boolean)? = null,
+    // U21 (UI-48) — opt-in sticky header, e.g. a type-to-search field. Pinned
+    // above the rows and stays visible while the list scrolls. When a header is
+    // present the popup stays open even with zero items (a query filtered
+    // everything out) and shows a non-clickable "No matches" row so the user can
+    // edit their query. Omit for today's behavior (empty items renders nothing).
+    header: (@Composable () -> Unit)? = null,
 ) {
-    if (!expanded || items.isEmpty()) return
+    // With a header the popup must stay open on an empty (filtered-to-nothing)
+    // list; without one, an empty list renders nothing as before.
+    if (!expanded || (items.isEmpty() && header == null)) return
     val density = LocalDensity.current
     val anchorBounds = anchor.bounds ?: return
     val anchorWidthDp = with(density) { anchorBounds.width.toDp() }
@@ -83,33 +93,53 @@ fun <T : Any> LazyDropdownMenu(
             yOffsetPx = with(density) { 2.dp.roundToPx() },
         ),
     ) {
-        Box(
+        Column(
             modifier = modifier
                 .width(anchorWidthDp)
                 .shadow(8.dp, RoundedCornerShape(12.dp))
                 .clip(RoundedCornerShape(12.dp))
                 .background(MaterialTheme.colorScheme.surfaceContainer),
         ) {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = maxHeightDp.dp),
-            ) {
-                itemsIndexed(items = items, key = { _, item -> itemKey(item) }) { index, item ->
-                    // Draw a divider before the first item flagged by
-                    // dividerBefore (but never at the very top).
-                    if (index > 0 && dividerBefore?.invoke(item) == true) {
-                        HorizontalDivider(
-                            color = MaterialTheme.colorScheme.outlineVariant,
-                        )
-                    }
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onItemClick(item) }
-                            .padding(horizontal = 12.dp, vertical = 10.dp),
-                    ) {
-                        itemContent(item)
+            // Header (e.g. the U21 search field) sits above the scrolling rows,
+            // so it stays pinned while the list scrolls without needing the
+            // experimental stickyHeader API.
+            if (header != null) {
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    header()
+                }
+            }
+            if (items.isEmpty()) {
+                // Header present + nothing matched the query (guarded above).
+                Text(
+                    text = "No matches",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 12.dp),
+                )
+            } else {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = maxHeightDp.dp),
+                ) {
+                    itemsIndexed(items = items, key = { _, item -> itemKey(item) }) { index, item ->
+                        // Draw a divider before the first item flagged by
+                        // dividerBefore (but never at the very top).
+                        if (index > 0 && dividerBefore?.invoke(item) == true) {
+                            HorizontalDivider(
+                                color = MaterialTheme.colorScheme.outlineVariant,
+                            )
+                        }
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onItemClick(item) }
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                        ) {
+                            itemContent(item)
+                        }
                     }
                 }
             }

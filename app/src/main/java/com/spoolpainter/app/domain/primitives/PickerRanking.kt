@@ -57,4 +57,19 @@ object PickerRanking {
         val ordered = suggested.sortedBy { it.second }.map { it.first }
         return Result(ordered + rest, ordered.size)
     }
+
+    /**
+     * Type-to-search filter for the U21 picker search box (UI-48). Returns the
+     * rows whose [textOf] contains [query] as a case-insensitive substring,
+     * preserving input order (so filtered results keep the picker's sort).
+     *
+     * A blank query is the identity — it returns [rows] unchanged, so the
+     * no-query path is provably today's list and the U20 float can layer on top
+     * of it. Query and row text are compared after trimming + lowercasing.
+     */
+    fun <T> filter(rows: List<T>, query: String, textOf: (T) -> String): List<T> {
+        val needle = query.trim().lowercase()
+        if (needle.isEmpty()) return rows
+        return rows.filter { textOf(it).lowercase().contains(needle) }
+    }
 }

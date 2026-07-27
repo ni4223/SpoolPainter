@@ -1672,7 +1672,12 @@ enough for "point and read."
 
 ## UI-48 — Type-to-search the spool / filament pickers (HIGH PRIORITY)
 
-**State**: open (planned — high priority, requested 2026-07-25)
+**State**: fixed (U21, install gate PASSED 2026-07-27) — sticky search box in
+the Spool + Filament picker popups; case-insensitive substring over row text +
+#id; "No matches" guard; a non-blank query drops the U20 float and shows a flat
+filtered list. Material/Brand/Color stay scroll-only; substring (not fuzzy) is
+the v1 bar. Mid-gate the U20 scan-time float scorer also gained a variant
+signal (weight 1.0, lenient, below color) — committed with U20.
 **Routing**: **own follow-up unit** — split OUT of U20 per user direction
 2026-07-27 ("we should do search write thing seprate"). Will reuse U20's
 `PickerRanking` helper (extend with a `filter(query, rows, textOf)` mode) and
