@@ -1963,3 +1963,76 @@ normal sort. See U20 plan §2 D7/D9.
 no distinct behaviour (spool→filament is one-to-one/trivial); "same for spool"
 meant applying the same surfacing style, which the shared section-header
 rendering already provides.
+
+---
+
+## UI-53 — App stops recognizing tags after 1-2 reads/writes until reopened (BUG)
+
+**State**: open (reported 2026-07-30, tester end-to-end pass on v2.3.0 Open testing)
+**Found in**: tester feedback, n=10 tag round-trip test (Spoolman, no U1 yet)
+**Severity**: high — breaks the core NFC flow after a couple of taps.
+
+**Report**: consistently, after reading and/or writing a tag 1-2 times, the app
+stops recognizing a tag near the reader coil and fails to read. The **phone
+still detects the tag** (gentle vibration as it nears the coil), so the tag and
+hardware are fine — the app just isn't receiving the dispatch. Closing and
+reopening the app fixes it every time. Reproduced 5-6 times, so easily
+repeatable.
+
+**Read**: not the tag — the phone-level vibration confirms the OS sees the tag;
+the app's foreground NFC dispatch is no longer armed to receive it. Likely the
+same class of NFC-dispatch / re-arm lifecycle issue suspected in UI-51 (foreground
+dispatch left disabled and never re-`enableForegroundDispatch`'d). Needs on-device
+repro to confirm whether it's tied to a write completing, a color/camera picker
+open, or just N taps. See UI-51 investigation notes for the `attach()` early-return
+trap theory (`if (attached === activity) return`).
+
+**Ask tester**: does it correlate with anything specific (right after a write, or
+after opening the color/camera picker)?
+
+---
+
+## UI-54 — Spoolman edit not reflected on the selected spool after pull-to-refresh (BUG)
+
+**State**: open (reported 2026-07-30)
+**Found in**: tester feedback, v2.3.0 Open testing
+**Severity**: medium — stale data shown; workaround exists but feels buggy.
+
+**Report**: read a tag that matches a spool, then edit that spool in Spoolman
+(e.g. material PLA → PETG). The app keeps showing the old value (PLA) no matter
+how many times you pull-to-refresh. Only **deselecting + reselecting** the spool
+(or closing the app and re-reading the tag) picks up the change.
+
+**Root cause** (traced in code 2026-07-30): the form is a **one-time snapshot**.
+`onSpoolSelected` runs `FormMapping.fromSpoolman(...)` once at selection time and
+copies the data into `FormState`. `onPullToRefresh` → `spoolman.refreshIfStale(force
+= true)` re-fetches the spool-list **cache** but does NOT re-project the fresh
+entry onto the already-selected form. Compounded by the same-id early-return in
+`onSpoolSelected` (`if (spool.id == _state.value.form.selectedSpoolId) return`),
+so re-picking the same spool is a no-op — only clearing the selection first works.
+
+**Fix direction**: after a refresh, if a spool is selected, re-derive the form
+from the fresh cache entry (respecting the stale-prefill guard so it doesn't
+clobber in-progress edits), or at minimum let re-selecting the same spool
+re-derive.
+
+---
+
+## UI-55 — No "colorless / transparent" state; multi-color spools force a wrong single hex
+
+**State**: open (reported 2026-07-30) — related to [[UI-50]] (multi-color hex)
+**Found in**: tester feedback, v2.3.0 Open testing
+**Severity**: user-story / data-model gap (not a crash; not a hard save gate).
+
+**Report**: clear/transparent and dual/tri-color spools don't fit the flow. You
+must pick a color from the short list or the color picker to represent the spool,
+which then writes an inaccurate color to the Spoolman record.
+
+**Read**: the form models exactly one color (`FormState.colorHex`, defaults to
+`DEFAULT_COLOR_HEX`; the picker seeds `initialColor = colorHex ?: "FF0000"`), so
+there's (a) no first-class "no color / transparent" option and (b) no way to
+represent more than one hex. Color is NOT a hard save gate (`canSave` doesn't
+require it and `toExpanderOverrides` null-guards the hex), so it doesn't "break"
+in the crash sense — but the single-hex model can't represent these spools, so
+the user is nudged into an arbitrary/wrong color. Fold into the UI-50 multi-color
+hex work; add a distinct "no color" state alongside multi-hex.
