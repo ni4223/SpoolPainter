@@ -7,7 +7,10 @@ Android app for managing 3D printer filament spools via NFC tags. Reads / writes
 
 ### [Get it on Google Play](https://play.google.com/store/apps/details?id=com.spoolpainter.app)
 
-The latest build is rolling out on **Open testing** first. [Join the testing program](https://play.google.com/apps/testing/com.spoolpainter.app) to try new features a few days before they hit the stable track.
+Two ways to install, both on the Play Store:
+
+- **[Stable](https://play.google.com/store/apps/details?id=com.spoolpainter.app)** — the production release, recommended for most people.
+- **[Open testing (beta)](https://play.google.com/apps/testing/com.spoolpainter.app)** — an opt-in track where new features land first, a few days before they reach the stable release, so you can try them early and send feedback.
 
 ## What it is
 
@@ -85,13 +88,10 @@ It is a single-user, sideloadable Android app. No accounts, no cloud, no analyti
 
 ### From the Play Store
 
-v2 is live on Google Play.
+v2 is live on Google Play, on two tracks:
 
-[Get it on Google Play](https://play.google.com/store/apps/details?id=com.spoolpainter.app)
-
-Install it like any other app; updates arrive automatically as new releases land.
-
-New releases go out on **Open testing** for a few days before the stable track. [Join the testing program](https://play.google.com/apps/testing/com.spoolpainter.app) to opt in and get them early.
+- **[Stable](https://play.google.com/store/apps/details?id=com.spoolpainter.app)** — the production release. Install it like any other app; updates arrive automatically as new releases land.
+- **[Open testing (beta)](https://play.google.com/apps/testing/com.spoolpainter.app)** — an opt-in track that gets new features a few days before the stable release. Join it to try new work early and help catch issues before they ship widely.
 
 ### Build from source
 
