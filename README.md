@@ -170,6 +170,18 @@ This repo follows the AIDLC (AI Development Lifecycle) workflow under `aidlc-doc
 
 Bug reports and testing feedback welcome — open a GitHub issue. PRs against the `main` branch are welcome.
 
+## Support
+
+SpoolPainter is free and open source, with no ads and no paid tiers. If it's
+useful and you're buying a Snapmaker anyway, ordering through a referral link
+below helps support the project:
+
+- [Snapmaker US Store](https://snapmaker-us.myshopify.com?ref=ni42)
+- [Snapmaker EU Store](https://snapmaker-eu.myshopify.com?ref=ni42)
+- [Snapmaker Global Store](https://test-snapmaker.myshopify.com?ref=ni42)
+
+Referral Code: `ni42`
+
 ## License
 
 GPL-3.0 — see [LICENSE](LICENSE) for the full text and [NOTICE](NOTICE)
