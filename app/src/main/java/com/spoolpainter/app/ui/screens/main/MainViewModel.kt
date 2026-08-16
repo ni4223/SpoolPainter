@@ -96,6 +96,16 @@ class MainViewModel @Inject constructor(
     private var readJob: Job? = null
     private var writeJob: Job? = null
     private var saveJob: Job? = null
+
+    /**
+     * UI-54 — the form the last spool selection derived, kept so a Spoolman
+     * refresh can tell an untouched form (safe to re-derive from fresh data)
+     * from one the user has edited (must not be clobbered). Null whenever no
+     * spool is selected. Compared by value, so it is deliberately the whole
+     * [FormState] rather than a dirty bit: any field the user changes makes the
+     * comparison fail and suppresses the re-derive.
+     */
+    private var selectionFormSnapshot: FormState? = null
     private val _saveInFlight = MutableStateFlow(false)
     val saveInFlight: StateFlow<Boolean> = _saveInFlight.asStateFlow()
     private var priorActiveFlow: ActiveFlow? = null
@@ -250,6 +260,7 @@ class MainViewModel @Inject constructor(
                     "spools collected: count=${value.size} ids=${value.take(5).map { it.id }}..${value.takeLast(5).map { it.id }}",
                 )
                 _state.update { it.copy(spoolman = it.spoolman.copy(spools = value)) }
+                reDeriveSelectedSpoolForm(value)
             }
         }
         viewModelScope.launch {
@@ -685,17 +696,24 @@ class MainViewModel @Inject constructor(
                     spoolman = current.spoolman.copy(selectedSpoolId = null),
                 )
             }
+            selectionFormSnapshot = null
             return
         }
-        if (spool.id == _state.value.form.selectedSpoolId) return
+        // UI-54: deliberately NO same-id early return. Re-picking the spool
+        // that is already selected re-derives the form from the current cache,
+        // so a Spoolman-side edit can be pulled in without the
+        // clear-then-reselect dance the user previously had to do.
+        val currentState = _state.value
+        val derived = FormMapping.fromSpoolman(
+            spool = spool,
+            currentUid = currentState.form.cardUid,
+            rawWriteMode = currentState.form.rawWriteMode,
+            uidSource = FormMapping.SpoolmanUidSource.FromCardUidsOrClear,
+        )
+        selectionFormSnapshot = derived
         _state.update { current ->
             current.copy(
-                form = FormMapping.fromSpoolman(
-                    spool = spool,
-                    currentUid = current.form.cardUid,
-                    rawWriteMode = current.form.rawWriteMode,
-                    uidSource = FormMapping.SpoolmanUidSource.FromCardUidsOrClear,
-                ),
+                form = derived,
                 spoolman = current.spoolman.copy(selectedSpoolId = spool.id),
                 ambiguity = null,
                 // User picked deliberately — drop the scan surfacing hints.
@@ -706,6 +724,84 @@ class MainViewModel @Inject constructor(
         _customMaterial.value = ""
         _customBrand.value = ""
     }
+
+    /**
+     * UI-54 — pull a Spoolman-side edit onto the already-selected spool.
+     *
+     * The form used to be a one-time snapshot taken at selection time:
+     * [onPullToRefresh] refreshed the spool-list cache but nothing re-projected
+     * the fresh record onto the form, so editing a spool in Spoolman's web UI
+     * (say PLA to PETG) left the app showing the stale value however many times
+     * the user pulled to refresh. Only clear-then-reselect worked.
+     *
+     * Hooked to the spools cache flow rather than to the pull gesture, so it
+     * also covers the `MainActivity.onResume` refresh — edit in a browser tab,
+     * switch back to the app, see the change.
+     *
+     * Re-derives ONLY an untouched form. If the user has changed any data field
+     * since selecting, [selectionFormSnapshot] no longer matches and their
+     * edits are left alone: a background refresh must never overwrite work in
+     * progress. Same invariant the `prefilled*` stale-prefill snapshots protect
+     * on the save path.
+     */
+    private fun reDeriveSelectedSpoolForm(spools: List<SpoolmanSpool>) {
+        val current = _state.value
+        val selectedId = current.spoolman.selectedSpoolId ?: return
+        val snapshot = selectionFormSnapshot ?: run {
+            android.util.Log.d(TAG_REDERIVE, "skip: no selection snapshot (spool $selectedId)")
+            return
+        }
+        if (current.form.dataFingerprint() != snapshot.dataFingerprint()) {
+            android.util.Log.d(
+                TAG_REDERIVE,
+                "skip: form edited by user, not clobbering (spool $selectedId)",
+            )
+            return
+        }
+        val fresh = spools.firstOrNull { it.id == selectedId } ?: run {
+            android.util.Log.d(TAG_REDERIVE, "skip: spool $selectedId not in fresh cache")
+            return
+        }
+        val reDerived = FormMapping.fromSpoolman(
+            spool = fresh,
+            currentUid = current.form.cardUid,
+            rawWriteMode = current.form.rawWriteMode,
+            // PreserveCurrent, not FromCardUidsOrClear: a background refresh
+            // must not disturb the UID the user has in hand from a tap.
+            uidSource = FormMapping.SpoolmanUidSource.PreserveCurrent,
+        ).copy(
+            moreDetailsExpanded = current.form.moreDetailsExpanded,
+            weightMethod = current.form.weightMethod,
+        )
+        if (reDerived == current.form) {
+            android.util.Log.d(TAG_REDERIVE, "no change: spool $selectedId already current")
+            return
+        }
+        android.util.Log.d(
+            TAG_REDERIVE,
+            "RE-DERIVED spool $selectedId: " +
+                "material ${current.form.material?.name}->${reDerived.material?.name} " +
+                "color ${current.form.colorHex}->${reDerived.colorHex} " +
+                "remaining ${current.form.remainingWeightG}->${reDerived.remainingWeightG} " +
+                "variant ${current.form.variant}->${reDerived.variant}",
+        )
+        selectionFormSnapshot = reDerived
+        _state.update { it.copy(form = reDerived) }
+    }
+
+    /**
+     * UI-54 — the comparable, data-only projection of a form. Drops the view
+     * state that a user can change without meaning "I edited this spool"
+     * (which tag is in hand, raw-write toggle, expander open/closed, which
+     * weight method is on screen), so toggling an expander doesn't suppress a
+     * legitimate refresh.
+     */
+    private fun FormState.dataFingerprint(): FormState = copy(
+        cardUid = null,
+        rawWriteMode = false,
+        moreDetailsExpanded = false,
+        weightMethod = WeightMethod.Measured,
+    )
 
     /**
      * U8-Δ-1 — pick a filament from the hidden "Filament ▾" expander. Mutex
@@ -1007,24 +1103,29 @@ class MainViewModel @Inject constructor(
     private fun applyResult(result: ReadAndPairResult) {
         when (result) {
             is ReadAndPairResult.Success.PrefillFromSpoolman -> {
+                val stateNow = _state.value
+                val mapped = FormMapping.fromSpoolman(
+                    result.spool,
+                    result.uid,
+                    stateNow.form.rawWriteMode,
+                )
+                // If Spoolman didn't surface a variant but the tag's
+                // OpenSpool payload carries a subtype, prefer that — the
+                // tag is a legitimate fallback source for legacy filaments
+                // that pre-date U6a's extra.variant storage.
+                val tagVariant = (result.classification as? TagClassification.OpenSpool)
+                    ?.payload?.subtype
+                    ?.takeUnless { it == "Basic" || it.isBlank() }
+                val merged = if (mapped.variant == null && tagVariant != null) {
+                    mapped.copy(variant = tagVariant)
+                } else {
+                    mapped
+                }
+                // UI-54 — a spool selected by a tag read is refreshable too.
+                // This is the exact scenario in the report: read a tag, then
+                // edit that spool in Spoolman.
+                selectionFormSnapshot = merged
                 _state.update { current ->
-                    val mapped = FormMapping.fromSpoolman(
-                        result.spool,
-                        result.uid,
-                        current.form.rawWriteMode,
-                    )
-                    // If Spoolman didn't surface a variant but the tag's
-                    // OpenSpool payload carries a subtype, prefer that — the
-                    // tag is a legitimate fallback source for legacy filaments
-                    // that pre-date U6a's extra.variant storage.
-                    val tagVariant = (result.classification as? TagClassification.OpenSpool)
-                        ?.payload?.subtype
-                        ?.takeUnless { it == "Basic" || it.isBlank() }
-                    val merged = if (mapped.variant == null && tagVariant != null) {
-                        mapped.copy(variant = tagVariant)
-                    } else {
-                        mapped
-                    }
                     current.copy(
                         form = merged,
                         spoolman = current.spoolman.copy(selectedSpoolId = result.spool.id),
@@ -1615,6 +1716,11 @@ class MainViewModel @Inject constructor(
         const val READ_TIMEOUT_MS_DEFAULT: Long = 10_000L
         const val WRITE_TIMEOUT_MS_DEFAULT: Long = 15_000L
         const val AMBIENT_HINT_COOLDOWN_MS: Long = 15_000L
+
+        // UI-54 — its own logcat tag so the refresh re-derive decision can be
+        // watched in isolation during install-gate testing. Stripped from
+        // release by the -assumenosideeffects Log rule (NFR-5).
+        const val TAG_REDERIVE = "SpoolRederive"
     }
 }
 

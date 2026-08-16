@@ -177,6 +177,28 @@ fun SaveToSpoolmanButton(
     }
 }
 
+/**
+ * Variant/subtype input sanitisation, extracted from [VariantField] so it can be
+ * unit-tested (this module has no Compose UI test source set).
+ *
+ * Allowlist is letters, digits, space, and `- + ( ) .`; everything else is
+ * dropped, capped at 50 chars. No forced casing — the user types whatever they
+ * want. History: v1 allowed only letters/digits/space/hyphen and capped at 25,
+ * which cut descriptive labels ("PLA (Matte)" became "PLA Matte", "PLA+" became
+ * "PLA") — UI-50 Ask 2 raised the cap and added `+ ( )`, and `.` followed so
+ * decimal-bearing variants ("1.75", "PLA 2.0") survive.
+ *
+ * `.` needs no downstream escaping: variant reaches only substring matching in
+ * `SpoolMatchScorer` and the derived filament name.
+ *
+ * Returns null for a blank result, matching the field's "unset" representation.
+ */
+internal fun sanitiseVariant(input: String): String? =
+    input
+        .filter { it.isLetterOrDigit() || it in " -+()." }
+        .take(50)
+        .takeIf { it.isNotBlank() }
+
 @Composable
 private fun VariantField(
     value: String?,
@@ -185,16 +207,7 @@ private fun VariantField(
 ) {
     OutlinedTextField(
         value = value.orEmpty(),
-        onValueChange = { input ->
-            // Sanitisation: alphanumeric + common label punctuation, max 50
-            // chars (UI-50 Ask 2 — descriptive variants like "PLA (Matte)" and
-            // "PLA+" were getting stripped/cut). No forced casing — user types
-            // whatever they want. Drop control chars only.
-            val sanitised = input
-                .filter { it.isLetterOrDigit() || it in " -+()" }
-                .take(50)
-            onChange(sanitised.takeIf { it.isNotBlank() })
-        },
+        onValueChange = { input -> onChange(sanitiseVariant(input)) },
         label = { Text("Variant (Wood, Pro, HS, etc.)") },
         placeholder = { Text("Optional") },
         singleLine = true,

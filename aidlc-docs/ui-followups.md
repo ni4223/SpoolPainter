@@ -1825,8 +1825,34 @@ filter to allow common punctuation. Small, self-contained change.
 **Ask 2 DONE 2026-07-27** (`FilamentForm.kt` `VariantField`): cap 25 → 50;
 filter now allows `+ ( )` in addition to letters/digits/space/hyphen, so
 "PLA (Matte)" and "PLA+" survive (the exact cases in the issue). Kept the
-allowlist tight — no other symbols added. **Ask 1 (multi-color hex) still
-open** — that's the real feature lift, left for a later unit.
+allowlist tight — no other symbols added.
+
+**Ask 2 extended 2026-08-15 (U22 F3)**: `.` added to the allowlist per user
+direction, so decimal-bearing variants ("1.75", "PLA 2.0") survive. The
+sanitiser was **extracted out of the composable** into
+`internal fun sanitiseVariant(input: String): String?` in the same file, because
+this module has no Compose UI test source set (Compose test deps are
+`androidTestImplementation` only and there is no `androidTest/` tree), so the
+inline lambda had been untestable. New `SanitiseVariantTest` (8 cases) locks the
+allowlist, the 50-char cap, control-char stripping, blank→null, and no forced
+casing. Still deliberately excluded: `/ # &`. Two of those first-cut test
+assertions were wrong and the code was right — a dropped `#` leaves the
+surrounding space intact ("Color #FF0000" → "Color FF0000"), and a stripped tab
+is not replaced by a space ("PLA\tMatte" → "PLAMatte").
+
+**Ask 1 (multi-color hex) — ON HOLD 2026-08-15** per user direction: *"i dont
+think U1 can support it, lets put this on hold for now"*. Everything else about
+Ask 1 was already scoped and costed in U22's plan
+(`aidlc-docs/construction/plans/u22-multicolor-refresh-variant-code-generation-plan.md`
+§1) — that section stays valid if this is ever picked back up.
+
+⚠️ **Contradiction to resolve before resuming Ask 1**: the 2026-07-26 feasibility
+trace above states that U1 firmware `spoollink.py` reads
+`filament.get("multi_color_hexes")`, splits on comma, uppercases, trims to 6, pads
+to 5 slots and pushes `RGB_1..RGB_5` — i.e. that the U1 *does* render it. The user
+(who owns the printer) believes it does not. One of the two is wrong. Re-verify
+against the firmware actually installed on the U1 before spending any more effort
+here, and correct whichever note is mistaken.
 
 **User-reply drafted** (not yet posted) acknowledging both asks; v1 history
 intentionally left out of the public reply.
@@ -1990,11 +2016,63 @@ trap theory (`if (attached === activity) return`).
 **Ask tester**: does it correlate with anything specific (right after a write, or
 after opening the color/camera picker)?
 
+### 2026-08-15 code trace — two sufficient root causes found (no repro needed)
+
+Traced statically while opening U22 (which was then re-scoped away from this
+bug — the findings are parked here, not lost). Both defects are code-visible and
+together fully explain "OS buzzes, app is deaf, reopening always fixes it".
+
+**Cause 1 — `attach()` latches `attached` even when arming silently failed.**
+`NfcRepository.attach` (`NfcRepository.kt:61-66`) sets `attached = activity`
+unconditionally, then calls `wrapper.enableForegroundDispatch(activity)`. But
+`NfcAdapterWrapper.enableForegroundDispatch` (`NfcAdapterWrapper.kt:26-38`)
+**silently returns** in two cases:
+```kotlin
+val nfc = adapter ?: return
+if (!nfc.isEnabled) return
+```
+So if that runs during a transient `!isEnabled` window (the Android NFC stack
+does reset/recover around tag I/O errors), dispatch is never armed — yet
+`attached` already points at this activity, so the `if (attached === activity)
+return` guard makes **every later `attach()` a no-op**. Dispatch stays dead for
+the whole lifetime of that activity instance. A new activity instance (app
+reopened) takes the `attached !== activity` branch and arms fine — exactly the
+reported "closing and reopening fixes it every time".
+
+**Cause 2 — no manifest NFC intent filters, so a lost dispatch is total silence.**
+`AndroidManifest.xml` declares only `MAIN` / `LAUNCHER` on `MainActivity`. There
+is no `ACTION_TECH_DISCOVERED` / `ACTION_NDEF_DISCOVERED` / `ACTION_TAG_DISCOVERED`
+filter anywhere, so foreground dispatch is the *only* route a tag can reach this
+app. When it drops there is no fallback at all. Note `MainActivity` already has
+`tryDispatchNfcIntent` wired from both `onCreate` and `onNewIntent`, so the
+receiving half of a manifest fallback is already written — only the manifest
+declaration is missing.
+
+**Fix direction** (all safe, only ever *add* arming attempts):
+- Make `attach()` idempotent — drop the `attached === activity` early-return and
+  always re-arm. Re-arming an armed dispatch is cheap; the adapter replaces the
+  registration.
+- Have `enableForegroundDispatch` return `Boolean` and record `attached` only on
+  a successful arm, so state can't claim "armed" when it isn't.
+- Catch `IllegalStateException` (the platform throws it if the activity isn't
+  resumed) so a lifecycle race degrades to "not armed, retry next resume".
+- Consider a narrow `TECH_DISCOVERED` manifest filter as a fallback route
+  (behaviour change: a tag tap could then offer/launch the app when it's not in
+  the foreground — decide deliberately).
+- Keep permanent `Log.d` markers on attach/detach outcomes (armed /
+  adapter-null / adapter-disabled / threw) so the next field report is settled
+  from a logcat. Free in release — the existing
+  `-assumenosideeffects android.util.Log` rule strips them (NFR-5).
+
+**Not proven** to be the reporter's exact trigger (transient timing bug, no
+device connected when traced), but sufficient and safe to ship. An n=10
+read/write soak belongs in whichever unit picks this up.
+
 ---
 
 ## UI-54 — Spoolman edit not reflected on the selected spool after pull-to-refresh (BUG)
 
-**State**: open (reported 2026-07-30)
+**State**: **fixed 2026-08-15 (U22 F2) — pending on-device verification**
 **Found in**: tester feedback, v2.3.0 Open testing
 **Severity**: medium — stale data shown; workaround exists but feels buggy.
 
@@ -2016,6 +2094,90 @@ from the fresh cache entry (respecting the stale-prefill guard so it doesn't
 clobber in-progress edits), or at minimum let re-selecting the same spool
 re-derive.
 
+### Fix as shipped (2026-08-15, U22 F2) — both halves
+
+Did both, since they cover different user gestures.
+
+1. **Auto re-derive on any cache update.** New private
+   `MainViewModel.reDeriveSelectedSpoolForm(spools)`, hooked into the **existing
+   `spoolman.spools` collector** rather than into `onPullToRefresh`. Hooking the
+   flow instead of the gesture means it also covers the
+   `MainActivity.onResume` refresh (F-6 from v2.0.3), so the "edit in a browser
+   tab, switch back to the app" case works too, not just pull-to-refresh.
+2. **Same-id early return removed** (was `MainViewModel.kt:690`,
+   `if (spool.id == _state.value.form.selectedSpoolId) return`). Re-picking the
+   already-selected spool now re-derives, so the clear-then-reselect dance is
+   gone.
+
+**Clobber protection** — the part that made this more than a two-line change.
+New private `selectionFormSnapshot: FormState?` records the form each selection
+derived (set in `onSpoolSelected` **and** on the `PrefillFromSpoolman` read path,
+because the reported scenario starts with a tag read, not a picker pick; cleared
+on deselect). A re-derive only happens while the live form still matches that
+snapshot, i.e. the user has not edited anything. Comparison runs through
+`FormState.dataFingerprint()`, which nulls out the view-state fields a user can
+change without meaning "I edited this spool" — `cardUid`, `rawWriteMode`,
+`moreDetailsExpanded`, `weightMethod` — so opening the More details expander
+doesn't silently suppress a legitimate refresh. The re-derive also uses
+`SpoolmanUidSource.PreserveCurrent` (not `FromCardUidsOrClear`) so a background
+refresh can't disturb the UID the user has in hand from a tap, and it carries the
+expander + weight-method state forward so nothing collapses under them.
+
+Tests: new `MainViewModelRefreshRederiveTest` (6 cases) — untouched form
+re-derives; an edited form is left alone; no-op when nothing is selected;
+expander toggle does not suppress; same-id re-select re-derives; deselect clears
+the snapshot.
+
+**Install-gate observability**: `MainViewModel` gained a dedicated
+`SpoolRederive` logcat tag reporting the decision on every cache update
+(`RE-DERIVED spool N: <field before->after ...>` / `skip: form edited by user` /
+`no change: already current` / `skip: spool N not in fresh cache`). Debug-only in
+effect — the existing `-assumenosideeffects android.util.Log` rule strips it from
+release (NFR-5). Added after the absence of any such line made a first on-device
+attempt unverifiable.
+
+### On-device verification 2026-08-15 (moto g stylus 2025 / Android 16, build 113 / 2.3.1-DEBUG)
+
+**Re-derive path PASSED**, with a filament actively being consumed by the printer
+as the changing server-side value:
+
+```
+19:57:30  onSpoolSelected: spool.id=84
+19:57:47  RE-DERIVED spool 84: remaining 556.43536 -> 556.32776
+19:58:09  RE-DERIVED spool 84: remaining 556.32776 -> 556.0448
+```
+
+All five cache updates in the session reconcile: the three before the selection
+correctly no-opped (silent early return, no selection), both after it re-derived.
+`material PETG->PETG`, `color ED2C2C->ED2C2C`, `variant Basic->Basic` on both
+lines confirm it updates only what actually changed rather than resetting the
+form.
+
+**Also confirmed incidentally**: nothing polls. Across a separate 20-minute
+window with the app foregrounded and idle, zero cache refreshes occurred, so the
+form cannot follow a Spoolman edit until a pull-to-refresh, an app resume, or a
+Read fires one. Expected behaviour, but a testing trap worth recording — watching
+the screen for a live-updating weight shows nothing.
+
+**No-clobber path PASSED** — the data-loss direction, verified separately because
+refreshes fire on every app resume and Read press, not just on the pull gesture:
+
+```
+20:00:05  RE-DERIVED spool 84: remaining 556.0448 -> 554.59595
+20:00:13  skip: form edited by user, not clobbering (spool 84)
+```
+
+With an edit in the form and the printer still consuming, the very next refresh
+declined to overwrite it.
+
+**Session tally, fully reconciled**: 7 cache updates = 3 before any selection
+(silent early return) + 3 re-derived + 1 declined. 0 exceptions. Weight tracked
+556.43536 → 556.32776 → 556.0448 → 554.59595 across the re-derives. **UI-54
+install gate PASSED both directions.**
+
+Not device-verified: the F3 variant `.` change (covered by `SanitiseVariantTest`,
+8 cases).
+
 ---
 
 ## UI-55 — No "colorless / transparent" state; multi-color spools force a wrong single hex
@@ -2036,3 +2198,40 @@ require it and `toExpanderOverrides` null-guards the hex), so it doesn't "break"
 in the crash sense — but the single-hex model can't represent these spools, so
 the user is nudged into an arbitrary/wrong color. Fold into the UI-50 multi-color
 hex work; add a distinct "no color" state alongside multi-hex.
+
+---
+
+## UI-56 — A write tap poisons the ambient buffer, so a Read right after a write can report "Blank"
+
+**State**: open (found 2026-08-15 by code trace, not a field report)
+**Severity**: low-to-medium — usually masked by the Spoolman UID lookup; visible
+when Spoolman can't answer.
+
+**Trace** (all in `NfcRepository.handleTag`):
+1. On a write tap `isWriting = true`, so `raw` is synthesized with
+   **`records = null`** (`NfcRepository.kt:139-144`). That is deliberate — it
+   skips an `Ndef.connect` cycle to keep the "hold the phone steady" window
+   short.
+2. `classify(raw)` with `records == null` and a typical NTAG techList
+   (`NfcA, MifareUltralight, Ndef`) falls through to the `isNdef -> Blank`
+   branch. So the tag we just wrote full OpenSpool JSON to is classified
+   **`Blank`**.
+3. `_lastSeenTag.value = TagBuffer(uid, Blank, now)` is set for write taps too
+   (`NfcRepository.kt:206`), and the `Writing` branch — unlike the `Reading`
+   branch at `NfcRepository.kt:242` — **never clears the buffer**.
+4. For the next `TTL_MS_DEFAULT = 5_000` ms, a pressed Read calls
+   `consumeLastSeen`, which accepts terminal `Success` state, and gets back
+   `Success(uid, Blank)` with **no physical tap**.
+
+**Why it's usually invisible**: `ReadAndPairUseCase` then runs
+`findSpoolsByCardUid(uid)`, and the write path has already appended that UID to
+Spoolman, so the lookup normally returns 1 match and the form prefills correctly
+from Spoolman. The stale `Blank` classification only reaches the user when
+Spoolman can't answer — URL not configured, server unreachable, or raw-write
+mode — and then they're told "Blank tag detected." immediately after a
+successful write.
+
+**Fix direction**: clear `_lastSeenTag` on the write branch the way the read
+branch does (a consumed tap is spent), or don't buffer at all when `isWriting`.
+Either way a post-write Read needs a real tap and gets a real classification.
+Small and self-contained.

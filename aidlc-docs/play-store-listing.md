@@ -67,6 +67,10 @@ Works with NDEF-formattable tags. NTAG215 and NTAG216 give the most room; NTAG21
 PRIVACY
 
 No login, no account, no analytics, no telemetry, no crash reporting. The Spoolman URL you configure is the only network destination. The app uses cleartext HTTP by default because Spoolman is usually self-hosted on a local network.
+
+OPEN SOURCE
+
+SpoolPainter is free and open source under the GPL-3.0 license. The full source, issue tracker, and releases are on GitHub: https://github.com/ni4223/SpoolPainter
 ```
 
 ## What's new / release notes (max 500 chars)
