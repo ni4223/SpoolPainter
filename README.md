@@ -173,8 +173,14 @@ Bug reports and testing feedback welcome — open a GitHub issue. PRs against th
 ## Support
 
 SpoolPainter is free and open source, with no ads and no paid tiers. If it's
-useful and you're buying a Snapmaker anyway, ordering through a referral link
-below helps support the project:
+useful and you're buying filament or a printer anyway, ordering through a
+referral link below helps support the project:
+
+**Polymaker**
+
+- [Polymaker Store](https://shop.polymaker.com/NI42)
+
+**Snapmaker**
 
 - [Snapmaker US Store](https://snapmaker-us.myshopify.com?ref=ni42)
 - [Snapmaker EU Store](https://snapmaker-eu.myshopify.com?ref=ni42)

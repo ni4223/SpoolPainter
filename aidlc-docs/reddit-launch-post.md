@@ -46,8 +46,8 @@ Try it and tell me what's broken or what you want it to do. You can also reach m
 
 Referral and profile links below if you're buying stuff anyway. Skip them if not, no pressure:
 
-Snapmaker referral: https://snapmaker-us.myshopify.com?ref=ni42
+Polymaker referral: https://shop.polymaker.com/NI42
 
-Polymaker: [PASTE POLYMAKER URL]
+Snapmaker referral: https://snapmaker-us.myshopify.com?ref=ni42
 
 MakerWorld, I've got some U1 models up: https://makerworld.com/en/@nm4223/
