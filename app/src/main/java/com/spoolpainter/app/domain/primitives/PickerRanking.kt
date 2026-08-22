@@ -59,17 +59,31 @@ object PickerRanking {
     }
 
     /**
-     * Type-to-search filter for the U21 picker search box (UI-48). Returns the
-     * rows whose [textOf] contains [query] as a case-insensitive substring,
-     * preserving input order (so filtered results keep the picker's sort).
+     * Type-to-search filter for the U21 picker search box (UI-48). Splits
+     * [query] on whitespace and keeps the rows whose [textOf] contains **every**
+     * token as a case-insensitive substring (AND), preserving input order (so
+     * filtered results keep the picker's sort).
+     *
+     * Tokens are matched independently, which is the point (UI-60): a row's
+     * searchable text is several fields joined with " · " separators — brand in
+     * the primary line, material in the secondary — so a single contiguous
+     * `contains` could never match "3dhojor petg" spanning both. It only ever
+     * appeared to work when one field happened to repeat the other's words.
+     * Matching per token makes brand + material queries work regardless of field
+     * order or separators.
      *
      * A blank query is the identity — it returns [rows] unchanged, so the
      * no-query path is provably today's list and the U20 float can layer on top
      * of it. Query and row text are compared after trimming + lowercasing.
      */
     fun <T> filter(rows: List<T>, query: String, textOf: (T) -> String): List<T> {
-        val needle = query.trim().lowercase()
-        if (needle.isEmpty()) return rows
-        return rows.filter { textOf(it).lowercase().contains(needle) }
+        val needles = query.trim().lowercase().split(WHITESPACE).filter { it.isNotEmpty() }
+        if (needles.isEmpty()) return rows
+        return rows.filter { row ->
+            val haystack = textOf(row).lowercase()
+            needles.all { haystack.contains(it) }
+        }
     }
+
+    private val WHITESPACE = Regex("\\s+")
 }

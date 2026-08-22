@@ -811,25 +811,38 @@ class MainViewModel @Inject constructor(
      */
     fun onFilamentSelected(filament: SpoolmanFilament?) {
         if (filament == null) {
-            // X clears the form back to defaults — the filament-prefilled
-            // values are orphaned once the link is removed. Expander toggle
-            // states are preserved so the user stays on the section they
-            // were just looking at (would be jarring for the section to
-            // collapse out from under them).
+            // UI-57: the X unlinks, it does NOT reset the form. Every typed and
+            // prefilled value stays, mirroring onSpoolSelected(null) above. That
+            // is what makes the "sister filament" flow work: pick an
+            // already-configured filament, tap the X to unlink (which also drops
+            // identityLocked so material/brand/colour become editable again),
+            // change the colour, Save — and because no filament id is attached,
+            // SaveToSpoolmanUseCase.resolveSpool takes its create branch, where
+            // resolveOrCreateFilament matches on vendor + material + colour +
+            // variant and therefore creates a NEW filament instead of reusing
+            // the sister. Brand, density, diameter and weights carry over.
+            //
+            // The spool link goes too, and must: a selected spool *implies* its
+            // filament (FormMapping.fromSpoolman sets selectedFilamentId from
+            // spool.filament.id), so "filament unlinked, spool still linked" is
+            // not a stable state — reDeriveSelectedSpoolForm would silently
+            // re-link the filament on the next cache refresh. In the sister
+            // flow this is a no-op, since picking a filament already cleared the
+            // spool selection.
+            //
+            // Nothing else is cleared. The prefilled* snapshots are spool-scope
+            // dirty flags read only behind `if (!isNewSpool)` in
+            // SaveToSpoolmanUseCase, which a create-path save never reaches.
+            // "Reset every field" now lives in onClearAll().
             _state.update { current ->
                 current.copy(
-                    form = FormState(
-                        rawWriteMode = current.form.rawWriteMode,
-                        moreDetailsExpanded = current.form.moreDetailsExpanded,
+                    form = current.form.copy(
+                        selectedFilamentId = null,
+                        selectedSpoolId = null,
                     ),
                     spoolman = current.spoolman.copy(selectedSpoolId = null),
-                    ambiguity = null,
-                    observedTagKind = ObservedTagKind.None,
-                    observedTagUid = null,
                 )
             }
-            _customMaterial.value = ""
-            _customBrand.value = ""
             return
         }
         _state.update { current ->
@@ -843,6 +856,36 @@ class MainViewModel @Inject constructor(
                 ambiguity = null,
                 // A filament is now selected — F3 (this filament's spools) takes
                 // over the Spool picker's floated group; drop the scan hints.
+                scanSuggestedSpoolIds = emptyList(),
+                scanSuggestedFilamentIds = emptyList(),
+            )
+        }
+        _customMaterial.value = ""
+        _customBrand.value = ""
+    }
+
+    /**
+     * UI-57 — "clear everything" from the header. This is the reset the filament
+     * X used to perform as a side effect; it is now a deliberate action, because
+     * once the X only unlinks there is otherwise no way back to a blank form.
+     *
+     * No confirmation dialog by design (the user clears often, so a prompt on
+     * every clear is friction). Semantics are deliberately identical to the old
+     * filament-X reset, which was proven in use: the two view-only toggles
+     * survive so the user stays on the section they were looking at, and the
+     * observed-tag / ambiguity state is dropped along with the form.
+     */
+    fun onClearAll() {
+        _state.update { current ->
+            current.copy(
+                form = FormState(
+                    rawWriteMode = current.form.rawWriteMode,
+                    moreDetailsExpanded = current.form.moreDetailsExpanded,
+                ),
+                spoolman = current.spoolman.copy(selectedSpoolId = null),
+                ambiguity = null,
+                observedTagKind = ObservedTagKind.None,
+                observedTagUid = null,
                 scanSuggestedSpoolIds = emptyList(),
                 scanSuggestedFilamentIds = emptyList(),
             )

@@ -133,4 +133,68 @@ class PickerRankingTest {
     fun `filter empty rows returns empty`() {
         assertEquals(emptyList<String>(), PickerRanking.filter(emptyList<String>(), "x") { it })
     }
+
+    // --- filter multi-token (U23 / UI-60 brand + material query) ---
+
+    /**
+     * The reported bug: the searchable text joins fields with " · ", brand in
+     * the primary line and material in the secondary, so "3dhojor petg" never
+     * appears contiguously. "3dhojor pla" only worked because that filament's
+     * Spoolman name repeated the brand.
+     */
+    @Test
+    fun `filter matches brand and material across the field separator`() {
+        val petg = "3DHoJor · PETG PETG · #13"
+        val pla = "3DHoJor · 3DHoJor PLA PLA · #12"
+        val input = listOf(pla, petg)
+        assertEquals(listOf(petg), PickerRanking.filter(input, "3dhojor petg") { it })
+        assertEquals(listOf(pla), PickerRanking.filter(input, "3dhojor pla") { it })
+    }
+
+    @Test
+    fun `filter token order does not matter`() {
+        val input = listOf("3DHoJor · PETG PETG · #13", "eSUN · PLA PLA · #14")
+        assertEquals(
+            PickerRanking.filter(input, "3dhojor petg") { it },
+            PickerRanking.filter(input, "petg 3dhojor") { it },
+        )
+        assertEquals(1, PickerRanking.filter(input, "petg 3dhojor") { it }.size)
+    }
+
+    @Test
+    fun `filter requires every token to match`() {
+        val input = listOf("3DHoJor · PETG PETG · #13")
+        // brand matches, material does not -> no row
+        assertEquals(emptyList<String>(), PickerRanking.filter(input, "3dhojor abs") { it })
+    }
+
+    @Test
+    fun `filter collapses repeated whitespace between tokens`() {
+        val input = listOf("3DHoJor · PETG PETG · #13")
+        assertEquals(input, PickerRanking.filter(input, "3dhojor   petg") { it })
+        assertEquals(input, PickerRanking.filter(input, "\t3dhojor \n petg ") { it })
+    }
+
+    @Test
+    fun `filter single token behaves as before`() {
+        val input = listOf("Bambu PLA White", "eSUN PETG Black")
+        assertEquals(listOf("Bambu PLA White"), PickerRanking.filter(input, "bambu") { it })
+        assertEquals(listOf("eSUN PETG Black"), PickerRanking.filter(input, "petg") { it })
+    }
+
+    @Test
+    fun `filter multi-token preserves input order`() {
+        val input = listOf(
+            "eSUN · PLA Matte · #1",
+            "eSUN · PLA Silk · #2",
+            "eSUN · PLA Basic · #3",
+        )
+        assertEquals(input, PickerRanking.filter(input, "esun pla") { it })
+    }
+
+    @Test
+    fun `filter whitespace-only query is the identity`() {
+        val input = listOf("a", "b")
+        assertEquals(input, PickerRanking.filter(input, " \t \n ") { it })
+    }
 }

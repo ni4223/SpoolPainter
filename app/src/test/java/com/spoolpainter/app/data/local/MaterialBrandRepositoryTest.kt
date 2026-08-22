@@ -130,4 +130,39 @@ class MaterialBrandRepositoryTest {
         assertTrue(rest.contains("Anycubic"))
         assertTrue(rest.contains("yousu"))
     }
+
+    // --- UI-62: two visually identical brand rows in the dropdown ---
+
+    /**
+     * The dedupe key was `lowercase()` with no trim, so a Spoolman vendor
+     * carrying stray whitespace ("TECBEARS ") did not collide with the preset
+     * ("TECBEARS") and both rows rendered — indistinguishable on screen.
+     */
+    @Test fun `brands dedupe vendors that differ from a preset only by whitespace`() = runTest {
+        val list = build(spoolmanVendors = listOf("TECBEARS ", "  TECBEARS")).brands.first()
+        assertEquals(1, list.count { it.equals("TECBEARS", ignoreCase = true) })
+        assertTrue(list.contains("TECBEARS"))
+    }
+
+    @Test fun `brands never render a value with surrounding whitespace`() = runTest {
+        val list = build(spoolmanVendors = listOf("  Fancy Filament  ")).brands.first()
+        assertTrue(list.contains("Fancy Filament"))
+        assertFalse(list.any { it != it.trim() })
+    }
+
+    @Test fun `brands drop blank and whitespace-only vendor names`() = runTest {
+        val list = build(spoolmanVendors = listOf("", "   ")).brands.first()
+        assertEquals(BrandPresetSource.PRESETS.size, list.size)
+    }
+
+    /**
+     * Not every lookalike pair is a bug: "Techbear" and "TECBEARS" are different
+     * words and must both survive. Only whitespace/case variants of the *same*
+     * string collapse.
+     */
+    @Test fun `brands keep a genuinely different spelling as its own entry`() = runTest {
+        val list = build(spoolmanVendors = listOf("Techbear")).brands.first()
+        assertTrue(list.contains("TECBEARS"))
+        assertTrue(list.contains("Techbear"))
+    }
 }

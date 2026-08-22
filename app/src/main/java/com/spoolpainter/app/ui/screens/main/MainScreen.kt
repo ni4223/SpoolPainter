@@ -17,10 +17,13 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -183,6 +186,7 @@ fun MainScreen(
             MainLogoHeader(
                 colorHex = state.form.colorHex,
                 onSettingsClick = viewModel::onSettingsTapped,
+                onClearAllClick = viewModel::onClearAll,
             )
             BannerSlot(state.banner)
             BottomSheetHost(
@@ -544,7 +548,11 @@ private fun computeSaveLabel(
 }
 
 @Composable
-private fun MainLogoHeader(colorHex: String?, onSettingsClick: () -> Unit) {
+private fun MainLogoHeader(
+    colorHex: String?,
+    onSettingsClick: () -> Unit,
+    onClearAllClick: () -> Unit,
+) {
     val outline = MaterialTheme.colorScheme.outline
     val surface = MaterialTheme.colorScheme.surface
     val tint = remember(colorHex, outline) { parseLogoColor(colorHex) ?: outline }
@@ -563,17 +571,76 @@ private fun MainLogoHeader(colorHex: String?, onSettingsClick: () -> Unit) {
             outlineColor = haloColor,
             modifier = Modifier.fillMaxWidth(),
         )
-        IconButton(
-            onClick = onSettingsClick,
-            modifier = Modifier
-                .align(androidx.compose.ui.Alignment.TopEnd)
-                .testTag("main-settings-button"),
-        ) {
-            Icon(
-                Icons.Default.MoreVert,
-                contentDescription = "Settings",
-                tint = MaterialTheme.colorScheme.primary,
-            )
+        // UI-57: clear-all lives in an overflow menu on the existing icon, NOT
+        // as its own control. Three in-header variants were tried on device and
+        // all crowded the logo: a RestartAlt icon (also read as "reload", which
+        // this screen already does via pull-to-refresh), bare "Clear" text, and
+        // an outlined "Clear" whose border visibly overlapped the NFC waves.
+        // The header simply has no room — SpoolPainterLogo fills the width and
+        // its 40dp leading Spacer pushes the artwork rightward into exactly
+        // where a TopEnd control sits. A menu costs zero layout space, and it
+        // also makes MoreVert mean what MoreVert conventionally means.
+        var menuExpanded by remember { mutableStateOf(false) }
+        Box(modifier = Modifier.align(androidx.compose.ui.Alignment.TopEnd)) {
+            IconButton(
+                onClick = { menuExpanded = true },
+                modifier = Modifier.testTag("main-overflow-button"),
+            ) {
+                Icon(
+                    Icons.Default.MoreVert,
+                    contentDescription = "More options",
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+            }
+            // Shape / colour / elevation match LazyDropdownMenu (the pickers'
+            // popup) so this reads as the same app: 12dp corners, 8dp shadow,
+            // surfaceContainer. M3's defaults are much squarer and looked
+            // foreign next to the form's dropdowns.
+            androidx.compose.material3.DropdownMenu(
+                expanded = menuExpanded,
+                onDismissRequest = { menuExpanded = false },
+                shape = RoundedCornerShape(20.dp),
+                containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                shadowElevation = 8.dp,
+                // M3 anchors to the IconButton's full 48dp touch bounds, not the
+                // 24dp glyph inside it. That leaves ~12dp of dead air below the
+                // dots, and puts the menu's right edge 12dp outboard of where the
+                // dots visibly are. Both offsets correct to the glyph: up 10dp to
+                // sit under the dots, left 12dp so the right edge lines up with
+                // them rather than with the invisible touch target.
+                offset = androidx.compose.ui.unit.DpOffset(x = (-12).dp, y = (-18).dp),
+            ) {
+                // Plain clickable rows instead of DropdownMenuItem: that
+                // composable forces a 112dp minimum content width and then pads
+                // the remainder, which left a wide empty gutter after two short
+                // labels. These wrap their text, so the menu is only as wide as
+                // it needs to be. 44dp min height keeps the rows comfortably
+                // tappable while staying more compact than M3's 48dp default.
+                @Composable
+                fun MenuRow(label: String, tag: String, onClick: () -> Unit) {
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier
+                            .testTag(tag)
+                            .fillMaxWidth()
+                            .heightIn(min = 44.dp)
+                            .clickable {
+                                menuExpanded = false
+                                onClick()
+                            }
+                            // Horizontal padding is the only thing setting the
+                            // menu's width now that these are plain rows (no
+                            // DropdownMenuItem 112dp minimum), so it is kept
+                            // tight: the menu grows leftward from the dots and
+                            // any extra width clips the logo's NFC waves.
+                            .padding(horizontal = 10.dp, vertical = 11.dp),
+                    )
+                }
+                MenuRow("Clear all", "main-clear-all-item", onClearAllClick)
+                MenuRow("Settings", "main-settings-button", onSettingsClick)
+            }
         }
     }
 }

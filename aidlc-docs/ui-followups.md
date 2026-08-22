@@ -2235,3 +2235,436 @@ successful write.
 branch does (a consumed tap is spent), or don't buffer at all when `isWriting`.
 Either way a post-write Read needs a real tap and gets a real classification.
 Small and self-contained.
+
+---
+
+## UI-57 — Load a sister filament as a template for a new one (bulk-add flow)
+
+**State**: **fixed 2026-08-22 (U23) — pending on-device install gate.** The X now
+unlinks instead of resetting (and drops the spool link too, so a cache refresh
+can't silently re-link), and `MainViewModel.onClearAll()` behind a new
+`RestartAlt` header icon carries the old reset. No confirmation, no Undo (user).
+Original report below.
+**Found in**: user's own workflow
+**Severity**: medium — no data loss, but the flow the user actually wants has no
+affordance, and their instinctive workaround (the X) throws work away.
+
+**Report**: when adding several new filaments, the natural flow is to load an
+already-configured **sister filament** (same brand/material, different colour),
+change the couple of fields that differ, and save that as a *new* filament. The
+value is that brand, empty-spool weight, density, diameter and temps come
+pre-configured. There is no option for this today: picking a filament prefills
+the form, but there's no way to say "now treat this as a new one", and clearing
+the filament to break the link **resets the form to defaults**.
+
+**Read**: the reset is literal, not a misread. `onFilamentSelected(null)`
+(`MainViewModel.kt:812-834`) is the X handler, and it rebuilds
+`form = FormState(...)` from scratch, preserving only `rawWriteMode` and
+`moreDetailsExpanded`. The existing comment says the prefilled values are
+"orphaned once the link is removed" — that's the assumption this request
+overturns: the user wants exactly those orphaned values kept.
+
+Note the save path *would* do the right thing if the link were gone:
+`resolveOrCreateFilament` (`SpoolmanRepository.kt:592-618`) matches on
+**vendor + material + color_hex + variant**, so a colour change alone misses
+every existing filament and creates a new one, carrying the form's density /
+diameter / weights through `expanderOverrides` (`:644`). So the data layer
+already supports sister-filament creation; only the UI path is missing.
+
+**LOCKED design (user, 2026-08-22)** — two halves, and the second is not
+optional:
+
+1. **Make the filament X behave like the spool X**: clear *only* the filament
+   selection and leave every form field standing. That is precisely the rule
+   `onSpoolSelected(null)` already follows (`MainViewModel.kt:673-695`), whose
+   comment spells out the current asymmetry: *"X on the spool dropdown clears
+   ONLY the spool selection … Filament dropdown's X still does its own reset."*
+   So this change makes the two dropdowns consistent; it isn't a new concept.
+2. **Add a separate "clear everything" action** that resets all fields in one
+   go — i.e. what the filament X does today.
+
+**Why (2) is mandatory, not a nice-to-have**: the filament X is currently the
+**only** reset-everything path in the app. There is no clear/reset action
+anywhere — `FormChange` (`FilamentForm.kt:35-57`) has no such variant and no UI
+surfaces one. So doing (1) without (2) would silently delete the user's only way
+to start clean.
+
+**This design sidesteps [[UI-58]] rather than depending on it.** Once the X
+clears `selectedFilamentId` while keeping the values, the sister-filament save
+has no link left, so `resolveSpool` takes its `else` branch
+(`SaveToSpoolmanUseCase.kt:144-153`) → `createSpoolForNewFilamentBundle` →
+`resolveOrCreateFilament`, which matches on vendor + material + colour + variant
+and therefore **creates** a new filament for a changed colour, carrying density /
+diameter / weights through `expanderOverrides` (`SpoolmanRepository.kt:644`).
+UI-58 stays a real latent bug for users who *don't* clear the link first, but
+UI-57 no longer waits on its device repro.
+
+**Open questions for the plan**:
+- **Does the filament X need a scope-clear at all?** The spool X also nulls
+  spool-scope fields (`remainingWeightG`, the `prefilled*` snapshots) because
+  they're meaningless without a target spool. For the filament X, the
+  brand / material / colour / density / diameter values are exactly what the
+  user wants to keep — so possibly nothing gets cleared but the id, and maybe
+  the `prefilled*` snapshots. Needs a decision per field.
+- ~~Where does "clear everything" live?~~ **LOCKED** — see the UX section below.
+- ~~Confirmation?~~ **LOCKED: no confirmation** (user, 2026-08-22). The user
+  clears often, so a dialog on every clear is friction, not safety.
+- **What does "everything" include** — `cardUid`, observed-tag state, the spool
+  link, `rawWriteMode` / `moreDetailsExpanded` toggles? Today's filament-X reset
+  keeps `rawWriteMode` + `moreDetailsExpanded` and clears `ambiguity` +
+  `observedTagKind` + `observedTagUid`; simplest defensible answer is that
+  "clear everything" inherits exactly that proven behaviour.
+
+
+**LOCKED UX for "clear everything"** (user, 2026-08-22):
+
+- **Placement**: a second icon button in the **header, immediately left of the
+  existing `⋮`**. Both live in a `Row` aligned `TopEnd` inside the header `Box`
+  (`MainScreen.kt:560-578`, where the lone settings `IconButton` sits today).
+- **Single tap.** Not behind an overflow menu — the user clears often, so a
+  two-tap path was rejected.
+- **No confirmation dialog.**
+- **Icon**: `Icons.Outlined.RestartAlt` (circular reset arrow). Extended icons
+  are already a dependency (`app/build.gradle.kts:79`), so nothing to add.
+
+**Two icons to NOT use, and why** (both are actively misleading here):
+- `Icons.Default.Delete` (trash) — in an app that writes to a server, a trash
+  can reads as "delete this spool from Spoolman". This action only clears local
+  form state. Dangerous misread.
+- `Icons.Default.Clear` (X) — already used 3x for the per-field / dropdown
+  clears. At header size it would read as "clear one field", and overloading one
+  glyph for both scopes is exactly the confusion [[UI-18]] worked to remove.
+
+**Known trade-off, accepted by the user**: two 48dp targets side by side means
+Clear and Settings are a mis-tap pair, and the right side is the logo's tight
+side (`SpoolPainterLogo.kt:61-69` adds a 40dp leading Spacer that shifts the
+image rightward, so the right gap is the narrower one). Mitigations to apply at
+build time:
+- **Undo snackbar on clear** — *strongly recommended, not yet user-confirmed.*
+  Snapshot `FormState` before the reset, restore it from the snackbar action.
+  With no confirmation dialog, this is the only recovery path, and `FormState`
+  is a plain data class so it's a copy and a restore. Decide before coding.
+- A deliberate gap between the two icons rather than flush spacing.
+- Verify on-device that neither icon collides with the logo art at small widths.
+
+**Alternatives considered and rejected** (recorded so they aren't re-litigated):
+- **FAB, bottom-right** — the user raised the accidental-press worry themselves.
+  Also wrong on emphasis: a FAB is the highest-emphasis control, reserved for a
+  screen's primary action, and this is a rare destructive one. Note the app
+  already moved *away* from a FAB for its actual primary action ([[UI-28]]'s
+  `ReadFab` became the inline `InlineReadWriteRow`), so reintroducing one only
+  for clear-all would be inconsistent.
+- **Top-left corner** — geometrically the best anti-mis-tap option (opposite
+  corner from `⋮`, and the roomier gap) but the user didn't like the look.
+- **Overflow menu on the `⋮`** — zero added pixels and it would have fixed the
+  off-convention `⋮`-goes-straight-to-Settings behaviour, but 2 taps for a
+  frequently used action, so rejected.
+- **Third button in the action row** — squeezes the "Read tag" / "Write tag"
+  labels if given `weight(1f)`; a compact icon at the row's end was offered and
+  not chosen.
+- **Long-press the filament X** — undiscoverable, and hiding a destructive
+  action behind a gesture with no affordance is a bad trade.
+
+**Note for whoever plans this**: the `⋮` currently navigates straight to
+Settings, which is off-convention for a `MoreVert` glyph. This unit doesn't fix
+that, and adding a sibling icon beside it makes the oddity slightly more
+visible. Worth a separate follow-up, not scope creep here.
+
+---
+
+## UI-58 — Edits to a prefilled filament are silently dropped on "Create spool" (BUG)
+
+**State**: open — **code-trace finding, NOT a field report. The user has not
+knowingly encountered it (2026-08-22).** Nothing has been reproduced on device,
+so treat as UNCONFIRMED until a device run says otherwise. [[UI-51]] and
+[[UI-53]] are both precedents in this file for a confident trace failing to
+reproduce.
+**Severity**: high **if confirmed** — silent divergence between what the form
+shows and what Spoolman records, no error and no warning. Drop the severity
+freely if a device run can't reproduce it.
+
+**Chain verified in code** (2026-08-22, four independent points — this is why
+the trace is being kept despite no field report):
+1. `FormMapping.fromFilament` **sets the link**: `selectedFilamentId =
+   filament.id` (`FormMapping.kt:173`). So picking a sister filament always
+   establishes a link, not just a prefill.
+2. Editing the identity fields **never clears it**: `onMaterialPicked`,
+   `onBrandPicked`, `onColorHexChanged`, `onVariantChanged`
+   (`MainViewModel.kt:975-1022`) each touch only their own `form` field.
+3. With the link still set, `resolveSpool` takes the middle branch
+   (`SaveToSpoolmanUseCase.kt:130-131`).
+4. That branch passes **only** `filamentId` + `toExpanderOverrides()`
+   (`:132-135`) — material / brand / colour / variant never cross.
+
+**Relationship to [[UI-57]]** (revised 2026-08-22 once UI-57's design was
+locked): UI-57 routes *around* this bug — clearing the filament link before save
+sends the save down the `else` branch, where `resolveOrCreateFilament` does the
+right thing. So UI-57 does **not** depend on this being fixed, and this is not a
+blocker for it.
+
+What remains is a latent bug for the user who edits identity fields **without**
+clearing the link first — which the relabelled "Create spool" button arguably
+invites. Still worth a device repro, but it can ship on its own schedule.
+
+**Trace**: with a filament selected and no spool selected,
+`SaveToSpoolmanUseCase.resolveSpool` (`SaveToSpoolmanUseCase.kt:126-155`) takes
+the middle branch:
+
+```
+val filamentId = snapshot.form.selectedFilamentId
+if (filamentId != null) -> spoolman.createSpoolForExistingFilament(filamentId, snapshot.form.toExpanderOverrides())
+```
+
+Only `filamentId` and the **expander overrides** (weights / density / diameter)
+cross the boundary. The form's `material`, `brand`, `colorHex` and `variant` are
+**not passed and not compared**. So: pick a red PLA, change the colour to blue,
+press Create spool, and Spoolman gets a new spool bound to the *red* filament.
+The UI showed blue the whole time. `resolveOrCreateFilament`'s
+vendor+material+colour+variant matching — which would have created a new
+filament — is only reachable on the `else` branch, i.e. when no filament is
+selected at all.
+
+Compounding it, the primary button relabels to **"Create spool"** whenever
+`selectedFilamentId != null` (`MainScreen.kt:542`, with the disabled-reason
+"Create spool first." at `:525`), so the UI is arguably telling the truth about
+what it will do — but nothing signals that the edits just made are about to be
+discarded.
+
+**To verify on device**: whether the *tag* write diverges too. The write payload
+is built from form state, so the tag may carry blue while Spoolman carries red.
+Not yet confirmed — do not treat as established.
+
+**Fix direction**: when a filament is selected and the identity fields
+(material / brand / colour / variant) have been edited away from that filament's
+values, either (a) route to `createSpoolForNewFilamentBundle` so
+`resolveOrCreateFilament` can match-or-create, or (b) block and prompt
+("These differ from <filament> — create a new filament?"). (a) makes [[UI-57]]
+almost free; (b) is the conservative version. Either way the current silent drop
+has to go.
+
+---
+
+## UI-59 — Extend read-driven suggestion-floating to the Material / Brand / Colour pickers
+
+**State**: open (requested 2026-08-22 by user) — **scope LOCKED 2026-08-22**
+**Found in**: user request, follow-on from [[UI-49]] / [[UI-52]] (U20)
+**Severity**: feature — improves the [[UI-57]] sister-filament flow.
+
+**Report**: the U20 feature that floats likely filaments/spools to the top of a
+picker after a tag read should also apply to "other fields that can be manually
+changed", which would make picking a sister filament to edit much easier.
+
+**Read**: today the floated group is driven by exactly two triggers, both in
+`MainViewModel`: a scan (`computeScanSuggestions`, `MainViewModel.kt:1068`,
+wired at `:1146` and `:1181`) and a filament selection (F3 spool float,
+`MainScreen.kt:787-790`). Manual form edits feed neither. Material / Brand /
+Colour pickers were left deliberately scroll-only in U21 (search was added to
+Spool + Filament only), so they have no float or filter today.
+`SpoolMatchScorer` already scores on material / brand / colour / variant and is
+pure, so it can be fed from form state instead of a scanned payload without
+touching its logic.
+
+**LOCKED scope (user, 2026-08-22)**: keep the **trigger exactly as it is today**
+— the tag read — and extend the **float to the other on-screen pickers the user
+can pick from**. Today only the Filament picker (and the Spool picker) floats on
+open; Material / Brand / Colour do not. The user's words: "whatever we doing
+right now on read just have it on other feilds too that user can pick on
+screen".
+
+So this is *not* form-state-driven ranking. A read happens → the read's
+material / brand / colour become the suggested values → when the user opens the
+Material, Brand or Colour picker, those float to the top, same passive
+open-time rendering as U20.
+
+**Why it still helps [[UI-57]]**: after a read the form is prefilled, but the
+read's value may not match an existing entry exactly (case, punctuation, a brand
+not in the preset list), so the user opens the picker to choose the closest real
+entry. Floating the read-derived candidate removes the scroll.
+
+**Fields in scope**: Material, Brand, Colour. Weight / temps / density are
+numeric or free-text, no picker to float in.
+
+**Open questions for the plan**:
+- Colour: the preset list is named colours with swatches, but a read gives a
+  **hex**. Floating needs nearest-swatch-by-distance, which `ColorHexCodec.toRgb`
+  + the U20 colour-distance helper already support. Confirm whether "nearest"
+  or "exact hex only" is wanted.
+- Material / Brand: canonicalisation already exists ([[UI-24]]) for case
+  differences. Decide whether the float is redundant with that or complements it.
+- Whether the float should survive after the user has manually changed that
+  field away from the read value.
+
+**Invariant to carry over from U20**: rendering-only at picker-open time,
+passive, no auto-select, no change to read/prefill/pair/save/write behaviour.
+
+---
+
+## UI-60 — Search can't match a brand + material query together (BUG)
+
+**State**: **fixed 2026-08-22 (U23) — pending on-device install gate.**
+`PickerRanking.filter` now splits the query on whitespace and requires every
+token (AND) instead of one contiguous `contains`, so `3dhojor petg` matches
+regardless of field order or the `" · "` separators. Spool picker fixed by the
+same helper. +7 tests. Original report below.
+**Found in**: user's own use, bulk-adding filaments
+**Severity**: medium — the search feature ([[UI-48]] / U21) silently fails on the
+most natural query shape, and looks arbitrary because near-identical queries
+behave differently.
+
+**Report**: typing `3dhojor petg` in the filament search returned nothing, even
+though that filament exists in the user's Spoolman. Brand-only search worked
+fine. `3dhojor pla` **did** work. So the same two-word shape succeeds for one
+material and fails for another.
+
+**Root cause — the matcher is a single contiguous substring, and the fields it
+searches have separators between them.**
+
+`PickerRanking.filter` (`PickerRanking.kt:70-73`):
+
+```
+val needle = query.trim().lowercase()
+rows.filter { textOf(it).lowercase().contains(needle) }
+```
+
+One `contains`, no tokenising. And the haystack for a filament row
+(`FilamentPicker.kt:70`) is:
+
+```
+searchText = "${filament.primaryRowText()} ${filament.secondaryRowText()}"
+```
+
+where primary is `"$vendorName · $filamentName"` (`:220-224`) and secondary is
+`"Material · Variant · #id"` (`:227-234`). So **brand lives in primary and
+material lives in secondary, with " · " between them.** A query spanning both
+fields can only match if some single field happens to contain both words
+contiguously.
+
+Worked example, which explains the PLA/PETG asymmetry exactly:
+
+| Spoolman `name` | searchText (lowercased) | `3dhojor pla` | `3dhojor petg` |
+|---|---|---|---|
+| `3DHoJor PLA` | `3dhojor · 3dhojor pla pla · #12` | **hit** (inside `3dhojor pla`) | – |
+| `PETG` | `3dhojor · petg petg · #13` | – | **miss** (`3dhojor · petg`) |
+
+So `3dhojor pla` only worked *by luck*, because that filament's name repeats the
+brand. Cross-field multi-word search is broken in general, not just for PETG.
+
+**Check to confirm on device**: look at the two filaments' `name` field in
+Spoolman. Prediction — the PLA one's name includes "3DHoJor" and the PETG one's
+does not.
+
+**Also affects the Spool picker**, same mechanism: `spoolPrimaryRow` /
+`spoolSecondaryRow` (`MainScreen.kt:933-941`) are joined the same way at `:778`.
+
+**Fix direction**: tokenise the query on whitespace and require **every** token
+to be found (AND), each still a case-insensitive substring. `3dhojor petg` then
+matches regardless of field order, separators, or which field holds which word.
+Keeps the blank-query identity guarantee, stays pure, and is a small change in
+one function with existing test coverage to extend. Worth also deciding whether
+tokens should be allowed to match across the ` · ` separators (they would, since
+each token is matched independently).
+
+---
+
+## UI-61 — Brand casing on written tags looks inconsistent (TECBEARS, 3DHoJor)
+
+**State**: **closed 2026-08-22 (U23) — verified, NO code change.** The reporter's
+own hypothesis was correct: nothing mangles case, `BrandPresetSource` ships it
+verbatim and `resolveOrCreateVendor` never renames, so the first spelling to reach
+a server wins permanently. Maintainer confirmed TECBEARS / GEEETECH are genuinely
+all-caps. A `GEEETECH` → `Geeetech` change (from geeetech.com's `og:site_name`)
+was **wrong and reverted**; `Elegoo` → `ELEGOO` was applied across all 5 sites
+then **reverted** too, because the app itself created those vendors as "Elegoo",
+so every pre-existing spool would have shown the old spelling while the picker
+showed the new one — a legacy tail not worth a cosmetic gain. Net change is an
+explanatory comment. Original report below.
+**Severity**: low-to-medium — cosmetic on the tag, but it makes the app look
+like it's mangling data, and downstream consumers may compare brand strings.
+
+**Report**: brands written to tags come out inconsistently cased — some fully
+capitalised, some camel case, e.g. "techbear getting full capital". The user's
+own hypothesis: *"see if some brands are stored and they have these value."*
+
+**That hypothesis is correct — the app is not mangling case, it is faithfully
+carrying casing that is authored into the preset list.**
+`BrandPresetSource.PRESETS` (`BrandPresetSource.kt:14-27`) literally contains:
+
+```
+"Generic", "3DHoJor", "Bambu Lab", "eSUN", "Kingroon", "SUNLU",
+"Polymaker", "TECBEARS", "GEEETECH", "Elegoo", "JAYO", "Other"
+```
+
+So `TECBEARS` is all-caps at the source, `3DHoJor` is camel case, `eSUN` starts
+lowercase, `GEEETECH` and `SUNLU` and `JAYO` are all-caps. Whatever the user
+picks is what gets written. Nothing uppercases anything at write time.
+
+**Two mechanisms then make that spelling sticky:**
+1. Vendor resolution matches an existing Spoolman vendor **case-insensitively**
+   and returns that vendor (`SpoolmanRepository.kt:581`:
+   `it.name.equals(name, ignoreCase = true)`), so whichever spelling reached
+   Spoolman first wins permanently for that vendor.
+2. [[UI-24]] deliberately canonicalises typed brands against existing entries,
+   so typing `tecbears` is *supposed* to snap to the stored spelling. Working as
+   designed; the design just inherits whatever the preset said.
+
+**So the real question is not "why is it mangled" but "are the preset spellings
+right?"** Each needs checking against the vendor's own styling — e.g. Geeetech
+brands itself "Geeetech", not "GEEETECH"; eSUN's lowercase e is correct;
+TECBEARS may genuinely be all-caps. This is a data-accuracy pass over a
+12-entry list, not a code fix.
+
+**Fix direction**:
+1. Correct `BrandPresetSource.PRESETS` to each brand's real styling. Cheap, but
+   note it does **not** retroactively fix vendors already created in the user's
+   Spoolman — mechanism 1 above means the old spelling persists there.
+2. Decide whether user-typed brands should be left exactly as typed rather than
+   canonicalised to a preset. That partly reverses [[UI-24]], so it needs a
+   deliberate call, not a drive-by change.
+3. Confirm whether anything downstream (the U1, OpenSpool consumers) compares
+   brand strings case-sensitively. If nothing does, this stays cosmetic.
+
+**Open question**: is the complaint that the casing is *wrong per brand*, or that
+it's *inconsistent across brands* (some caps, some camel)? Fixing the first is a
+data pass; "make them all consistent" would mean overriding real brand styling
+like `eSUN`, which is probably not wanted.
+
+---
+
+## UI-62 — Two identical-looking brand rows in the dropdown (BUG)
+
+**State**: **fixed 2026-08-22 (U23) — verified on device.** The user reported two
+"TECBEARS" rows in the brand picker; after the fix they confirmed **one**.
+**Found in**: user's own use, reported mid-U23
+**Severity**: low — cosmetic, no data harm, but it looks like the app is
+duplicating data.
+
+**Report**: "idk why i have two techbear in my list obrands".
+
+**Root cause**: `MaterialBrandRepository.mergeBrands` deduped with
+`distinctBy { it.lowercase() }` and **never trimmed**. A Spoolman vendor stored
+with stray whitespace (`"TECBEARS "`) therefore had a different dedupe key from
+the preset `"TECBEARS"`, so both survived and rendered as two rows that are
+indistinguishable on screen.
+
+Two causes were possible and they needed different responses, so the diagnosis
+was left open until the user could confirm:
+- whitespace variants of the same string — a real dedupe bug;
+- genuinely different spellings (note the user writes "tech**b**ear" while the
+  preset is `TECBEARS`; `techbear` and `tecbears` are different words) — in which
+  case two rows would be **correct** behaviour.
+
+The device result (one row after trimming) is positive evidence for the first.
+
+**Fix**: trim before both the dedupe key *and* the kept value, and drop
+blank/whitespace-only names. Presets still come first so a preset's spelling wins
+the dedupe (the [[UI-24]] canonicalisation behaviour is unchanged).
+
+**Tests**: +4 in the existing `MaterialBrandRepositoryTest` — trailing
+whitespace, leading whitespace, no rendered value carries padding, and one that
+deliberately pins that a *genuinely* different spelling keeps both rows, so this
+is never "fixed" into over-merging distinct brands.
+
+**Note**: only the brand list was touched. `mergeMaterials` dedupes on
+`uppercase()` with no trim either, so the same class of bug is reachable there
+via a whitespace-padded Spoolman material string. Not observed, not changed —
+logged here so it isn't a surprise later.

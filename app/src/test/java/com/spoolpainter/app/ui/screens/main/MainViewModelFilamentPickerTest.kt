@@ -102,7 +102,13 @@ class MainViewModelFilamentPickerTest {
         assertEquals(200f, form.emptySpoolWeightG)
     }
 
-    @Test fun `onFilamentSelected null resets form to defaults (symmetric with onSpoolSelected null)`() = runTest {
+    /**
+     * UI-57 — behaviour change. The X used to reset the form to defaults; it now
+     * only unlinks, keeping every value so an already-configured "sister"
+     * filament can be used as a template for a new one. The old expectation
+     * (snap back to defaults) now belongs to onClearAll.
+     */
+    @Test fun `onFilamentSelected null unlinks but keeps every form value (UI-57)`() = runTest {
         spoolman.setFilaments(listOf(sampleFilament))
         val vm = newVm()
         vm.onFilamentSelected(sampleFilament)
@@ -110,13 +116,64 @@ class MainViewModelFilamentPickerTest {
 
         vm.onFilamentSelected(null)
         val form = vm.state.value.form
+        assertNull("link is dropped", form.selectedFilamentId)
+        // Everything the sister filament prefilled survives — this is the
+        // whole point of the flow.
+        assertEquals("PLA", form.material?.name)
+        assertEquals("Polymaker", form.brand?.name)
+        assertEquals("FF0000", form.colorHex)
+        assertEquals(1.30f, form.densityGPerCm3)
+        assertEquals(1000f, form.fullSpoolWeightG)
+        assertEquals(200f, form.emptySpoolWeightG)
+    }
+
+    /**
+     * A selected spool implies its filament (FormMapping.fromSpoolman carries
+     * spool.filament.id), so leaving the spool linked while unlinking the
+     * filament would let reDeriveSelectedSpoolForm silently re-link it on the
+     * next cache refresh. Both links must go.
+     */
+    @Test fun `onFilamentSelected null also drops the spool link (UI-57)`() = runTest {
+        spoolman.setFilaments(listOf(sampleFilament))
+        val vm = newVm()
+        vm.onSpoolSelected(SpoolmanSpool(id = 42, filament = sampleFilament))
+        assertEquals(42, vm.state.value.form.selectedSpoolId)
+        assertEquals(7, vm.state.value.form.selectedFilamentId)
+
+        vm.onFilamentSelected(null)
+        assertNull(vm.state.value.form.selectedFilamentId)
+        assertNull(vm.state.value.form.selectedSpoolId)
+        assertNull(vm.state.value.spoolman.selectedSpoolId)
+    }
+
+    /**
+     * UI-57 — onClearAll inherits the reset the filament X used to perform,
+     * including preserving the two view-only toggles.
+     */
+    @Test fun `onClearAll resets every field but keeps view-only toggles (UI-57)`() = runTest {
+        spoolman.setFilaments(listOf(sampleFilament))
+        val vm = newVm()
+        vm.onFilamentSelected(sampleFilament)
+        vm.onMoreDetailsToggled()
+        val expandedBefore = vm.state.value.form.moreDetailsExpanded
+        assertTrue("expander was toggled open", expandedBefore)
+
+        vm.onClearAll()
+        val form = vm.state.value.form
         assertNull(form.selectedFilamentId)
-        // Form snaps back to defaults — the prefilled values from the
-        // filament were only meaningful while the link existed. Brand
-        // defaults to null post-UI-27 (Save & Write gated until picked).
+        assertNull(form.selectedSpoolId)
         assertEquals("PLA", form.material?.name)
         assertNull(form.brand)
         assertEquals("FFFFFF", form.colorHex)
+        // A fresh form is not empty: material defaults to PLA, which carries
+        // PLA's preset density. Compare against a default FormState rather than
+        // hardcoding the preset value.
+        assertEquals(FormState().densityGPerCm3, form.densityGPerCm3)
+        assertEquals(FormState().fullSpoolWeightG, form.fullSpoolWeightG)
+        // View-only state survives so the user stays on the section they had open.
+        assertEquals(expandedBefore, form.moreDetailsExpanded)
+        assertTrue(vm.state.value.scanSuggestedFilamentIds.isEmpty())
+        assertTrue(vm.state.value.scanSuggestedSpoolIds.isEmpty())
     }
 
     @Test fun `onSpoolSelected sets selectedFilamentId to spool's parent filament`() = runTest {

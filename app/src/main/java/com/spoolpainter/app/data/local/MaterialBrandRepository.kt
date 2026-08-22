@@ -77,7 +77,15 @@ open class MaterialBrandRepository @Inject constructor(
             presets: List<String>,
             vendors: List<String>,
         ): List<String> {
-            val all = (presets + vendors).distinctBy { it.lowercase() }
+            // UI-62: trim before both the dedupe key AND the kept value. A
+            // Spoolman vendor stored as "TECBEARS " differs from the preset
+            // "TECBEARS" only by whitespace, so an untrimmed key let two
+            // visually identical rows through. Presets stay first so a preset's
+            // spelling wins the dedupe.
+            val all = (presets + vendors)
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+                .distinctBy { it.lowercase() }
             val (other, rest) = all.partition { it == "Other" }
             return other + rest.sortedWith(String.CASE_INSENSITIVE_ORDER)
         }

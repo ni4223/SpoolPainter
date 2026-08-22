@@ -176,17 +176,13 @@ SpoolPainter is free and open source, with no ads and no paid tiers. If it's
 useful and you're buying filament or a printer anyway, ordering through a
 referral link below helps support the project:
 
-**Polymaker**
+[![Polymaker](https://img.shields.io/badge/Polymaker-108474?logo=shopify&logoColor=white)](https://shop.polymaker.com/NI42)
 
-- [Polymaker Store](https://shop.polymaker.com/NI42)
+[![Snapmaker US](https://img.shields.io/badge/Snapmaker%20US-00B2E3?logo=shopify&logoColor=white)](https://snapmaker-us.myshopify.com?ref=ni42)
+[![Snapmaker EU](https://img.shields.io/badge/Snapmaker%20EU-00B2E3?logo=shopify&logoColor=white)](https://snapmaker-eu.myshopify.com?ref=ni42)
+[![Snapmaker Global](https://img.shields.io/badge/Snapmaker%20Global-00B2E3?logo=shopify&logoColor=white)](https://test-snapmaker.myshopify.com?ref=ni42)
 
-**Snapmaker**
-
-- [Snapmaker US Store](https://snapmaker-us.myshopify.com?ref=ni42)
-- [Snapmaker EU Store](https://snapmaker-eu.myshopify.com?ref=ni42)
-- [Snapmaker Global Store](https://test-snapmaker.myshopify.com?ref=ni42)
-
-Referral Code: `ni42`
+Snapmaker Referral Code: `ni42`
 
 ## License
 
