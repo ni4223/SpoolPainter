@@ -2444,9 +2444,20 @@ has to go.
 
 ---
 
-## UI-59 — Extend read-driven suggestion-floating to the Material / Brand / Colour pickers
+## UI-59 — Float matching filaments from the fields the user picks (was: read-driven float in other pickers)
 
-**State**: open (requested 2026-08-22 by user) — **scope LOCKED 2026-08-22**
+**SCOPE CORRECTED 2026-08-22.** This entry was previously locked to reading (b)
+— extend the *read-driven* float to the Material / Brand / Colour pickers — based
+on "whatever we doing right now on read just have it on other feilds too". The
+user has since asked for reading **(a)**: *"what happened to being able to float
+based on the feilds i sleect?"* That is the reading originally recommended, and
+it is the one that serves the [[UI-57]] sister-filament flow: set brand +
+material by hand, open the Filament picker, and matching siblings float to the
+top. **(a) is now the active scope; (b) is retained below as a possible
+follow-up.** The two are independent.
+
+**State**: open — **active scope = reading (a), form-field-driven** (corrected
+2026-08-22). Target unit: U24.
 **Found in**: user request, follow-on from [[UI-49]] / [[UI-52]] (U20)
 **Severity**: feature — improves the [[UI-57]] sister-filament flow.
 

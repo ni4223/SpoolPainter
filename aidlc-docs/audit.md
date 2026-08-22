@@ -2537,3 +2537,11 @@ Resume artefact lists: copy/paste-ready build commands, milestone-by-milestone t
 **Context**: CONSTRUCTION — U23 DONE. Per-unit loop closed. U24 next.
 
 ---
+
+## Session close 2026-08-22 — AIDLC closed at user request, U24 queued not started
+**Timestamp**: 2026-08-22T00:00:00Z
+**User Input**: "lets close aidlc i want to reset session"
+**AI Response**: Closed the AIDLC session with **no unit open**. U23 was already closed out (commit `31ab4f5`, install gate passed, tests 592/592). Did **not** open U24: the UI-59 scope correction was committed and the plan was left unwritten. Recorded a design gate found while researching U24 so the next session doesn't hit it blind: `SpoolMatchScorer.Query` maps cleanly from `FormState`, but `FormState` always carries a material (defaults PLA) and `score()` awards MATERIAL_WEIGHT on any material match, so a naive form-driven query scores > 0 for every PLA filament and the Filament picker would show a permanent floated group — noise, not signal. U24 must decide a trigger condition (e.g. require brand or colour, not just the defaulted material) before wiring, and should leave U20's verified scan float untouched, letting form-driven fill in only when no scan set exists. **Release ops still deliberately NOT run**: `v2` is 4 commits ahead of `origin/v2`, tag `v2.3.2` is local-only, and there is no GitHub Release for 2.3.2 — all outward-facing and awaiting an explicit go. Also still uncommitted-and-unreleased context: the Polymaker referral PR (paxx12 repo #651) is open and out of draft, awaiting their merge.
+**Context**: OPERATIONS/idle — AIDLC session closed. No open per-unit loop.
+
+---
