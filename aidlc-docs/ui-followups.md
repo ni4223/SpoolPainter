@@ -2456,8 +2456,16 @@ material by hand, open the Filament picker, and matching siblings float to the
 top. **(a) is now the active scope; (b) is retained below as a possible
 follow-up.** The two are independent.
 
-**State**: open — **active scope = reading (a), form-field-driven** (corrected
-2026-08-22). Target unit: U24.
+**State**: **reading (a) FIXED 2026-08-22 (U24), install gate PASSED.** The Filament picker now floats scorer-ranked matches built from the
+form's own material / brand / colour / variant, gated on **brand being set**
+(Q-U24-1): brand is the only identity field that defaults to null, so a non-null
+brand is evidence of a user pick or a prefill, whereas material (PLA) and colour
+(FFFFFF) both default to scoring values and would have floated a **permanent**
+group. Suppressed while a spool or filament is selected; a scan set still wins
+outright, so U20 is untouched. New pure `SpoolMatchScorer.formQuery` + derived
+`MainViewModel.suggestedFilamentIds`; +14 tests. Known accepted cost: a
+material-only intent ("show me the PETG") does not float. **Reading (b) below is
+still open.**
 **Found in**: user request, follow-on from [[UI-49]] / [[UI-52]] (U20)
 **Severity**: feature — improves the [[UI-57]] sister-filament flow.
 

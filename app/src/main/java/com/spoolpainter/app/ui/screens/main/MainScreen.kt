@@ -96,6 +96,9 @@ fun MainScreen(
     val isReadInFlight by viewModel.isReadInFlight.collectAsStateWithLifecycle()
     val isWriteCancellable by viewModel.isWriteCancellable.collectAsStateWithLifecycle()
     val filaments by viewModel.filaments.collectAsStateWithLifecycle()
+    // U24 (UI-59) — resolved in the ViewModel: the scan set if there is one,
+    // otherwise the form's own fields once a brand is set.
+    val suggestedFilamentIds by viewModel.suggestedFilamentIds.collectAsStateWithLifecycle()
     val materials by viewModel.materials.collectAsStateWithLifecycle()
     val brands by viewModel.brands.collectAsStateWithLifecycle()
     val isSpoolmanRefreshing by viewModel.isSpoolmanRefreshing.collectAsStateWithLifecycle()
@@ -259,7 +262,7 @@ fun MainScreen(
                             brands = brands,
                             filamentSortKey = state.filamentSortKey,
                             filamentSortDirection = state.filamentSortDirection,
-                            scanSuggestedFilamentIds = state.scanSuggestedFilamentIds,
+                            suggestedFilamentIds = suggestedFilamentIds,
                             onChange = { change ->
                                 when (change) {
                                     is FormChange.MaterialPicked -> viewModel.onMaterialPicked(change.value)

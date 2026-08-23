@@ -3,6 +3,7 @@ package com.spoolpainter.app.domain.primitives
 import com.spoolpainter.app.domain.primitives.SpoolMatchScorer.Candidate
 import com.spoolpainter.app.domain.primitives.SpoolMatchScorer.Query
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -161,5 +162,44 @@ class SpoolMatchScorerTest {
         val ranked = SpoolMatchScorer.rank(q, candidates)
         // material-only score, variant contributes nothing.
         assertEquals(3.0, ranked.first().score, 0.0001)
+    }
+    // ---- U24 (UI-59): formQuery gate ----
+
+    @Test
+    fun `formQuery returns null for an untouched form (the permanent-float guard)`() {
+        // A fresh FormState is PLA + no brand + FFFFFF. If this returned a
+        // query, every PLA filament would score and the picker would show a
+        // floated group forever.
+        assertNull(SpoolMatchScorer.formQuery("PLA", null, "FFFFFF", null))
+    }
+
+    @Test
+    fun `formQuery treats a blank brand the same as a null one`() {
+        assertNull(SpoolMatchScorer.formQuery("PLA", "", "FFFFFF", null))
+        assertNull(SpoolMatchScorer.formQuery("PLA", "   ", "FFFFFF", null))
+    }
+
+    @Test
+    fun `formQuery carries every signal once a brand is set`() {
+        val q = SpoolMatchScorer.formQuery("PETG", "Bambu Lab", "FF0000", "Matte")
+        assertEquals(Query("PETG", "Bambu Lab", "FF0000", "Matte"), q)
+    }
+
+    @Test
+    fun `formQuery drops a blank variant so it cannot match leniently`() {
+        assertEquals(null, SpoolMatchScorer.formQuery("PLA", "eSUN", "00FF00", "  ")?.variant)
+    }
+
+    @Test
+    fun `a brand-gated form query ranks the sister filament first`() {
+        // The UI-57 sister flow: the form still holds the unlinked filament's
+        // brand + material + color, so that filament must come back top.
+        val q = SpoolMatchScorer.formQuery("PLA", "Bambu", "FF0000", null)!!
+        val candidates = listOf(
+            cand(1, "PETG", "eSUN", "00FF00"),
+            cand(2, "PLA", "Bambu", "FF0000"),
+            cand(3, "PLA", "Bambu", "000000"),
+        )
+        assertEquals(listOf(2, 3), SpoolMatchScorer.suggestedFilamentIds(q, candidates))
     }
 }

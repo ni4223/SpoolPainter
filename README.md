@@ -43,6 +43,15 @@ It is a single-user, sideloadable Android app. No accounts, no cloud, no analyti
 |---|
 | ![Spool picker filtered live by a typed query](screenshots/11-search.png) |
 
+## What's new in v2.4
+
+- **Reuse a filament as a template.** Clearing the Filament picker with the X no longer wipes the form. It only unlinks, so every value stays: brand, material, weights, density, temperatures. Pick the closest filament you already have, tap the X, change the colour, and save it as a new one. Adding a batch of near-identical spools no longer means retyping the same fields. To reset everything there is a new **Clear all** in the `⋮` menu.
+- **Matching filaments float as you fill the form.** Once you pick a brand, opening the Filament picker floats the closest matches to the top, best first, using brand, material, colour, and variant. Previously this only happened after a tag read. Nothing is auto-selected and the reorder happens only when you open the picker.
+- **Search matches brand and material together.** Typing `3dhojor petg` now finds it. Each word is matched independently, so brand plus material works regardless of word order. Before this, a two-word query only worked when a single field happened to contain both words, which made near-identical searches behave differently for no visible reason.
+- **The selected spool follows Spoolman again.** Pull to refresh, or return to the app, and a selected spool re-reads its values from the server, so a spool your printer is actively consuming shows its current remaining weight. Edits you have made in the form are never clobbered by a refresh.
+- **Duplicate brands merged.** A brand stored on the server with stray whitespace showed up as a second, identical-looking row in the Brand list. Those now collapse into one.
+- **Dots allowed in Variant.** Labels like "PLA 2.0" are no longer trimmed.
+
 ## What's new in v2.3
 
 - **Type to search the pickers.** The Spool and Filament pickers now have a search box at the top. Start typing to filter the list by material, brand, colour, name, or Spoolman ID instead of scrolling a long inventory. Material / Brand / Colour pickers stay scroll-only (those lists are short).

@@ -45,10 +45,13 @@ fun FilamentPicker(
     onSelect: (SpoolmanFilament?) -> Unit,
     modifier: Modifier = Modifier,
     prominent: Boolean = false,
-    // U20 (UI-49, F2) — scan-suggested filament ids float to the top when the
-    // picker is opened, in scorer-rank order (best first), separated by a thin
-    // divider (no header). Passive: never changes the selection.
-    scanSuggestedFilamentIds: List<Int> = emptyList(),
+    // U20 (UI-49, F2) — these ids float to the top when the picker is opened, in
+    // scorer-rank order (best first), separated by a thin divider (no header).
+    // Passive: never changes the selection. U24 (UI-59) added a second source
+    // for the same list (the form's own fields, when there is no scan set), so
+    // this parameter is source-agnostic on purpose — the ViewModel resolves
+    // which one wins.
+    suggestedFilamentIds: List<Int> = emptyList(),
 ) {
     var expanded by remember { mutableStateOf(false) }
     // U21 (UI-48) — type-to-search query. Reset whenever the picker closes so
@@ -71,8 +74,8 @@ fun FilamentPicker(
             )
         }
     }
-    val filamentRank = remember(scanSuggestedFilamentIds) {
-        scanSuggestedFilamentIds.withIndex().associate { (i, id) -> id to i }
+    val filamentRank = remember(suggestedFilamentIds) {
+        suggestedFilamentIds.withIndex().associate { (i, id) -> id to i }
     }
     // With an active query, filter to matches in normal sort — the U20 float is
     // suppressed (Q-U21-1). With a blank query, float scan-suggested rows to the

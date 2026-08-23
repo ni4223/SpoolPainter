@@ -226,6 +226,47 @@ class MainViewModel @Inject constructor(
             .distinctUntilChanged()
             .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
+    /**
+     * U24 (UI-59) — the filament ids the Filament picker floats when opened, in
+     * rank order (best first). Two sources, one precedence:
+     *
+     *  1. A scan set, if one exists — U20's verified behaviour, untouched.
+     *  2. Otherwise the **form's own** fields, via [SpoolMatchScorer.formQuery],
+     *     but only while nothing is selected. With a spool or filament selected
+     *     the identity fields are locked and their values are the selection's
+     *     own, so a float would just re-list the selection (and today's
+     *     behaviour in that state is no float).
+     *
+     * Derived, and deliberately **not** written back into [_state]: a
+     * state → compute → state round trip would be a recomposition loop waiting
+     * to happen, and this shape makes it structurally impossible.
+     * [MainUiState.scanSuggestedFilamentIds] keeps meaning "the scan set" —
+     * U20's clear-on-selection / clear-on-new-read logic depends on that.
+     */
+    val suggestedFilamentIds: StateFlow<List<Int>> = combine(
+        _state.map { s ->
+            FormSuggestionSignals(
+                scanSuggestedFilamentIds = s.scanSuggestedFilamentIds,
+                hasSelection = s.form.selectedFilamentId != null || s.form.selectedSpoolId != null,
+                material = s.form.material?.name,
+                brand = s.form.brand?.name,
+                colorHex = s.form.colorHex,
+                variant = s.form.variant,
+            )
+        }.distinctUntilChanged(),
+        spoolman.filaments,
+    ) { signals, inventory ->
+        if (signals.scanSuggestedFilamentIds.isNotEmpty()) return@combine signals.scanSuggestedFilamentIds
+        if (signals.hasSelection) return@combine emptyList()
+        val query = SpoolMatchScorer.formQuery(
+            material = signals.material,
+            brand = signals.brand,
+            colorHex = signals.colorHex,
+            variant = signals.variant,
+        ) ?: return@combine emptyList()
+        SpoolMatchScorer.suggestedFilamentIds(query, matchCandidates(inventory))
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
     // F-6 (v2.0.3): drives the MainScreen PullToRefreshBox spinner. Flips
     // true while a user-initiated refresh is in flight, false when it
     // returns (success or failure). Internal-throttled refreshes (foreground,
@@ -1118,18 +1159,8 @@ class MainViewModel @Inject constructor(
             // not match. Same rule FormMapping.fromOpenSpool uses.
             variant = payload.subtype.takeUnless { it == "Basic" || it.isBlank() },
         )
-        val candidates = filaments.value.map { f ->
-            SpoolMatchScorer.Candidate(
-                filamentId = f.id,
-                material = f.material,
-                brand = f.vendor?.name,
-                colorHex = f.color_hex,
-                // Spoolman stores variant as a JSON-encoded string in extra.
-                variant = FormMapping.decodeExtraVariant(f.extra?.get("variant")),
-            )
-        }
         // Rank order (best match first). The pickers float in exactly this order.
-        val filamentIds = SpoolMatchScorer.suggestedFilamentIds(query, candidates)
+        val filamentIds = SpoolMatchScorer.suggestedFilamentIds(query, matchCandidates(filaments.value))
         if (filamentIds.isEmpty()) return emptyList<Int>() to emptyList()
         // A suggested filament implies its unarchived spools are suggested too;
         // order the spools by their filament's rank so the best match floats
@@ -1142,6 +1173,23 @@ class MainViewModel @Inject constructor(
             .mapNotNull { it.id }
         return spoolIds to filamentIds
     }
+
+    /**
+     * Reduce the Spoolman inventory to what the scorer ranks on. Shared by both
+     * float triggers (scan and form) so they can never drift on how a filament
+     * becomes a [SpoolMatchScorer.Candidate] — notably that Spoolman keeps the
+     * variant as a JSON-encoded string inside `extra`.
+     */
+    private fun matchCandidates(inventory: List<SpoolmanFilament>): List<SpoolMatchScorer.Candidate> =
+        inventory.map { f ->
+            SpoolMatchScorer.Candidate(
+                filamentId = f.id,
+                material = f.material,
+                brand = f.vendor?.name,
+                colorHex = f.color_hex,
+                variant = FormMapping.decodeExtraVariant(f.extra?.get("variant")),
+            )
+        }
 
     private fun applyResult(result: ReadAndPairResult) {
         when (result) {
@@ -1766,6 +1814,20 @@ class MainViewModel @Inject constructor(
         const val TAG_REDERIVE = "SpoolRederive"
     }
 }
+
+/**
+ * U24 (UI-59) — the slice of [MainUiState] that can change which filaments the
+ * picker floats. Projected out and de-duplicated so an unrelated state update
+ * (or a keystroke that lands on the same value) doesn't re-score the inventory.
+ */
+private data class FormSuggestionSignals(
+    val scanSuggestedFilamentIds: List<Int>,
+    val hasSelection: Boolean,
+    val material: String?,
+    val brand: String?,
+    val colorHex: String?,
+    val variant: String?,
+)
 
 private data class SortProjection(
     val spoolKey: com.spoolpainter.app.data.local.SpoolSortKey,

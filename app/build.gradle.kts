@@ -17,8 +17,11 @@ android {
         applicationId = "com.spoolpainter.app"
         minSdk = 29
         targetSdk = 36
-        versionCode = 114
-        versionName = "2.3.2"
+        // 115 skips past 114 deliberately: 114 was built for U22 as 2.3.2 but we
+        // cannot verify whether it reached Play, and reusing a consumed code is
+        // what got 113 rejected. Git tags are not a record of Play uploads.
+        versionCode = 115
+        versionName = "2.4.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

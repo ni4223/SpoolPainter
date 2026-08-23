@@ -71,6 +71,42 @@ object SpoolMatchScorer {
     data class Ranked(val filamentId: Int, val score: Double)
 
     /**
+     * U24 (UI-59) — build a [Query] from the **form's own** fields so the picker
+     * can float likely siblings without a tag read (the sister-filament flow:
+     * pick a filament, unlink it, open the picker, siblings on top).
+     *
+     * Returns **null when there is nothing trustworthy to rank on**, which is
+     * the whole point of this function. A fresh form is not blank: material
+     * defaults to PLA and colorHex to FFFFFF, so a query built unconditionally
+     * would score > 0 against most of the inventory and the picker would show a
+     * floated group permanently — noise, not signal.
+     *
+     * [brand] is the gate because it is the only identity field that defaults to
+     * null (Q-U24-1), so a non-blank brand is positive evidence the value came
+     * from a user pick or a prefill rather than from a default. ("Generic" is a
+     * save-time fallback in the ViewModel, never a form default.) Once brand is
+     * set, material / color / variant join the query at their normal weights.
+     *
+     * Known and accepted cost: a material-only intent ("show me the PETG") does
+     * not float, because a defaulted PLA and a deliberately-chosen PLA are
+     * indistinguishable without tracking which fields the user touched.
+     */
+    fun formQuery(
+        material: String?,
+        brand: String?,
+        colorHex: String?,
+        variant: String?,
+    ): Query? {
+        if (brand.isNullOrBlank()) return null
+        return Query(
+            material = material,
+            brand = brand,
+            colorHex = colorHex,
+            variant = variant?.takeUnless { it.isBlank() },
+        )
+    }
+
+    /**
      * Score every candidate, keep those with score > 0, sort by score
      * descending (ties broken by ascending filamentId for stability), and cap
      * at [SUGGESTED_CAP]. Returns empty when nothing scores — the pickers then

@@ -2545,3 +2545,38 @@ Resume artefact lists: copy/paste-ready build commands, milestone-by-milestone t
 **Context**: OPERATIONS/idle — AIDLC session closed. No open per-unit loop.
 
 ---
+## Construction — U24 opened (UI-59 reading (a))
+**Timestamp**: 2026-08-22T00:00:00Z
+**User Input**: "aidlc continue pick u1-59"
+**AI Response**: "Resumed the AIDLC session (it had been closed at the user's request with no unit open) and opened **U24 = UI-59 reading (a)** — float matching filaments from the form fields the user picks. Per-unit gate FD / NFR-R / NFR-D / Infra-D SKIP (small feature unit on U20's existing pure scorer). Authored Code Gen Part 1 at `aidlc-docs/construction/plans/u24-form-driven-float-code-generation-plan.md`. Confirmed the design gate recorded at U23 close: a naive form-driven query WOULD float a permanent group, because `FormState` defaults material to PLA and colour to FFFFFF. Verified in code that `brand` is the only identity field defaulting to null (`MainUiState.kt:49`; 'Generic' is a save-time fallback only, `MainViewModel.kt:532`), which makes brand the natural trigger gate — recommended as Q-U24-1 option A. Three open questions raised (trigger gate, spool-picker float, cap). Version HELD at 114 / 2.3.2. Test baseline 592."
+**Context**: CONSTRUCTION — U24 Code Generation Part 1 authored; awaiting stage gate + Q-U24-1..3.
+
+---
+## Construction — U24 gate answered (Q-U24-1..3)
+**Timestamp**: 2026-08-22T00:00:00Z
+**User Input**: (AskUserQuestion) Q-U24-1 = "Require brand set (Recommended)"; Q-U24-2 = "No, Filament picker only (Recommended)"; Q-U24-3 = "Keep 3, same as scan (Recommended)"
+**AI Response**: "All three recommendations accepted. Trigger gate = brand set (known cost accepted: a material-only intent does not float). Spool picker left on U20 F3 semantics. Cap stays SUGGESTED_CAP = 3, shared with the scan path. Proceeding to Code Gen Part 2 (S1-S7)."
+**Context**: CONSTRUCTION — U24 Code Gen Part 1 approved, Part 2 executing.
+
+---
+## Construction — U24 Code Gen Part 2 executed
+**Timestamp**: 2026-08-22T00:00:00Z
+**User Input**: (no new input — executing the approved plan)
+**AI Response**: "S1-S7 complete. `SpoolMatchScorer.formQuery` (pure gate, brand-set trigger) + derived `MainViewModel.suggestedFilamentIds` + extracted `matchCandidates` + `FormSuggestionSignals` projection + parameter rename across 4 UI files. Tests 592 → **606** (Δ +14: 5 scorer gate cases, 9 new `MainViewModelFormSuggestionTest`); `compileDebugKotlin` OK; `assembleDebug` OK 68.69 MB. U20's rank regression passes unmodified. One self-inflicted test failure fixed en route (`assertEquals(3, size.coerceAtMost(3))` needed >= 3 matches on a 2-filament fixture — the assertion was wrong, not the code). **S8 install gate BLOCKED: `adb devices` empty, no phone connected.** Docs updated: plan checkboxes + §7 results, `ui-followups.md` UI-59 reading (a) → fixed with reading (b) left open, new `u24-summary.md`, state file."
+**Context**: CONSTRUCTION — U24 code complete, awaiting device for the install gate.
+
+---
+## Construction — U24 install gate PASSED
+**Timestamp**: 2026-08-22T00:00:00Z
+**User Input**: "phone connexted" / "i tested that wirks"
+**AI Response**: "Installed 114 / 2.3.2-DEBUG on moto g stylus 2025 / Android 16 and ran all six §5 steps against the user's real Spoolman inventory. **PASSED.** Step 1 run first by design (untouched form floats nothing — no divider on a cold start). Sister flow: picked 3DHoJor PLA Matte #94, tapped X, reopened → the three 3DHoJor PLA siblings floated above the divider. Brand-only float, filament-selected-no-float, and search suppress/restore all confirmed. Colour ranking verified by switching White → Blue: floated set changed from #94/#99/#20 to #96/#97/#21. Scan-wins step confirmed by the user with a real tag. Two incidentals, neither a defect: two of my blind adb taps selected TECBEARS PETG #4 mid-gate (recovered via the U23 Clear all menu), and the Brand field shows preset `3DHoJor` while rows show Spoolman's `3DHojor` (the known UI-61 display-vs-stored split, untouched here). Docs closed out; close-out commit next per the per-unit convention."
+**Context**: CONSTRUCTION — U24 DONE.
+
+---
+## Operations — v2.4.0 release prep (versionCode 115)
+**Timestamp**: 2026-08-22T00:00:00Z
+**User Input**: "wait finsh all the AIDLC stuff tupdate th e version and all for the play store get it all ready before commit" / (AskUserQuestion) 114-on-Play = "Not sure"; version name = "2.4.0 (Recommended)"
+**AI Response**: "Bumped versionCode 114 → **115** and versionName 2.3.2 → **2.4.0** in `app/build.gradle.kts`, with an inline comment recording WHY 114 is skipped (unverifiable Play status; reusing a consumed code is what rejected 113). Release matrix green: `testDebugUnitTest` 606/606, `assembleRelease` 7.68 MB R8, `bundleRelease` 8.45 MB AAB, 115 / 2.4.0 verified via aapt2 badging, APK signature verified (CN=SpoolPainter). Wrote `aidlc-docs/operations/v2.4.0-release-notes.md` with paste-ready Play Console notes (`•` bullets, no em dashes), the per-unit contents for U22/U23/U24, known-unchanged items (UI-50 on hold, UI-53 parked, UI-58 unconfirmed, UI-59(b) open) and the upload steps. Added a 'What's new in v2.4' README section. Updated U24 plan + summary version lines from HELD-at-114 to 115 / 2.4.0. Flagged that the What's New sheet still carries evergreen v2 copy so it will show once after this update, which is unchanged behaviour rather than a regression."
+**Context**: OPERATIONS — v2.4.0 release-ready; upload / push / tag / GitHub Release remain outward-facing steps awaiting the user.
+
+---
