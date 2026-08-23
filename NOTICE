@@ -51,3 +51,29 @@ verbatim from `OpenRFID/test/tags/` at the same upstream commit
 regression test data for the vendor tag processors. Creality fixtures
 are not included — they require a per-tag AES encryption key that
 upstream supplies via environment variable, not in the repository.
+
+Vendor trademarks — referral link artwork
+-----------------------------------------
+The Settings screen's "Support the project" section links to shops the
+maintainer has a referral arrangement with, and identifies each with that
+vendor's own logo:
+
+  app/src/main/res/drawable-nodpi/ic_polymaker_wordmark.png
+    Polymaker logo, retrieved 2026-08-22 from Polymaker's own store CDN
+    (shop.polymaker.com/cdn/shop/files/Polymaker_New_Logo.png). Drawn in
+    the brand's teal, untinted.
+
+  app/src/main/res/drawable/ic_snapmaker_wordmark.xml
+    Snapmaker wordmark, converted to an Android vector drawable from the
+    monochrome SVG served at
+    cdn.snapmaker.com/assets/20260526/header/white-logo.svg, retrieved
+    2026-08-22. Snapmaker publish black and white variants of this mark;
+    the single asset here is tinted to the active theme's foreground
+    colour, which is faithful to both.
+
+"Polymaker" and "Snapmaker" are trademarks of their respective owners.
+They are reproduced here only to identify the store each referral link
+points to (nominative use). SpoolPainter is an independent project and is
+not affiliated with, endorsed by, or sponsored by either company. Neither
+logo is covered by SpoolPainter's GPL-3.0 licence; if either vendor's
+brand guidelines require changes, replace or remove the asset above.

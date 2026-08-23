@@ -16,11 +16,11 @@ import androidx.compose.runtime.setValue
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
-import com.spoolpainter.app.BuildConfig
 import com.spoolpainter.app.data.local.SettingsRepository
 import com.spoolpainter.app.data.local.ThemeOverride
 import com.spoolpainter.app.data.remote.spoolman.SpoolmanRepository
 import com.spoolpainter.app.hardware.nfc.NfcRepository
+import com.spoolpainter.app.ui.components.sheets.WHATS_NEW_CONTENT_VERSION
 import com.spoolpainter.app.ui.components.sheets.WhatsNewSheet
 import com.spoolpainter.app.ui.components.sheets.whatsNewV2Highlights
 import com.spoolpainter.app.ui.screens.main.MainScreen
@@ -76,8 +76,10 @@ class MainActivity : ComponentActivity() {
             val info = packageManager.getPackageInfo(packageName, 0)
             info.firstInstallTime == info.lastUpdateTime
         }.getOrDefault(true)
+        // Deliberately NOT BuildConfig.VERSION_CODE: the sheet should open when
+        // the highlights change, not when the app version changes.
         whatsNewController.onColdStart(
-            currentVersion = BuildConfig.VERSION_CODE,
+            contentVersion = WHATS_NEW_CONTENT_VERSION,
             isFreshInstall = isFreshInstall,
         )
     }

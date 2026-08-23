@@ -35,8 +35,8 @@ class WhatsNewController @Inject constructor(
      * fresh-install user who is suppressed here won't see the sheet on their
      * second launch, and a user who is shown it marks it seen on dismiss.
      */
-    fun onColdStart(currentVersion: Int, isFreshInstall: Boolean) {
-        pendingVersion = currentVersion
+    fun onColdStart(contentVersion: Int, isFreshInstall: Boolean) {
+        pendingVersion = contentVersion
         externalScope.launch {
             // settings is store.data.stateIn(initialValue = Settings()), so
             // .value returns the default (lastSeen = 0) until DataStore's async
@@ -45,7 +45,7 @@ class WhatsNewController @Inject constructor(
             // launch. awaitSettings() reads the raw DataStore flow, which
             // suspends until the real persisted value arrives.
             val lastSeen = settingsRepository.awaitSettings().lastSeenWhatsNewVersion
-            if (shouldShow(currentVersion, lastSeen, isFreshInstall)) {
+            if (shouldShow(contentVersion, lastSeen, isFreshInstall)) {
                 _visible.value = true
             } else {
                 // Suppressed (fresh install, or already current). Persist so we
@@ -73,21 +73,28 @@ class WhatsNewController @Inject constructor(
         /**
          * Pure trigger logic.
          *
+         * [contentVersion] is `WHATS_NEW_CONTENT_VERSION` — the versionCode in
+         * which the highlights last changed — NOT the app's versionCode. That
+         * distinction is the point: comparing against the app version re-showed
+         * the sheet on every release, including the majority that changed no
+         * copy at all.
+         *
          * - lastSeen == 0 (never recorded): show only if this install has been
          *   updated at least once (a v1 -> v2 in-place updater). A genuinely
          *   fresh install is suppressed so brand-new users don't see a
          *   "what's new" for features they never had an old version of.
-         * - lastSeen > 0: show when the current build is newer than last seen
-         *   (a v2.x -> newer updater). Same-version relaunch shows nothing.
+         * - lastSeen > 0: show when the copy has changed since the user last
+         *   dismissed it. A relaunch, or an app update that carries no new
+         *   copy, shows nothing.
          */
         fun shouldShow(
-            currentVersion: Int,
+            contentVersion: Int,
             lastSeenVersion: Int,
             isFreshInstall: Boolean,
         ): Boolean = if (lastSeenVersion == 0) {
             !isFreshInstall
         } else {
-            lastSeenVersion < currentVersion
+            lastSeenVersion < contentVersion
         }
     }
 }

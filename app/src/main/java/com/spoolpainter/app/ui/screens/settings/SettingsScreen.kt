@@ -175,6 +175,7 @@ fun SettingsScreen(
                 onCrealityEncKeySaved = viewModel::onCrealityEncKeySaved,
                 testTag = "settings-vendor",
             )
+            SettingsSupportSection(testTag = "settings-support")
             androidx.compose.foundation.layout.Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.Center,

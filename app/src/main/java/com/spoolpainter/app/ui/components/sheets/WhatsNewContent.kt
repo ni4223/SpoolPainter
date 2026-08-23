@@ -17,9 +17,29 @@ data class WhatsNewHighlight(
 )
 
 /**
+ * The versionCode in which [whatsNewV2Highlights] last changed.
+ *
+ * The sheet's trigger compares against THIS, not against the app's versionCode.
+ * Keying it to the app version meant every release re-opened the sheet on the
+ * same unchanged copy: the highlights below have been edited twice (created at
+ * 106, camera row added at 110) across seven released versionCodes, so five of
+ * those showings had nothing new in them. Repeatedly showing identical content
+ * trains people to dismiss it unread, which costs us the one release where it
+ * does matter.
+ *
+ * **Bump this to the current versionCode whenever, and only when, the copy below
+ * changes.** It must never move backwards: existing installs store values from
+ * the same versionCode space (106..112 in the wild), so a lower value would
+ * silently suppress the sheet for people who have not seen the new copy.
+ */
+const val WHATS_NEW_CONTENT_VERSION: Int = 110
+
+/**
  * Copy for the v2 showcase. Kept as data (not inline in the composable) so it's
  * unit-testable and a one-line edit per release. No em dashes in user-facing
  * strings per project convention.
+ *
+ * Editing this list means bumping [WHATS_NEW_CONTENT_VERSION].
  */
 val whatsNewV2Highlights: List<WhatsNewHighlight> = listOf(
     WhatsNewHighlight(
