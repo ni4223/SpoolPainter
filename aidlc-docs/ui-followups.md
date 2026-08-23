@@ -1995,6 +1995,14 @@ rendering already provides.
 ## UI-53 — App stops recognizing tags after 1-2 reads/writes until reopened (BUG)
 
 **State**: open (reported 2026-07-30, tester end-to-end pass on v2.3.0 Open testing)
+
+**BLOCKED ON REPORTER DATA 2026-08-23.** The maintainer has already asked the
+GitHub issue #9 reporter (Samsung S25, was on 2.3.1) to retest after an earlier
+hardening fix, so **do not reply to #9 and do not open a unit for this yet** —
+the symptom may already be gone, and building against the parked root cause
+could be work against a fixed bug. Wait for their retest before scheduling.
+The root-cause analysis below still stands as the leading hypothesis if it
+recurs.
 **Found in**: tester feedback, n=10 tag round-trip test (Spoolman, no U1 yet)
 **Severity**: high — breaks the core NFC flow after a couple of taps.
 
@@ -2587,7 +2595,15 @@ each token is matched independently).
 
 ## UI-61 — Brand casing on written tags looks inconsistent (TECBEARS, 3DHoJor)
 
-**State**: **closed 2026-08-22 (U23) — verified, NO code change.** The reporter's
+**State**: **REOPENED IN PART 2026-08-22 — see [[UI-63]].** The verdict below is
+correct about casing but wrong about the report it was meant to answer. U23
+checked the preset list and the Spoolman vendor path and cleared both, and never
+checked the **typed-custom** path: `resolveBrandName` overrides hand-typed input
+with the built-in spelling, which is what GitHub issue #8 actually hit. A
+reporter screenshot ("Write to NFC" = no Spoolman configured, Brand = Other,
+Custom = "Tecbears") confirmed it. Original U23 verdict follows.
+
+**Original state**: **closed 2026-08-22 (U23) — verified, NO code change.** The reporter's
 own hypothesis was correct: nothing mangles case, `BrandPresetSource` ships it
 verbatim and `resolveOrCreateVendor` never renames, so the first spelling to reach
 a server wins permanently. Maintainer confirmed TECBEARS / GEEETECH are genuinely
@@ -2687,3 +2703,60 @@ is never "fixed" into over-merging distinct brands.
 `uppercase()` with no trim either, so the same class of bug is reachable there
 via a whitespace-padded Spoolman material string. Not observed, not changed —
 logged here so it isn't a surprise later.
+
+---
+
+## UI-63 — Typed brand name is silently rewritten to the built-in spelling (BUG)
+
+**State**: open, **confirmed from a reporter screenshot 2026-08-22**. Supersedes
+the "no code change needed" conclusion [[UI-61]] reached in U23 — that pass
+checked the preset list and the Spoolman vendor path, and **never checked the
+typed-custom path**, which is where the reported bug actually lives.
+**Found in**: GitHub issue #8 (boehser-enkel), on 2.3.x
+**Severity**: medium-high — the app mutates user data without saying so, and the
+value written to the tag differs from the value shown on screen.
+
+**Report**: "Brand names (mostly) get all capital when written to the NFC tag.
+Jayo becomes JAYO. NextShapes stays NextShapes."
+
+**Confirmed chain** (each step evidenced, not inferred):
+
+1. The reporter's screenshot shows the write button labelled **"Write to NFC"**.
+   That string is reachable only from `writeMode == WriteMode.RawNoUrl`
+   (`MainScreen.kt:467`), i.e. **no Spoolman URL configured**. So this is not a
+   Spoolman-merge issue at all.
+2. The same screenshot shows **Brand = "Other", Custom = "Tecbears"** — the
+   hand-typed path.
+3. `resolveBrandName` (`MainViewModel.kt:1131-1142`) takes the typed text and
+   returns `brands.value.firstOrNull { it.equals(raw, ignoreCase = true) }`,
+   i.e. **the built-in spelling wins over what the user typed**. With no
+   Spoolman, `brands.value` is the preset list alone, which holds `TECBEARS`
+   (`BrandPresetSource.kt:42`) and `JAYO` (`:45`). `NextShapes` is absent, which
+   is exactly why it survives untouched.
+4. `launchRawWrite` (`MainViewModel.kt:667-681`) passes that value as
+   `RawWriteInput.newFilamentVendor`, so it is what lands on the tag.
+
+**Why the existing justification does not hold.** The comment on
+`resolveBrandName` says canonicalisation exists so a case-only difference cannot
+leak into the Spoolman filament name (`derivedName = "$brand $material"`). That
+is a real concern **only when there is a Spoolman server**. This reporter has
+none, so the code is paying a cost with no corresponding benefit.
+
+**Second, worse symptom found while confirming this**: the Brand field is filled
+from the server (`FormMapping.kt:49` / `:163`) or from a tag
+(`:127`) **verbatim**, while the substitution happens later at save/write. So
+the form can display `Jayo` while the tag receives `JAYO`, with no indication
+anything changed. Reading a tag another tool wrote as `Jayo` and writing it back
+silently converts it — the app mutates data on a round trip.
+
+**Fix direction**: canonicalise against **Spoolman vendors only, never against
+the built-in preset list.** Aligning to a vendor row that already exists on the
+user's server is legitimate (Spoolman dedupes vendors case-insensitively, so a
+mismatch there really would corrupt the derived filament name). Overriding a
+name the user typed, to match a hardcoded list, is not. This also fixes the
+RawNoUrl case for free, since there are no vendors to align to.
+
+**Do NOT fix by changing preset casing** — `TECBEARS` / `JAYO` / `GEEETECH` are
+those vendors' real styling, confirmed with the maintainer during U23, and the
+preset list is the right place for them. The bug is the substitution, not the
+spellings.
