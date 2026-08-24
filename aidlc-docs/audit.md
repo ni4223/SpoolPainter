@@ -2587,3 +2587,10 @@ Resume artefact lists: copy/paste-ready build commands, milestone-by-milestone t
 **Context**: CONSTRUCTION — U25 DONE and folded into the v2.4.0 release.
 
 ---
+## Session close
+**Timestamp**: 2026-08-23T00:00:00Z
+**User Input**: "aidlc close"
+**AI Response**: "Closed the AIDLC session with no unit open. Delivered this session: **U24** (form-driven filament float, UI-59a, install gate PASSED), **U25** (What's-new content-version gate + Support the project section, folded into the release), and the **v2.4.0 / versionCode 115** release — pushed, tagged `v2.4.0`, GitHub Release published with both artifacts (7.71 MB APK / 8.49 MB AAB, badging-verified). Tests 592 → 615. Also: split the Play release notes per track after learning 2.3.2 reached Open testing but never production (so 114 is confirmed consumed, and the two tracks sit on different versions and need different notes, each under Play's 500-char cap); investigated GitHub issues #8 and #9; posted an approved reply to #8 and logged the confirmed bug as **UI-63** with UI-61 partly reopened; left #9 alone per the user and marked **UI-53 blocked pending the reporter's retest**. Queued next: UI-63. Remaining outward-facing step, on the maintainer: the Play Open-testing AAB upload (optionally `git push origin v2.3.2`)."
+**Context**: SESSION CLOSED — no unit open, working tree to be left clean.
+
+---
