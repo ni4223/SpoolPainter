@@ -2788,3 +2788,39 @@ tag got `TECBEARS`. Vendor, filament name and tag disagreed with each other.
 bulk-renamed by the app. Only newly created records pick up the corrected
 spelling. Say so in the release notes rather than letting people wonder why old
 entries look different.
+
+**DESIGN LOCKED 2026-08-24 (maintainer).** Supersedes the two-change sketch above.
+The principle: **normalisation happens where the user can see it, never at
+write time.**
+
+1. **Dropdown contents** (`mergeBrands`): **all** server vendors verbatim; a
+   preset is added only when no server vendor matches it case-insensitively.
+   Server vendors are *records*, not spellings, so case-variant duplicates on the
+   server (e.g. `Tecbears` AND `TECBEARS`, two rows with two ids) are **both
+   shown** — collapsing them would silently decide which vendor id a filament
+   attaches to, and `resolveOrCreateVendor` picks among them with an arbitrary
+   `firstOrNull`. Distinct from the [[UI-62]] whitespace case, which was one
+   record reachable twice and correctly collapsed.
+2. **Picking from the dropdown** yields that exact string.
+3. **Typing via "Other"** yields exactly what was typed. **No canonicalisation at
+   all** — maintainer's rule: "if someone is willing to walk past the dropdown and
+   write in Other, then whatever they write wins." So `resolveBrandName`'s
+   canonicalisation is **deleted**, not redirected; the function becomes a
+   pass-through returning the form value.
+4. **Boundary that "whatever they write wins" does NOT cross**: existing Spoolman
+   vendor rows are never renamed. A case-insensitive match reuses the existing row
+   (today's `resolveOrCreateVendor` behaviour, unchanged), because renaming would
+   rewrite a record every other filament of that brand points at, and creating a
+   second case-variant row would be worse. So typed text wins for the tag and for
+   the newly created filament; the vendor record keeps its own spelling.
+
+**Emergent property worth keeping**: since picking from the dropdown now yields an
+exact server string, a case mismatch between a filament name and its vendor row
+can only arise from deliberate typing. The leak the deleted canonicalisation
+existed to prevent becomes opt-in rather than accidental.
+
+**Unverified assumption to check before building**: `resolveBrandName`'s comment
+claims "Spoolman dedups the vendor row case-insensitively". If true, rule 1's
+multi-row case cannot arise from Spoolman's own UI (only from other tools or the
+API); if false, rule 1 is load-bearing. Check Spoolman's vendor-name constraint
+either way — do not carry the claim forward unverified.
