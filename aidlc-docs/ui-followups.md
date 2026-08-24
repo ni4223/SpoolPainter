@@ -2760,3 +2760,31 @@ RawNoUrl case for free, since there are no vendors to align to.
 those vendors' real styling, confirmed with the maintainer during U23, and the
 preset list is the right place for them. The bug is the substitution, not the
 spellings.
+
+**ADDENDUM 2026-08-24 — the reporter DID use Spoolman, and the fix needs TWO
+changes, not one.** They had created the vendor themselves as "Tecbears" on their
+server (Spoolman was removed later, for testing). That surfaces a second half
+this entry originally missed:
+
+1. **Write path** (`resolveBrandName`) — as described above. Match against the
+   user's Spoolman vendors, not the preset list.
+2. **The Brand dropdown** (`MaterialBrandRepository.mergeBrands`) — `presets +
+   vendors` deduped by `lowercase()` keeps the **first** occurrence and presets
+   come first, so when a preset and one of the user's vendors differ only by
+   case, **the user's own spelling is dropped from the list entirely**. Fixing
+   only (1) leaves the app inconsistent with itself: typing "Tecbears" via Other
+   would keep their spelling, while picking from the dropdown would still write
+   `TECBEARS`. Both must land together.
+
+**Three spellings from one input, confirmed in code.** With Spoolman connected:
+`resolveOrCreateVendor` (`SpoolmanRepository.kt:576-590`) matches vendors
+`ignoreCase = true` and **reuses the row without renaming it**, so the vendor
+stayed `Tecbears`; but `derivedName = "$brandName $materialName $variant"` used
+the substituted brand, so the filament record became `TECBEARS PLA Grau`; and the
+tag got `TECBEARS`. Vendor, filament name and tag disagreed with each other.
+
+**Migration caveat for whoever fixes this**: filament records already created with
+`TECBEARS ...` in a user's Spoolman will NOT rename themselves, and should not be
+bulk-renamed by the app. Only newly created records pick up the corrected
+spelling. Say so in the release notes rather than letting people wonder why old
+entries look different.
