@@ -79,13 +79,44 @@ class MaterialBrandRepositoryTest {
         assertTrue(rest.contains("carbon-fiber"))
     }
 
-    @Test fun `brands union spoolman vendors — preset spelling wins on collision`() = runTest {
+    /**
+     * UI-63 — inverted from the original assertion, which required the preset
+     * spelling to win. It cannot: the vendor row is the user's own record, and
+     * dropping it meant their spelling could not be picked from the dropdown at
+     * all, while the preset they never created could.
+     */
+    @Test fun `brands union spoolman vendors — the user's vendor spelling wins on collision`() = runTest {
         val list = build(spoolmanVendors = listOf("bambu lab", "3DJake")).brands.first()
         assertTrue(list.contains("3DJake"))
-        // "Bambu Lab" preset wins over "bambu lab" Spoolman vendor.
         val bambu = list.filter { it.equals("Bambu Lab", ignoreCase = true) }
         assertEquals(1, bambu.size)
-        assertEquals("Bambu Lab", bambu.single())
+        assertEquals("bambu lab", bambu.single())
+    }
+
+    /** The reporter's exact case (GitHub #8): vendor created as "Tecbears". */
+    @Test fun `brands offer the vendor's own casing, not the preset's`() = runTest {
+        val list = build(spoolmanVendors = listOf("Tecbears")).brands.first()
+        assertTrue("user's spelling must be pickable", list.contains("Tecbears"))
+        assertFalse("preset must not shadow it", list.contains("TECBEARS"))
+    }
+
+    /**
+     * Spoolman puts no unique constraint on `vendor.name` (verified against the
+     * schema 2026-08-27), so both rows genuinely exist with different ids. Show
+     * both: collapsing them would silently pick which record a filament joins.
+     */
+    @Test fun `brands keep case-variant vendor rows as separate entries`() = runTest {
+        val list = build(spoolmanVendors = listOf("Tecbears", "TECBEARS")).brands.first()
+        assertTrue(list.contains("Tecbears"))
+        assertTrue(list.contains("TECBEARS"))
+        assertEquals(2, list.count { it.equals("TECBEARS", ignoreCase = true) })
+    }
+
+    /** A preset with no matching vendor is still offered. */
+    @Test fun `brands still offer presets the user has no vendor for`() = runTest {
+        val list = build(spoolmanVendors = listOf("Tecbears")).brands.first()
+        assertTrue(list.contains("JAYO"))
+        assertTrue(list.contains("Other"))
     }
 
     @Test fun `materials never duplicate (distinctBy invariant)`() = runTest {
@@ -95,11 +126,27 @@ class MaterialBrandRepositoryTest {
         assertEquals(list.size, list.distinctBy { it.name.uppercase() }.size)
     }
 
-    @Test fun `brands never duplicate (distinctBy invariant)`() = runTest {
+    /**
+     * UI-63 weakened this invariant from `distinctBy { lowercase() }` to
+     * `distinct()`. Three case variants on the server are three records, so all
+     * three render; what must never happen is the *same* string twice, which
+     * would be an unpickable coin flip.
+     */
+    @Test fun `brands never render the identical string twice`() = runTest {
         val list = build(
-            spoolmanVendors = listOf("Bambu Lab", "bambu lab", "BAMBU LAB"),
+            spoolmanVendors = listOf("Bambu Lab", "bambu lab", "BAMBU LAB", "Bambu Lab"),
         ).brands.first()
-        assertEquals(list.size, list.distinctBy { it.lowercase() }.size)
+        assertEquals(list.size, list.distinct().size)
+        // The duplicate "Bambu Lab" collapsed; the two case variants did not.
+        assertEquals(3, list.count { it.equals("Bambu Lab", ignoreCase = true) })
+    }
+
+    /** Case variants sort adjacently rather than being split across the list. */
+    @Test fun `brands keep case variants adjacent`() = runTest {
+        val list = build(spoolmanVendors = listOf("Tecbears", "TECBEARS")).brands.first()
+        val first = list.indexOfFirst { it.equals("TECBEARS", ignoreCase = true) }
+        val last = list.indexOfLast { it.equals("TECBEARS", ignoreCase = true) }
+        assertEquals(1, last - first)
     }
 
     @Test fun `blank or null spoolman material strings are filtered out`() = runTest {

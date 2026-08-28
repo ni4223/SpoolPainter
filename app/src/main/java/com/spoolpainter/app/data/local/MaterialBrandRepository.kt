@@ -20,12 +20,17 @@ import javax.inject.Singleton
  * and surfaces here on the next refresh — no separate local persistence
  * needed.
  *
- * - Brands  = presets ∪ spoolman.vendors (dedup case-insensitive, presets first)
+ * - Brands  = spoolman.vendors (verbatim) ∪ presets the user has no vendor for
  * - Materials = presets ∪ distinct material strings on spoolman.filaments
  *
  * Invariants:
  *   materials.distinctBy { it.name.uppercase() }.size == materials.size
- *   brands.distinctBy   { it.lowercase()       }.size == brands.size
+ *   brands.distinct().size == brands.size
+ *   brands.none { it != it.trim() }
+ *
+ * Note the brand invariant is `distinct()`, not `distinctBy { lowercase() }`:
+ * two Spoolman vendors differing only by case are two records and both belong
+ * in the list. See [mergeBrands].
  */
 @Singleton
 open class MaterialBrandRepository @Inject constructor(
@@ -73,20 +78,49 @@ open class MaterialBrandRepository @Inject constructor(
             return other + rest.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
         }
 
+        /**
+         * UI-63: **the user's own Spoolman vendors win over preset spellings.**
+         * Previously presets were listed first and the whole list deduped by
+         * `lowercase()`, so a vendor the user had created as "Tecbears" was
+         * dropped in favour of the preset "TECBEARS" — their own spelling
+         * vanished from the dropdown and could not be picked at all.
+         *
+         * Two different dedupe keys, deliberately:
+         * - **Server vendors: exact (trimmed) string.** Case variants are kept
+         *   as separate rows, because they are separate vendor *records* with
+         *   separate ids, and `resolveOrCreateVendor` picks among them with an
+         *   arbitrary `firstOrNull` — collapsing them would silently decide
+         *   which record a filament attaches to. Verified 2026-08-27 that
+         *   Spoolman's `vendor.name` is a bare `String(64)` with no unique
+         *   constraint, index or case-insensitive collation, so a user really
+         *   can hold both "Tecbears" and "TECBEARS". Rows that are identical
+         *   once trimmed still collapse (UI-62) — those render the same and
+         *   picking between them would be a coin flip with no visible cue.
+         * - **Presets: case-insensitive against the server set.** A preset is
+         *   only offered when the user has no vendor for that brand, so it
+         *   never competes with a spelling they chose.
+         */
         internal fun mergeBrands(
             presets: List<String>,
             vendors: List<String>,
         ): List<String> {
-            // UI-62: trim before both the dedupe key AND the kept value. A
-            // Spoolman vendor stored as "TECBEARS " differs from the preset
-            // "TECBEARS" only by whitespace, so an untrimmed key let two
-            // visually identical rows through. Presets stay first so a preset's
-            // spelling wins the dedupe.
-            val all = (presets + vendors)
+            // UI-62: trim before both the dedupe key AND the kept value, so a
+            // vendor stored as "TECBEARS " cannot render as a second row that
+            // looks identical to "TECBEARS".
+            val serverNames = vendors
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+                .distinct()
+            val serverFolded = serverNames.mapTo(mutableSetOf()) { it.lowercase() }
+            val keptPresets = presets
                 .map { it.trim() }
                 .filter { it.isNotEmpty() }
                 .distinctBy { it.lowercase() }
-            val (other, rest) = all.partition { it == "Other" }
+                .filter { it.lowercase() !in serverFolded }
+            val (other, rest) = (serverNames + keptPresets).partition { it == "Other" }
+            // CASE_INSENSITIVE_ORDER compares case variants equal, and sortedWith
+            // is stable, so "Tecbears" / "TECBEARS" stay adjacent in server order
+            // rather than being split across the list.
             return other + rest.sortedWith(String.CASE_INSENSITIVE_ORDER)
         }
     }

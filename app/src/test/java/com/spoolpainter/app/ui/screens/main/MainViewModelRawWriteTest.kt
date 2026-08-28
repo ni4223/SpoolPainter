@@ -141,6 +141,95 @@ class MainViewModelRawWriteTest {
         assertEquals(ActiveFlow.Idle, vm.state.value.activeFlow)
     }
 
+    // --- UI-63: a typed brand must reach the tag exactly as typed ---
+
+    /**
+     * GitHub #8, reproduced end to end. The reporter had no Spoolman URL (their
+     * screenshot showed the "Write to NFC" label, which only RawNoUrl renders),
+     * picked Brand = Other and typed "Tecbears". The preset list holds
+     * "TECBEARS", and the old `resolveBrandName` let that preset overwrite what
+     * they typed — so the tag received a spelling that was never on screen.
+     */
+    @Test
+    fun `typed brand reaches the tag verbatim even when a preset differs only by case`() = runTest {
+        settings.pushSettings(Settings(url = ""))
+        val vm = newVm()
+        primeFormForWrite(vm)
+        vm.onBrandPicked(Brand("Other"))
+        vm.onCustomBrandChanged("Tecbears")
+        rawWrite.nextResult = RawWriteResult.Success.Written(sampleUid)
+
+        vm.onWriteTapped()
+
+        assertEquals("Tecbears", rawWrite.lastInput?.newFilamentVendor)
+    }
+
+    /** The reporter's other example: "Jayo" was becoming "JAYO". */
+    @Test
+    fun `typed brand is not folded to the preset casing`() = runTest {
+        settings.pushSettings(Settings(url = ""))
+        val vm = newVm()
+        primeFormForWrite(vm)
+        vm.onBrandPicked(Brand("Other"))
+        vm.onCustomBrandChanged("Jayo")
+        rawWrite.nextResult = RawWriteResult.Success.Written(sampleUid)
+
+        vm.onWriteTapped()
+
+        assertEquals("Jayo", rawWrite.lastInput?.newFilamentVendor)
+    }
+
+    /**
+     * "NextShapes stays NextShapes" in the report, because no preset matches it.
+     * Pinned so the no-collision case cannot regress while the collision case is
+     * being changed.
+     */
+    @Test
+    fun `a typed brand with no preset collision is still passed through`() = runTest {
+        settings.pushSettings(Settings(url = ""))
+        val vm = newVm()
+        primeFormForWrite(vm)
+        vm.onBrandPicked(Brand("Other"))
+        vm.onCustomBrandChanged("NextShapes")
+        rawWrite.nextResult = RawWriteResult.Success.Written(sampleUid)
+
+        vm.onWriteTapped()
+
+        assertEquals("NextShapes", rawWrite.lastInput?.newFilamentVendor)
+    }
+
+    /**
+     * Whitespace is the one thing still normalised: an untrimmed brand would
+     * render as a double space inside the derived filament name.
+     */
+    @Test
+    fun `typed brand is trimmed but otherwise untouched`() = runTest {
+        settings.pushSettings(Settings(url = ""))
+        val vm = newVm()
+        primeFormForWrite(vm)
+        vm.onBrandPicked(Brand("Other"))
+        vm.onCustomBrandChanged("  Tecbears  ")
+        rawWrite.nextResult = RawWriteResult.Success.Written(sampleUid)
+
+        vm.onWriteTapped()
+
+        assertEquals("Tecbears", rawWrite.lastInput?.newFilamentVendor)
+    }
+
+    /** Picking a preset from the dropdown still yields that preset's spelling. */
+    @Test
+    fun `a brand picked from the dropdown is written as listed`() = runTest {
+        settings.pushSettings(Settings(url = ""))
+        val vm = newVm()
+        primeFormForWrite(vm)
+        vm.onBrandPicked(Brand("TECBEARS"))
+        rawWrite.nextResult = RawWriteResult.Success.Written(sampleUid)
+
+        vm.onWriteTapped()
+
+        assertEquals("TECBEARS", rawWrite.lastInput?.newFilamentVendor)
+    }
+
     @Test
     fun `vendor tag plus no Spoolman url - Write disabled (no pair affordance)`() = runTest {
         // U13: vendor tag without Spoolman has no Spoolman target to pair to,

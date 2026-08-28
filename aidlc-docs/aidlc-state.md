@@ -167,3 +167,74 @@
 |---|---|---|
 | Security Baseline | No | Requirements Analysis |
 | Property-Based Testing | No | Requirements Analysis |
+
+- **Session 2026-08-27 — U26 (UI-63 brand casing) DONE, uncommitted; UI-64 opened.**
+  1. **Diverted first to a third "NFC is hit and miss" field report** and root-caused
+     it in code: a blank NTAG that has never been NDEF-formatted reports
+     `NfcA, MifareUltralight, NdefFormatable`, and `NfcRepository.classify()` tests
+     `NdefFormatable` **last**, so branch 2/3 label it a vendor tag and the write is
+     pre-blocked with `writeCallCount = 0`. Proven with a temporary probe against
+     real techLists, not inferred. Regression window pinned by `git log -S` to
+     **efe1a87 (v2.1.1, U14b vendor expansion)**. The 615-test suite missed it because
+     **every NFC fixture uses a techList no real NTAG produces**. Logged as
+     **UI-64**; explicitly NOT the same bug as UI-53 (reopening the app cannot change
+     a tag's format), so #9 must not be closed on it. Also established that
+     `hardware/nfc/` is unchanged since bfbd717 (v2.1.2), so the "hardening fix"
+     UI-53's reporter was asked to retest against never touched that path — UI-53
+     stays blocked, but for a better-understood reason. Reporter now says it is
+     "working for now", which is expected: every tag he rescued with NFC Tools is
+     permanently formatted. Not fixed this session, at the user's direction.
+  2. **U26 implemented** — UI-63 both halves, per the design locked 2026-08-24.
+     `MainViewModel.resolveBrandName` is now a pass-through (trim only), and
+     `MaterialBrandRepository.mergeBrands` puts Spoolman vendors first verbatim and
+     admits a preset only when no vendor matches case-insensitively.
+     **The entry's "unverified assumption to check before building" was checked and
+     is FALSE**: Spoolman's `vendor.name` is a bare `String(64)` with no unique
+     constraint, index or collation, so it dedupes nothing. That both removes the
+     stated justification for the old canonicalisation and makes locked-design
+     rule 1 (show case-variant server rows separately) load-bearing.
+     Tests **615 → 624**, 0 failures. Validated the new tests catch the old
+     behaviour by reverting the two production files and re-running: 8 of 10 fail,
+     and the 2 that pass are the ones pinning deliberately-unchanged behaviour.
+     Per-unit gate: FD / NFR-R / NFR-D / Infra-D **SKIP** (bugfix, design
+     pre-locked). Plan: `construction/plans/u26-brand-casing-code-generation-plan.md`.
+     **Not device-verified** (U26 §7 R3) and **not committed**.
+  3. **Left open**: R2 — `resolveMaterialName` still canonicalises against the
+     material presets and was deliberately not folded in (locked design is
+     brand-only; material presets are format names, not vendor styling). Same
+     latent item as the `mergeMaterials` preset-wins asymmetry noted in U23.
+  4. **Release-notes obligation**: filament records already created as
+     `TECBEARS PLA Grau` will not rename themselves and must not be bulk-renamed;
+     only new records pick up the corrected spelling. Say so in the notes.
+
+- **U26 install gate PASSED 2026-08-27** (moto g stylus 2025 / Android 16, debug,
+  live Spoolman: 22 vendors / 113 spools). Both halves device-verified, so U26 §7 R3
+  is closed and UI-63 is fully done.
+  - **F2 (dropdown)**: predicted the expected diff from the real vendor list before
+    looking at the device, then confirmed on screen — **exactly 5 rows change**
+    (`3DHoJor`→`3DHojor`, `Elegoo`→`ELEGOO`, `eSUN`→`eSun`, `JAYO`→`Jayo`,
+    `SUNLU`→`Sunlu`), count holds at 23. **UI-62 held**: vendor id=1 is stored as
+    `'TECBEARS '` with a trailing space and still renders `TECBEARS` exactly once.
+  - **F1 (typed brand)**: reproduced the reporter's path exactly rather than an
+    approximation — cleared the Spoolman URL to reach `RawNoUrl`, confirmed by the
+    **"Write to NFC"** label from their screenshot, and with no server vendors the
+    dropdown correctly fell back to preset spellings. Typed lowercase `tecbears`
+    against the preset `TECBEARS`, wrote to a blank NTAG; maintainer confirmed on
+    screen it wrote all lowercase.
+  - **No Spoolman mutation.** The URL was backed up byte-exact before clearing and
+    restored afterwards (string verified identical, then 4× HTTP 200 and 113 spools
+    re-collected). No vendor/filament/spool record created, changed or deleted.
+  - **Maintainer decision on the casing consequence**: ship as-is. Their server holds
+    sloppier casing than the presets for `eSun` / `Sunlu` / `3DHojor`, and
+    server-wins is the locked rule; the remedy is renaming those three vendor rows in
+    Spoolman's web UI once, not softening the rule (softening reintroduces UI-63).
+  - **Incidental, valuable**: Android 16 logged `BAL_BLOCK` against the NFC
+    foreground-dispatch PendingIntent, which got through only because the activity
+    had a visible window, with `balRequireOptInByPendingIntentCreator: true`.
+    `NfcAdapterWrapper.enableForegroundDispatch` creates it with plain `FLAG_MUTABLE`
+    and no BAL opt-in. Recorded under **UI-53** as a new and better-fitting mechanism
+    for "OS sees the tag, app is deaf" than the parked `attached === activity`
+    theory. Observed *not* failing, so not confirmed — but it comes with a concrete
+    candidate fix (`setPendingIntentCreatorBackgroundActivityStartMode`).
+  - Mid-gate mishap: a stray tap launched 1Weather's onboarding. Backed out without
+    accepting its Terms of Use or granting location. No consent given.

@@ -2076,6 +2076,45 @@ declaration is missing.
 device connected when traced), but sufficient and safe to ship. An n=10
 read/write soak belongs in whichever unit picks this up.
 
+### 2026-08-27 — new mechanism observed on device: `BAL_BLOCK` on the dispatch PendingIntent
+
+Seen incidentally while running the U26 install gate on Android 16, so this is an
+observation from a real device rather than a static trace:
+
+```
+ActivityTaskManager: Background activity launch blocked! goo.gle/android-bal
+  [callingPackage: com.spoolpainter.app.debug; ...
+   intent: Intent { act=android.nfc.action.NDEF_DISCOVERED typ=application/json ... };
+   isPendingIntent: true; realCallingPackage: com.android.nfc;
+   balAllowedByPiSender: BSP.ALLOW_FGS; resultIfPiSenderAllowsBal: BAL_BLOCK;
+   balRequireOptInByPendingIntentCreator: true]
+...
+ActivityTaskManager: START ... with LAUNCH_SINGLE_TOP ... (BAL_BLOCK) result code=3
+```
+
+The tag **did** reach `handleTag` immediately afterwards, so nothing failed in that
+run — but it only got through because `callingUidHasVisibleActivity: true`. The
+decisive line is **`balRequireOptInByPendingIntentCreator: true`**: Android 15+
+requires the *creator* of a PendingIntent to opt in to background activity launch,
+and `NfcAdapterWrapper.enableForegroundDispatch` creates it with plain
+`PendingIntent.FLAG_MUTABLE` and **no `ActivityOptions` BAL opt-in**.
+
+Why this is a strong candidate for UI-53 specifically: it is a mechanism where the
+**OS receives the tag and the app does not**, decided by the framework outside our
+state machine, and gated on whether the activity is considered visible at that
+instant. That matches "phone buzzes, app is deaf" far better than the
+`attached === activity` theory above, which cannot survive an `onPause` (detach
+always nulls `attached`). It also fits "reopening always fixes it", since a fresh
+visible activity satisfies the visibility exemption.
+
+**Do not treat this as confirmed** — it was observed *not* failing. What it gives us
+is a specific, testable mechanism and a concrete fix to evaluate:
+`ActivityOptions.makeBasic().setPendingIntentCreatorBackgroundActivityStartMode(
+MODE_BACKGROUND_ACTIVITY_START_ALLOWED)` passed into `PendingIntent.getActivity`
+(API 34+), which removes the framework's discretion rather than relying on the
+activity happening to be visible. Cheap, additive, and independent of the two
+causes above — worth shipping alongside them.
+
 ---
 
 ## UI-54 — Spoolman edit not reflected on the selected spool after pull-to-refresh (BUG)
@@ -2708,7 +2747,23 @@ logged here so it isn't a surprise later.
 
 ## UI-63 — Typed brand name is silently rewritten to the built-in spelling (BUG)
 
-**State**: open, **confirmed from a reporter screenshot 2026-08-22**. Supersedes
+**State**: **FIXED 2026-08-27 as U26** — both halves shipped, 624/624 tests,
+**install gate PASSED on device** the same day (moto g stylus 2025 / Android 16
+against a live Spoolman with 22 vendors). F1 verified by reproducing the reporter's
+exact RawNoUrl path and writing lowercase `tecbears` to a real tag against the
+preset `TECBEARS`; F2 verified as exactly 5 predicted dropdown rows changing, with
+the trailing-space `'TECBEARS '` row still rendering once. Plan + gate evidence:
+`construction/plans/u26-brand-casing-code-generation-plan.md` §8.
+
+> **The "unverified assumption" below is FALSIFIED.** Spoolman's `vendor.name` is
+> `mapped_column(String(64))` with no `unique=True`, no index and no collation
+> (checked against `spoolman/database/models.py`, 2026-08-27). Spoolman does
+> **not** dedupe vendor names case-insensitively. Two consequences: the comment
+> that justified `resolveBrandName`'s canonicalisation was factually wrong, and
+> locked-design rule 1 (show case-variant server rows separately) is
+> **load-bearing**, not hypothetical.
+
+**Original state**: open, **confirmed from a reporter screenshot 2026-08-22**. Supersedes
 the "no code change needed" conclusion [[UI-61]] reached in U23 — that pass
 checked the preset list and the Spoolman vendor path, and **never checked the
 typed-custom path**, which is where the reported bug actually lives.
@@ -2824,3 +2879,102 @@ claims "Spoolman dedups the vendor row case-insensitively". If true, rule 1's
 multi-row case cannot arise from Spoolman's own UI (only from other tools or the
 API); if false, rule 1 is load-bearing. Check Spoolman's vendor-name constraint
 either way — do not carry the claim forward unverified.
+
+---
+
+## UI-64 — Blank unformatted NTAGs are classified as vendor tags and refused (BUG)
+
+**State**: open, **root cause PROVEN in code 2026-08-27** (not a hypothesis — see
+the probe below). Not yet fixed. Reporter says it is "working for now", which is
+**expected and is not evidence the bug is gone** (see "Why 'it works now' is
+misleading").
+**Found in**: third independent field report of "NFC is hit and miss", 2026-08-27.
+Earlier two are [[UI-51]] (2.2.1) and [[UI-53]] (2.3.0/2.3.1).
+**Severity**: high — silently refuses the core write flow on a whole class of
+blank tags, which is the app's primary job.
+
+**Report**: "The NFC reader/writer is hit and miss. It either works or it don't.
+After every new spool added, it will not write or read a tag. NFC tools on Android
+read and write. After writing with NFC tools, it seems to work again. The tags are
+blank, so can't be that."
+
+### Root cause
+
+A blank NTAG21x that has **never been NDEF-formatted** reports techList
+`NfcA, MifareUltralight, NdefFormatable`. `NfcRepository.classify()`
+(`NfcRepository.kt:365-392`) tests in this order:
+
+```
+isMifareClassic               -> Vendor
+isMifareUltralight && !isNdef -> Vendor("MifareUltralight (vendor)")   <-- caught here
+isNfcA && !isNdef             -> Vendor("NfcA (vendor)")
+isNdef                        -> Blank
+isFormattable                 -> Blank                                 <-- never reached
+```
+
+`NdefFormatable` is tested **last**, so it is dead code for any NTAG: every real
+NTAG reports `NfcA`, so branch 2 or 3 always wins first. The chip is labelled a
+vendor tag, and `runWriteThenVerify` (`:276-281`) pre-blocks vendor tags before
+attempting any write.
+
+`NfcAdapterWrapper.writeRecords` (`:71-78`) contains a fully-written
+`NdefFormatable.format()` fallback for exactly this case. **The vendor pre-block
+makes it unreachable.** The code already knows how to handle these tags.
+
+### Proven, not inferred
+
+Temporary probe driving the real techLists (deleted after; recreate from this
+table if needed):
+
+| Tag state | Read outcome | Write outcome |
+|---|---|---|
+| `NfcA, MifareUltralight, NdefFormatable` | `Vendor(MifareUltralight (vendor))` | `Error(vendor-tag protected)`, **writeCallCount = 0** |
+| `NfcA, MifareUltralight, Ndef` | `Blank` | Success, writeCallCount = 1 |
+
+### Why the 615-test suite never caught it
+
+**Every fixture uses a techList no real NTAG produces.**
+`NfcTestSupport.makeTag` defaults to `[Ndef, NdefFormatable]` (has `Ndef`, so
+Blank); `FakeNfcAdapterWrapper.simulateRead` uses `[NdefFormatable]` **alone** —
+the single shape that reaches the dead branch 5. Neither includes `NfcA`. The
+suite exercises the one techList where the bug is invisible. **Any fix must add
+realistic techLists to the fixtures, or the next regression hides the same way.**
+
+### Regression window
+
+`git log -S` pins both vendor branches to **efe1a87 — v2.1.1, U14b (vendor
+expansion)**. Before that an unformatted NTAG fell through to
+`isFormattable -> Blank` and wrote fine. Reports begin at 2.2.1. **The vendor-read
+feature broke blank-tag writing as collateral damage.**
+
+### Why "it works now" is misleading
+
+Every tag the reporter rescued with NFC Tools is now NDEF-formatted, and formatted
+tags work permanently. He has silently repaired his own test set. Retesting on
+those tags will keep reporting success with the bug fully intact. **Only a virgin
+tag, tried in SpoolPainter before anything else touches it, is a valid test.**
+
+### Relationship to [[UI-53]] — do not merge them
+
+This does **not** explain UI-53/#9's symptom (phone buzzes, app deaf, *closing and
+reopening fixes it every time*). Reopening the app cannot change a tag's format
+state. Two distinct bugs sharing one "NFC is flaky" description; UI-53's parked
+dispatch/re-arm analysis still stands on its own. **Do not close #9 on this.**
+
+Also relevant to UI-53's blocked state: `hardware/nfc/` has **not been modified
+since bfbd717 (v2.1.2)**. The "hardening fix" #9's reporter was asked to retest
+against never touched that path, so that retest could not have shown a change
+either way.
+
+### Fix direction
+
+Move `isFormattable -> Blank` **above** the Ultralight/NfcA vendor branches,
+keeping `isMifareClassic` on top (Bambu/Creality chips also report
+`NdefFormatable` but are crypto-locked). Genuine Anycubic/Elegoo chips are then
+promoted back to Vendor by the speculative `parseVendor` that `handleTag` already
+runs, whose magic-byte checks (`7B 00 65 00`, `EE EE EE EE`) reject real blanks.
+
+**Decide deliberately**: if an Anycubic/Elegoo chip reports `NdefFormatable` *and*
+its magic bytes do not match, it becomes writable and a write could clobber it.
+Today's behaviour errs the other way — protect everything, refuse blanks. Check
+the vendor fixtures' real techLists before choosing.

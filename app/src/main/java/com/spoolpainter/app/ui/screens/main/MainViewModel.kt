@@ -76,7 +76,7 @@ class MainViewModel @Inject constructor(
     /** Merged preset + user-added materials (case-insensitive dedup, presets first). */
     val materials: StateFlow<List<Material>> = materialBrandRepo.materials
 
-    /** Merged preset + Spoolman-vendor + user-added brands (case-insensitive dedup, presets first). */
+    /** Spoolman vendors verbatim, plus presets the user has no vendor for (UI-63). */
     val brands: StateFlow<List<String>> = materialBrandRepo.brands
 
     private val _state = MutableStateFlow(MainUiState())
@@ -1128,18 +1128,35 @@ class MainViewModel @Inject constructor(
         return canonical?.name ?: raw
     }
 
-    private fun resolveBrandName(brand: Brand?, custom: String): String {
-        val raw = if (brand?.name == "Other" && custom.isNotBlank()) custom
-        else brand?.name ?: ""
-        if (raw.isBlank()) return raw
-        // Canonicalise against existing brands (presets ∪ Spoolman vendors).
-        // A case-only difference between user input and an existing brand would
-        // otherwise leak into the filament *name* (Spoolman dedups the vendor
-        // row case-insensitively, so the manufacturer column stays correct,
-        // but `derivedName = "$brand $material"` would carry the user's case).
-        val canonical = brands.value.firstOrNull { it.equals(raw, ignoreCase = true) }
-        return canonical ?: raw
-    }
+    /**
+     * UI-63 — returns the brand **exactly as the user chose it**. Whitespace is
+     * the only thing normalised, and only because a trailing space would
+     * otherwise render as a double space inside `derivedName`.
+     *
+     * This used to canonicalise `raw` against `brands.value`, so a hand-typed
+     * "Tecbears" was rewritten to the preset spelling "TECBEARS" before being
+     * written to the tag and into the Spoolman filament name — silently, and
+     * differing from what the form still displayed on screen. Two reasons that
+     * is gone rather than merely narrowed to Spoolman vendors:
+     *
+     * 1. Its stated justification was false. The old comment claimed Spoolman
+     *    dedupes the vendor row case-insensitively, so only the derived filament
+     *    name was at risk. Checked 2026-08-27: `vendor.name` is a plain
+     *    `String(64)` with no unique constraint, index or collation, so Spoolman
+     *    dedupes nothing. The cost was real and the benefit was imagined.
+     * 2. Picking from the dropdown now yields an exact Spoolman vendor string
+     *    (see `MaterialBrandRepository.mergeBrands`), so the case mismatch this
+     *    guarded against can now only arise from someone deliberately walking
+     *    past the dropdown and typing a variant under "Other". At that point
+     *    what they typed is the answer.
+     *
+     * Existing vendor *records* are still never renamed: `resolveOrCreateVendor`
+     * matches `ignoreCase = true` and reuses the row it finds, because renaming
+     * would rewrite a record every other filament of that brand points at.
+     */
+    private fun resolveBrandName(brand: Brand?, custom: String): String =
+        if (brand?.name == "Other" && custom.isNotBlank()) custom.trim()
+        else brand?.name?.trim() ?: ""
 
     /**
      * U20 (UI-49) — score the current filament inventory against a decoded tag

@@ -2594,3 +2594,51 @@ Resume artefact lists: copy/paste-ready build commands, milestone-by-milestone t
 **Context**: SESSION CLOSED — no unit open, working tree to be left clean.
 
 ---
+
+## Session 2026-08-27 — UI-64 investigation + U26 (UI-63)
+**Timestamp**: 2026-08-27T00:00:00Z
+**User Input**: "leave everything see why this happening, this is third person who mentioned that The NFC reader/writer is hit and miss. It either works or it don't. After every new spool added, it will not write or read a tag. NFC tools on Android read and write. After writing with NFC tools, it seems to work again. The tags are blank, so can't be that. I think the NFC reader in my phone is not linked properly to Spoolman."
+**AI Response**: Root-caused in code and proven with a temporary probe: unformatted blank NTAGs (`NfcA, MifareUltralight, NdefFormatable`) are classified Vendor because `classify()` tests `NdefFormatable` last, so the write is pre-blocked with writeCallCount=0. Regression pinned to efe1a87 (v2.1.1). Logged as UI-64. Probe deleted, tree left clean. No code changed.
+**Context**: Diagnosis only, per "leave everything".
+
+---
+
+## Session 2026-08-27 — tester test plan
+**Timestamp**: 2026-08-27T00:00:00Z
+**User Input**: "i have that person on chat, what should i ask themm to test? now he is saying its working"
+**AI Response**: Warned that "working now" is expected under the proven mechanism and is not evidence of a fix, because tags rescued with NFC Tools stay formatted. Supplied a paste-ready 4-step test keyed on a virgin tag tried in SpoolPainter first, the in-app "Report a tag issue" diagnostic (gives techList + parse outcome, which settles it outright), and a restart step that discriminates UI-64 from UI-53.
+**Context**: No code change.
+
+---
+
+## Session 2026-08-27 — U26 code generation
+**Timestamp**: 2026-08-27T00:00:00Z
+**User Input**: "looks like NFC stuff working for now, lets go back to that other brand name issue, fix that"
+**AI Response**: Implemented UI-63 both halves per the 2026-08-24 locked design. Verified the entry's flagged assumption first and found it FALSE (Spoolman's vendor.name has no unique constraint), which strengthened the delete-rather-than-narrow decision and made design rule 1 load-bearing. Tests 615 → 624, 0 failures; validated the new tests fail against the reverted production code. Docs: U26 plan, UI-63 marked fixed, UI-64 recorded, state + audit appended. Not committed, not device-verified.
+**Context**: Construction — Code Generation, U26.
+
+---
+
+## Session 2026-08-27 — U26 install gate
+**Timestamp**: 2026-08-27T23:00:00Z
+**User Input**: "device connected"
+**AI Response**: Ran the U26 install gate. Predicted the dropdown diff from the real vendor list, then confirmed all 5 changed rows on device with UI-62 still holding. Asked two decisions via AskUserQuestion (casing consequence; F1 verification route).
+**Context**: Construction — install gate, U26.
+
+---
+
+## Session 2026-08-27 — install gate decisions
+**Timestamp**: 2026-08-27T23:00:00Z
+**User Input**: (AskUserQuestion) Casing = "Ship as-is (Recommended)"; F1 verify = "Blank tag, no Spoolman write (Recommended)"
+**AI Response**: Shipped server-wins unchanged. Verified F1 via the RawNoUrl path with the Spoolman URL temporarily cleared and byte-exact restored afterwards; no Spoolman records touched.
+**Context**: Install gate routing.
+
+---
+
+## Session 2026-08-27 — F1 device confirmation
+**Timestamp**: 2026-08-27T23:00:00Z
+**User Input**: "it worked, i saw it wrote all small"
+**AI Response**: F1 confirmed on device — lowercase "tecbears" written against the preset "TECBEARS". Restored the Spoolman URL (verified identical, 4x HTTP 200, 113 spools). Updated U26 plan §8, UI-63 state, UI-53 with the BAL_BLOCK mechanism, state + audit.
+**Context**: Install gate PASSED; U26 complete.
+
+---
