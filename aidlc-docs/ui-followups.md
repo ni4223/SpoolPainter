@@ -2978,3 +2978,48 @@ runs, whose magic-byte checks (`7B 00 65 00`, `EE EE EE EE`) reject real blanks.
 its magic bytes do not match, it becomes writable and a write could clobber it.
 Today's behaviour errs the other way — protect everything, refuse blanks. Check
 the vendor fixtures' real techLists before choosing.
+
+---
+
+## UI-65 — No status overlay or animation when writing without Spoolman (BUG)
+
+**State**: **FIXED 2026-08-27**, device-verified by the maintainer the same day.
+**Found in**: maintainer observation during the U26 install gate, 2026-08-27:
+"when with no spoolman and we write why no animation showing up?"
+**Severity**: medium — the write worked, but gave no feedback that it was waiting
+for a tag, on the one path where the user has least context.
+
+**Cause**: `computeStatusLabel` (`MainScreen.kt:788`) carried branches for
+`ReadingForPair`, `WritingForPair`, `WritingSecondTag` and `PairingVendorUidOnly`,
+but **not `ActiveFlow.WritingRaw`** — the flow reached only when no Spoolman URL is
+configured (`onWriteTapped` → `WriteMode.RawNoUrl` → `launchRawWrite`,
+`MainViewModel.kt:668`). It fell to `else -> null`, and `NfcStatusOverlay` is gated
+on `visible = label != null`, so no caption and no animated dots.
+
+`WritingRaw` appeared in only three places in the whole codebase, all in the
+ViewModel and the state definition — **no UI component matched on it.**
+
+**Why it was clearly an oversight, not a decision**: `isWriteCancellable`
+(`MainViewModel.kt:220-225`) *does* include `WritingRaw`, so the button correctly
+flipped to Cancel. The user got a Cancel button with nothing saying what it was
+cancelling, while the otherwise-identical Spoolman write showed both. Two surfaces
+reading the same state; only one was updated when the flow was added.
+
+**Fix**: `WritingRaw` shares `WritingForPair`'s "Tap a tag to write" caption — the
+user's action is identical and the Spoolman/no-Spoolman distinction is not
+something they can act on from that overlay. Added to the `Verifying` branch too,
+for symmetry across write flows.
+
+**The durable part — an exhaustiveness guard.** New
+`MainScreenStatusLabelTest.everyActiveFlowIsClassified` enumerates
+`ActiveFlow::class.sealedSubclasses` by reflection and requires every subtype to be
+classified as either tag-waiting (must have a caption) or deliberately silent
+(`Idle`, `PromptingPairAnother`, `AwaitingRepairConfirmation` — each already owns
+the screen with its own sheet). **Adding a new `ActiveFlow` now fails the test until
+someone decides whether it needs a caption**, which is precisely the decision that
+was skipped when `WritingRaw` was introduced. This is the bug class the test exists
+to stop, not just this instance.
+
+Tests **624 → 631**. Verified the tests catch the regression by reverting only the
+`MainScreen` change: 4 of 7 fail. Device-verified in `RawNoUrl` mode (maintainer:
+"works"). No `resolveMaterialName` / brand behaviour touched.

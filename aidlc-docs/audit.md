@@ -2642,3 +2642,19 @@ Resume artefact lists: copy/paste-ready build commands, milestone-by-milestone t
 **Context**: Install gate PASSED; U26 complete.
 
 ---
+
+## Session 2026-08-27 — UI-65
+**Timestamp**: 2026-08-27T23:12:00Z
+**User Input**: "Question when with no spoolman and we write why no animation showing up?"
+**AI Response**: Traced to computeStatusLabel omitting ActiveFlow.WritingRaw, so NfcStatusOverlay (gated on label != null) never rendered. Noted the asymmetry with isWriteCancellable, which does include the flow. Offered the fix plus an exhaustiveness test.
+**Context**: Bug report from device observation.
+
+---
+
+## Session 2026-08-27 — UI-65 fix
+**Timestamp**: 2026-08-27T23:12:00Z
+**User Input**: "fix it" / later "works"
+**AI Response**: Added WritingRaw to the tap-to-write and Verifying branches; added MainScreenStatusLabelTest with a reflection-based exhaustiveness guard over ActiveFlow's sealed subclasses. Tests 624 → 631; validated by reverting only MainScreen (4 of 7 fail). Device-verified by maintainer. Spoolman URL restored byte-exact and confirmed (113 spools).
+**Context**: Construction — follow-on fix, folded into the same release as U26.
+
+---

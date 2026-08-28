@@ -238,3 +238,19 @@
     candidate fix (`setPendingIntentCreatorBackgroundActivityStartMode`).
   - Mid-gate mishap: a stray tap launched 1Weather's onboarding. Backed out without
     accepting its Terms of Use or granting location. No consent given.
+
+- **UI-65 fixed 2026-08-27** (same session, folded in after U26's gate). The
+  no-Spoolman write (`ActiveFlow.WritingRaw`) never produced an NFC status caption,
+  so `NfcStatusOverlay` — gated on `label != null` — never appeared: no text, no
+  animation, while the button *did* flip to Cancel because `isWriteCancellable`
+  knew about the flow and `computeStatusLabel` did not. `WritingRaw` was referenced
+  nowhere in the UI layer. Fix shares `WritingForPair`'s "Tap a tag to write" copy
+  and adds `WritingRaw` to the `Verifying` branch.
+  **The lasting part is the guard**: `MainScreenStatusLabelTest` reflects over
+  `ActiveFlow::class.sealedSubclasses` and fails if any subtype is unclassified, so
+  a future flow cannot be added without deciding whether it needs a caption.
+  `computeStatusLabel` widened `private` → `internal` to make it testable.
+  Tests **624 → 631**, 0 failures; validated by reverting only the MainScreen change
+  (4 of 7 fail). Device-verified in RawNoUrl mode (maintainer: "works"). Spoolman URL
+  cleared and byte-exact restored twice across the session, verified each time
+  (113 spools, HTTP 200); no Spoolman records touched.

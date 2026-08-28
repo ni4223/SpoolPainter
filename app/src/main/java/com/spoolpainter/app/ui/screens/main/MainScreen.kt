@@ -785,7 +785,7 @@ private fun RadiatingWavesIndicator(
  * is running. Replaces the old top-of-screen pill that pushed content
  * down on flow start and was off-screen if the user had scrolled.
  */
-private fun computeStatusLabel(activeFlow: ActiveFlow, nfc: NfcResult): String? = when {
+internal fun computeStatusLabel(activeFlow: ActiveFlow, nfc: NfcResult): String? = when {
     activeFlow == ActiveFlow.ReadingForPair &&
         (nfc is NfcResult.Idle || nfc is NfcResult.Reading) ->
         "Tap a tag to read"
@@ -797,10 +797,18 @@ private fun computeStatusLabel(activeFlow: ActiveFlow, nfc: NfcResult): String? 
         // tag, so the label drops the "to write" half (which lied for
         // the vendor branch).
         "Tap second tag to pair"
-    activeFlow == ActiveFlow.WritingForPair &&
+    // WritingRaw is the no-Spoolman write (WriteMode.RawNoUrl). It shares this
+    // label with WritingForPair because the user's action is identical — tap a
+    // tag — and the Spoolman/no-Spoolman distinction is not something they can
+    // act on from here. It was missing entirely until 2026-08-27, so the
+    // no-Spoolman write showed a Cancel button with no caption and no overlay
+    // while the Spoolman write showed both: isWriteCancellable knew about the
+    // flow and this function did not.
+    (activeFlow == ActiveFlow.WritingForPair || activeFlow == ActiveFlow.WritingRaw) &&
         (nfc is NfcResult.Idle || nfc is NfcResult.Writing) ->
         "Tap a tag to write"
     (activeFlow == ActiveFlow.WritingForPair ||
+        activeFlow == ActiveFlow.WritingRaw ||
         activeFlow is ActiveFlow.WritingSecondTag) &&
         nfc is NfcResult.Verifying -> "Verifying tag"
     activeFlow == ActiveFlow.PairingVendorUidOnly -> "Linking tag to spool"
