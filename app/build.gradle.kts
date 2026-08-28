@@ -17,11 +17,17 @@ android {
         applicationId = "com.spoolpainter.app"
         minSdk = 29
         targetSdk = 36
-        // 115 skips past 114 deliberately: 114 was built for U22 as 2.3.2 but we
+        // 115 skipped past 114 deliberately: 114 was built for U22 as 2.3.2 but we
         // cannot verify whether it reached Play, and reusing a consumed code is
         // what got 113 rejected. Git tags are not a record of Play uploads.
-        versionCode = 115
-        versionName = "2.4.0"
+        //
+        // 116 / 2.4.1 — two bugfixes on top of 2.4.0 (UI-63 brand casing, UI-65
+        // missing NFC status overlay on the no-Spoolman write). 115 is tagged and
+        // GitHub-released, so it is treated as consumed regardless of whether it
+        // reached Play. Confirm in Play Console before upload; skipping a code is
+        // always safe, reusing one is not.
+        versionCode = 116
+        versionName = "2.4.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

@@ -2658,3 +2658,11 @@ Resume artefact lists: copy/paste-ready build commands, milestone-by-milestone t
 **Context**: Construction — follow-on fix, folded into the same release as U26.
 
 ---
+
+## Session close-out 2026-08-27
+**Timestamp**: 2026-08-27T23:30:00Z
+**User Input**: "okay works, finsh aidlc stuff so i can compact this"
+**AI Response**: Closed the AIDLC session. Bumped versionCode 115 → 116 / versionName 2.4.0 → 2.4.1 (115 is tagged + GitHub-released, so treated as consumed). Wrote operations/v2.4.1-release-notes.md with a 462-char Play block carrying the "old filaments keep their names" caveat, added a README "What's new in v2.4.1" section, and appended the close-out to aidlc-state.md. Tests 631/631. Recorded UI-64 as the strongest next-unit candidate and left the #8 reply unposted pending approval.
+**Context**: AIDLC session close-out.
+
+---

@@ -3,7 +3,7 @@
 
 Android app for managing 3D printer filament spools via NFC tags. Reads / writes filament metadata in [OpenSpool](https://openspool.io/) format and syncs with a self-hosted [Spoolman](https://github.com/Donkie/Spoolman) inventory.
 
-`v2.3` · `applicationId` `com.spoolpainter.app` · `minSdk 29` (Android 10+) · `targetSdk 36`
+`v2.4.1` · `applicationId` `com.spoolpainter.app` · `minSdk 29` (Android 10+) · `targetSdk 36`
 
 ### [Get it on Google Play](https://play.google.com/store/apps/details?id=com.spoolpainter.app)
 
@@ -42,6 +42,11 @@ It is a single-user, sideloadable Android app. No accounts, no cloud, no analyti
 | Type to search the pickers |
 |---|
 | ![Spool picker filtered live by a typed query](screenshots/11-search.png) |
+
+## What's new in v2.4.1
+
+- **The brand you pick is the brand that gets written.** If you type a brand under **Other**, that exact spelling now goes onto the tag and into Spoolman. Previously the app quietly swapped in its own capitalisation when it recognised the name, so a typed "Jayo" was written as "JAYO" while the form still showed "Jayo". The Brand list also shows the spelling from your own Spoolman server rather than the built-in one, so a vendor you created as "Tecbears" is now pickable instead of being hidden behind "TECBEARS". Filaments you already saved keep their current names, only new ones use the corrected spelling.
+- **Writing a tag without Spoolman shows the prompt again.** With no Spoolman URL configured, tapping Write armed the tag reader but showed no "Tap a tag to write" message and no animation, so it looked like nothing had happened.
 
 ## What's new in v2.4
 

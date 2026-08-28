@@ -254,3 +254,45 @@
   (4 of 7 fail). Device-verified in RawNoUrl mode (maintainer: "works"). Spoolman URL
   cleared and byte-exact restored twice across the session, verified each time
   (113 spools, HTTP 200); no Spoolman records touched.
+
+## Session close-out 2026-08-27 — U26 + UI-65 shipped, v2.4.1 (116) staged
+
+**AIDLC session CLOSED.** Construction phase; per-unit gate FD / NFR-R / NFR-D /
+Infra-D **SKIP** for U26 (bugfix, design pre-locked 2026-08-24). UI-65 was a
+follow-on fix inside the same session, not its own unit.
+
+**Shipped this session**
+- **U26 / UI-63** — brand written verbatim; `resolveBrandName` canonicalisation
+  deleted, `mergeBrands` inverted so the user's Spoolman vendor beats a preset.
+  Commit `d20a9c3`. Install gate PASSED on device.
+- **UI-65** — `ActiveFlow.WritingRaw` added to `computeStatusLabel`, so the
+  no-Spoolman write shows its caption + animation. Commit `0a3fc03`. Device-verified.
+- **Version bumped to 116 / 2.4.1** with release notes at
+  `operations/v2.4.1-release-notes.md` and a README "What's new in v2.4.1" section.
+
+**Tests 615 → 631**, 0 failures. Both fixes validated against reverted production
+code (8/10 and 4/7 fail respectively), so neither test set passes vacuously.
+
+**Opened, not fixed**
+- **UI-64** — blank unformatted NTAGs classified as vendor tags and refused, write
+  never attempted. Root cause **proven** (probe against real techLists), regression
+  pinned to `efe1a87` (v2.1.1 / U14b). Explains three "NFC is hit and miss" field
+  reports. **Strongest candidate for the next unit.** Any fix must also add realistic
+  techLists to the NFC fixtures — every existing fixture uses a techList no real NTAG
+  produces, which is why 615 tests missed it.
+- **UI-53** — new `BAL_BLOCK` mechanism recorded from a device observation; fits the
+  symptom better than the parked `attached === activity` theory and has a concrete
+  candidate fix. Still distinct from UI-64; **do not close #9 on UI-64**.
+
+**Next gate (maintainer's step)**
+1. Confirm Play Console accepts **116**, then `./gradlew :app:bundleRelease` and
+   upload with the 442-char notes block.
+2. Push the two unpushed code commits + docs, then tag `v2.4.1` and publish the
+   GitHub Release.
+3. Reply to GitHub #8 — the fix they were promised has shipped, and UI-64 is a much
+   better answer to their "hit and miss" report than anything we have told them.
+   Draft still **unposted pending approval** per the standing instruction.
+
+**Backlog unchanged otherwise**: UI-50 Ask 1 (on hold), UI-51, UI-55, UI-56,
+UI-58 (unconfirmed), UI-59(b), plus U26 §7 R2 (`resolveMaterialName` /
+`mergeMaterials` preset-wins asymmetry).
