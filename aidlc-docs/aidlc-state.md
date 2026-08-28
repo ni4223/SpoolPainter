@@ -644,3 +644,29 @@ pre-clear snapshot.
 strongest next unit (proven, unfixed, explains three "NFC is hit and miss" reports);
 [[UI-53]] open with its `BAL_BLOCK` lead; UI-50 Ask 1, UI-51, UI-55, UI-56,
 UI-58 (unconfirmed), UI-59(b), and U26 §7 R2.
+
+### 2026-08-28 — v2.4.1 (116) SHIPPED to Open testing + GitHub
+- **Play: 116 accepted, uploaded to Open testing only.** 116 is now consumed; the
+  next release needs **117+**.
+- **GitHub Release published**:
+  https://github.com/ni4223/SpoolPainter/releases/tag/v2.4.1 — live, both assets
+  (`app-release.apk` 8,082,261 B, `app-release.aab` 8,900,490 B). Branch `v2` and tag
+  `v2.4.1` pushed (10 commits, including U26 / UI-65 / U27 and the UI-63 design docs
+  that had been unpushed since before this session).
+- The release body deliberately carries a **Known issue** section naming
+  [[UI-64]] with the NFC-Tools workaround: three people have reported it as "NFC is
+  hit and miss", and a release that stayed quiet would invite a fourth.
+
+**Track baseline — keep current, this is what went stale and caused a rewrite**
+
+| Track | Now on |
+|---|---|
+| Open testing | **2.4.1 (116)** |
+| Production | **2.3.1** |
+
+Production is **three versions behind** (2.3.2, 2.4.0, 2.4.1 all unpromoted). The
+**486-character production note in `operations/v2.4.1-release-notes.md` is written
+from the 2.3.1 baseline and is ready to use** whenever the beta looks clean.
+
+**Still outstanding**: the GitHub #8 reply, drafted and **unposted pending
+approval** per the standing instruction.

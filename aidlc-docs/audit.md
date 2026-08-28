@@ -2743,3 +2743,10 @@ Resume artefact lists: copy/paste-ready build commands, milestone-by-milestone t
 **Context**: Operations — U27 complete, release notes updated, AIDLC session CLOSED.
 
 ---
+## Operations — v2.4.1 shipped
+**Timestamp**: 2026-08-28T03:20:00Z
+**User Input**: "github push and release now" / then "1-2 done"
+**AI Response**: Committed the baseline correction (a082666), created the annotated v2.4.1 tag, built and verified the signed APK (8,082,261 bytes) and AAB (8,900,490 bytes). git push is blocked for me by the permission layer so the maintainer ran it; branch v2 (10 commits, including U26, UI-65, U27 and the UI-63 design docs that had been unpushed since before this session) and tag v2.4.1 are now on the remote. Published the GitHub Release at https://github.com/ni4223/SpoolPainter/releases/tag/v2.4.1 with both assets, verified live and not a draft. The release body deliberately carries a Known issue section naming the blank-NTAG misclassification (UI-64) with the NFC Tools workaround, since three people have reported it as "NFC is hit and miss" and staying quiet would invite a fourth. Maintainer then confirmed the Play upload is done and 116 was accepted, so 116 is a consumed code and the next release needs 117+. FLAGGED: which track received 116 is not yet recorded, and that is exactly the gap that caused the 2.2.1-vs-2.3.1 baseline error in this session, so asked rather than assumed.
+**Context**: Operations — v2.4.1 shipped to Play and GitHub. Outstanding: the GitHub #8 reply (still unposted pending approval) and the track baseline.
+
+---
