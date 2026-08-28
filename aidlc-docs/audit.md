@@ -2750,3 +2750,10 @@ Resume artefact lists: copy/paste-ready build commands, milestone-by-milestone t
 **Context**: Operations — v2.4.1 shipped to Play and GitHub. Outstanding: the GitHub #8 reply (still unposted pending approval) and the track baseline.
 
 ---
+## Operations — GitHub #8 replied and closed
+**Timestamp**: 2026-08-28T03:40:00Z
+**User Input**: "what should be reply to that brand issue?" then "simpler" then "post and close."
+**AI Response**: Read the issue and both comments before drafting rather than working from memory, which surfaced that my own earlier comment on #8 had promised the WRONG fix (align to Spoolman vendors only). The reply therefore leads with the direct answer to their question (yes, with or without Spoolman) and then corrects that earlier claim, explaining that Spoolman's vendor.name has no unique constraint or case-insensitive matching so the justification was false and the substitution was deleted rather than narrowed. Also covered the half I had originally missed, which is what their follow-up about Spoolman confusion was really about: mergeBrands made their own "Tecbears" unpickable, not merely deprioritised. Carried the mandatory caveat that already-created filaments keep their names and the remedy is one vendor rename in Spoolman. Deliberately did NOT mention UI-64: different bug, and #9's reporter is the one waiting on that. Shortened the draft on request, showed it, posted only after explicit approval per the standing instruction. Posted at issue #8 comment 5449921428 and closed the issue as completed. NOTED: I had recommended leaving it open until 2.4.1 reaches production, since stable users are on 2.3.1 and still have the bug; the maintainer chose to close now, so a stable-user report before the promotion will arrive as a duplicate rather than a comment on the closed issue.
+**Context**: Operations — #8 closed. UI-64 remains the strongest next unit.
+
+---

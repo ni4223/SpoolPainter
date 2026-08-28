@@ -3344,3 +3344,33 @@ consumes no new version code.
 **Still carried, not fixed**: no confirmation and no undo on the clear (the
 maintainer's call). Fix pre-scoped if it bites: snackbar action plus a pre-clear
 snapshot.
+
+---
+
+### GitHub #8 replied and CLOSED 2026-08-28
+
+Comment: https://github.com/ni4223/SpoolPainter/issues/8#issuecomment-5449921428
+
+Answered the reporter's direct question (*"So a new version would accept my
+'Tecbears' when its also in spoolman as 'Tecbears'?"*) — **yes, and with or without
+Spoolman** — and **corrected my own earlier comment on that issue**, which had
+promised a different fix: aligning to Spoolman vendors only. That reasoning was
+false and the reply says so plainly, since the reporter would otherwise have
+expected the alignment behaviour.
+
+Also told them about the half I had originally missed, which is what their
+follow-up ("I also used spoolman though … That also caused some confusion") was
+actually about: `mergeBrands` made their own `Tecbears` **unpickable**, not merely
+deprioritised.
+
+Carried the mandatory caveat: **filaments already created keep their names**, the
+app never renames a vendor row, and the remedy is one rename in Spoolman.
+
+**Closed at the maintainer's instruction.** Noted for the record that I had
+recommended leaving it open until 2.4.1 reaches **production**, since stable users
+are on 2.3.1 and still have the bug; the maintainer chose to close now. If a stable
+user reports the same thing before the promotion, the issue is closed rather than
+open, so expect a duplicate rather than a comment on this one.
+
+[[UI-64]] was deliberately **not** mentioned — that is a different bug, and #9's
+reporter is the one waiting on it.
