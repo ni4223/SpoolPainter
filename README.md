@@ -46,6 +46,8 @@ It is a single-user, sideloadable Android app. No accounts, no cloud, no analyti
 ## What's new in v2.4.1
 
 - **The brand you pick is the brand that gets written.** If you type a brand under **Other**, that exact spelling now goes onto the tag and into Spoolman. Previously the app quietly swapped in its own capitalisation when it recognised the name, so a typed "Jayo" was written as "JAYO" while the form still showed "Jayo". The Brand list also shows the spelling from your own Spoolman server rather than the built-in one, so a vendor you created as "Tecbears" is now pickable instead of being hidden behind "TECBEARS". Filaments you already saved keep their current names, only new ones use the corrected spelling.
+- **A Clear button in the top left.** One tap empties the form. It greys out when there is nothing to clear, so the button only ever does something. This replaces the **Clear all** row that v2.4 put in the `⋮` menu.
+- **The `⋮` icon opens Settings directly.** With Clear all moved to its own button, the menu held a single row, so the popup was a tap in the way of the only thing behind it.
 - **Writing a tag without Spoolman shows the prompt again.** With no Spoolman URL configured, tapping Write armed the tag reader but showed no "Tap a tag to write" message and no animation, so it looked like nothing had happened.
 
 ## What's new in v2.4

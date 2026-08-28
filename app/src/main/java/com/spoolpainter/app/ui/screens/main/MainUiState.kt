@@ -43,6 +43,34 @@ data class MainUiState(
     val scanSuggestedFilamentIds: List<Int> = emptyList(),
 )
 
+/**
+ * The state "Clear" produces: a blank form plus the derived selection / hint state
+ * that a blank form implies, keeping only the two view-only toggles
+ * ([FormState.rawWriteMode], [FormState.moreDetailsExpanded]) so the user stays on
+ * the section they were looking at.
+ *
+ * Pure and extracted **so the action and the button's enabled state cannot drift
+ * apart**. `MainViewModel.onClearAll` applies it; `MainViewModel.canClear` asks
+ * whether applying it would change anything. One definition, so a field added to
+ * the clear is automatically a field that un-greys the button.
+ *
+ * Note it does NOT cover the two custom-name buffers (`_customMaterial` /
+ * `_customBrand`), which live outside [MainUiState]; `canClear` folds those in
+ * separately, and that split is exactly the kind of thing worth a test.
+ */
+internal fun MainUiState.cleared(): MainUiState = copy(
+    form = FormState(
+        rawWriteMode = form.rawWriteMode,
+        moreDetailsExpanded = form.moreDetailsExpanded,
+    ),
+    spoolman = spoolman.copy(selectedSpoolId = null),
+    ambiguity = null,
+    observedTagKind = ObservedTagKind.None,
+    observedTagUid = null,
+    scanSuggestedSpoolIds = emptyList(),
+    scanSuggestedFilamentIds = emptyList(),
+)
+
 data class FormState(
     val cardUid: CardUid? = null,
     val material: Material? = DEFAULT_MATERIAL,

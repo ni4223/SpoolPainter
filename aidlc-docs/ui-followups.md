@@ -3023,3 +3023,324 @@ to stop, not just this instance.
 Tests **624 → 631**. Verified the tests catch the regression by reverting only the
 `MainScreen` change: 4 of 7 fail. Device-verified in `RawNoUrl` mode (maintainer:
 "works"). No `resolveMaterialName` / brand behaviour touched.
+
+---
+
+## UI-66 — Pair-another: drop the "pair another?" prompt, auto-start the second pair with a clear message and a Cancel (FEATURE)
+
+**State**: requested 2026-08-27, **design questions open** (see
+`inception/requirements/requirements-questions-v2.5-features.md` §Feature 1).
+**Requested by**: maintainer. **Type**: UX flow change, no data-model change.
+**Session**: first of the 2-3 features in the v2.5 session.
+
+**Request (verbatim)**: "you know how we have pair another flow, there after 1st
+pair we get message asking if we want to pair another, there lets just do flow
+like we start second pair with clear message and then user get to cancel if they
+want"
+
+So: **opt-out instead of opt-in.** Today the app stops and asks. The ask becomes
+the second pair already running, with copy that says so and a Cancel.
+
+### Today's flow (read, not assumed)
+
+1. First tag write succeeds → `applyWriteResult` on
+   `CreateAndPairResult.Success.WrittenAndPaired` sets
+   `ActiveFlow.PromptingPairAnother(spoolId, isVendorPair)`
+   (`MainViewModel.kt:1386`). Same transition from the vendor UID-only path
+   (`:1723`).
+2. `BottomSheetHost` mounts `PairAnotherTagSheet` on that flow only
+   (`BottomSheetHost.kt:25`). Its title doubles as the first tag's success
+   confirmation — deliberately, because a snackbar would slide up *under* the
+   sheet and never be read ([[UI-03]]).
+3. Buttons: **Done** → `onPairAnotherTagDismissed` → `Idle` + the
+   `pairedMessage` summary snackbar. **Pair another** →
+   `onPairAnotherTagAccepted` → `WritingSecondTag(spoolId)` + arm
+   `TwoTagUseCase`, 15 s `writeTimeoutMs`.
+4. During `WritingSecondTag` the sheet unmounts and the inline
+   `[Read|Write]` row becomes the single Cancel surface — that is
+   [[UI-35]]'s shipped fix, and its reasoning (one Cancel surface, status lives
+   on the centered `NfcStatusOverlay`) carries straight into this change.
+5. Cancel during `WritingSecondTag` returns to `PromptingPairAnother`, i.e. back
+   to the sheet.
+
+### What the change actually is
+
+Skip step 2-3 entirely: go `WrittenAndPaired` → `WritingSecondTag(spoolId)`
+directly, armed, with the overlay caption carrying the message. Cancel then has
+nowhere to return to, so it must land on `Idle` and emit the summary snackbar
+that **Done** emits today.
+
+Most of the machinery already exists. `WritingSecondTag` is already a state, is
+already cancellable (`isWriteCancellable`, `MainViewModel.kt:220-225`), already
+has a caption ("Tap second tag to pair") and already routes its cancel through
+`onPairAnotherTagAccepted`'s toggle branch.
+
+### The real risk — the first tag is still on the coil
+
+`TwoTagUseCase` arms with **`expectedUid = null`** (`TwoTagUseCase.kt:47`); the
+old UID enforcement was deliberately removed (`CreateAndPairUseCase.kt:51`). So
+nothing stops the *first* tag from being consumed as the "second" tag. Today a
+deliberate "Pair another" tap supplies the gap in which the user lifts the
+phone. **Auto-arming removes that gap while the phone is physically still on the
+tag just written.** `MoveOnBind` sees the UID already on this spool and returns
+`Proceed`, `appendCardUidToSpool` re-appends it, and the user is told a second
+tag was paired when nothing new happened. Related to [[UI-56]] (a write tap
+poisons the ambient buffer).
+
+Candidate mitigation: thread the first tag's UID into `TwoTagInput` and reject a
+re-tap of it with distinct copy ("Same tag. Tap a different one.") rather than
+counting it. Cheap, and it makes the flow honest. Needs a decision, and it is
+the one part of this change that is a correctness issue rather than a
+preference.
+
+### The other real cost — the benign timeout is no longer benign
+
+A user who wanted exactly one tag currently taps **Done** and gets a clean
+summary. With auto-arm they do nothing, wait out 15 s, and hit
+`TwoTagResult.Cancelled("timeout")` → *"No second tag tapped. Tap Write to
+retry."* (`MainViewModel.kt:1666`). That message is written for a user who
+*tried* and missed. Under opt-out it fires on the **most common** path and reads
+as a failure. The copy has to change or the flow feels broken every single time.
+
+### Knock-on cleanup if the prompt goes away
+
+`ActiveFlow.PromptingPairAnother`, `PairAnotherTagSheet`,
+`PairAnotherTagUiState`, the `BottomSheetHost` branch, `MainScreen`'s
+`pairAnotherState` projection (`:108`) and `onPairAnotherTagDismissed` all become
+unreachable. `BottomSheetHost` itself stays — `AwaitingRepairConfirmation` still
+uses it. `MainScreenStatusLabelTest` lists `PromptingPairAnother` under
+`deliberatelySilentFlows`, so the [[UI-65]] exhaustiveness guard will fail until
+that list is updated — working exactly as intended.
+
+Also affected: `TwoTagResult.VendorTagRejected`'s comment reasons about "no
+`PromptingPairAnother` — we don't want to recursively prompt-pair-another
+forever" (`MainViewModel.kt:1584`). Under auto-arm that concern becomes the
+literal open question of whether a *successful* second pair auto-arms a third.
+
+---
+
+## UI-67 — Dedicated "Clear all" button in the header, top left (FEATURE)
+
+**State**: requested 2026-08-28, **design questions open** (see
+`inception/requirements/requirements-questions-ui67-clear-all.md`).
+**Requested by**: maintainer: *"another change i want is to have dedicated button
+for clear all, maybe on top left"*.
+**Type**: UI-only. The action already exists.
+
+### What exists today
+
+`MainViewModel.onClearAll()` (`:919`) is written and proven — resets `FormState`,
+drops the spool selection, `ambiguity`, `observedTagKind` / `observedTagUid` and
+both scan-suggestion lists, while deliberately preserving `rawWriteMode` and
+`moreDetailsExpanded` so the user stays on the section they were looking at.
+
+It is reached today from **one place**: `MenuRow("Clear all", …)` inside the
+MoreVert overflow menu at the header's `TopEnd` (`MainScreen.kt:644`). So this
+request is purely about promoting an existing action to its own control.
+
+### This reverses a device-tested UI-57 decision, and here is why that is defensible
+
+`MainScreen.kt:577-585` records the opposite decision explicitly: *"clear-all
+lives in an overflow menu on the existing icon, NOT as its own control"*, after
+three in-header variants were tried on device and all crowded the logo.
+
+**But all three rejected variants were at `TopEnd`**: a `RestartAlt` icon (also
+read as "reload", which this screen already does via pull-to-refresh), bare
+"Clear" text, and an outlined "Clear" whose border overlapped the NFC waves.
+**`TopStart` was never tried**, and the layout says there is room there:
+`SpoolPainterLogo` centres a `Row` of `Spacer(40.dp) + Image(height = 96.dp)`
+inside a `fillMaxWidth` Column with `CenterHorizontally`
+(`SpoolPainterLogo.kt:61-69`). The vector is 600×341, so at 96 dp tall the image
+is roughly 169 dp wide and the Row roughly 209 dp — leaving about 100 dp of
+genuinely empty gutter on **each** side on a 411 dp-wide screen. The MoreVert
+IconButton already sits in the right one without crowding anything.
+
+So the UI-57 rejection was **location- and width-specific**, not a finding that
+the header has no room at all. The maintainer's "maybe on top left" lands on the
+one spot that was not tested and is the emptiest.
+
+### Decisions that are not obvious
+
+1. **Icon or label.** An icon in the top-left corner is where up/back normally
+   lives, and there is no good unambiguous glyph: `Clear` (X) is already the
+   field-level clear (`Clear spool selection`, `Clear filament selection`,
+   `Clear search`) and at header level reads as "close"; `RestartAlt` was already
+   rejected as "reload"; anything `Delete*` risks the far worse misread of
+   "delete my spool from Spoolman".
+2. **The menu becomes a one-item menu.** Remove the row and MoreVert holds only
+   Settings, at which point a MoreVert affordance is pointless and the icon should
+   just become a Settings gear. That is a bigger visual change than was asked for,
+   so it needs saying out loud.
+3. **One tap instead of two, on a destructive action.** UI-57's "no confirmation
+   dialog by design (the user clears often, so a prompt on every clear is
+   friction)" (`MainViewModel.kt:913-914`) was decided when clearing took two taps
+   behind a menu. A single header tap that wipes a filled-in form is a different
+   risk. Note `UiEffect.ShowSnackbar` has **no action-label support** today
+   (`MainScreen.kt:122` calls `showSnackbar(effect.message)` only), so an Undo
+   affordance means extending the effect type and handling
+   `SnackbarResult.ActionPerformed`, plus snapshotting the pre-clear state.
+
+### Implemented 2026-08-28 (U27) — button only, Settings gear deferred
+
+Maintainer cut the scope mid-implementation: *"implement clear all only"*. So
+question 2.2 A landed **half**: the duplicate `MenuRow("Clear all", …)` is gone
+(that row *is* clear-all, and leaving it would give one action two entry points),
+but `MoreVert` was **not** collapsed into a Settings gear. The menu now holds a
+single item, Settings — a known interim oddity, and the remaining half of 2.2 A.
+
+**Answers as built**: 2.1 A (text button "Clear all"), 2.2 A *partial*, 2.3 **B**
+(no confirmation, no Undo — maintainer's call over my recommendation), 2.4 A
+(always enabled).
+
+**One file**: `MainScreen.kt` → `MainLogoHeader`. `TextButton` at `TopStart`,
+`testTag("main-clear-all-button")`, `maxLines = 1`. One import added
+(`material3.TextButton`); nothing became unused, because the menu survived.
+No ViewModel change — `onClearAll()` was already wired at `:192`.
+
+The UI-57 comment was **rewritten, not deleted**: its device findings still hold
+(RestartAlt reads as "reload"; a wide outlined control overlaps the NFC waves).
+What the replacement adds is that all three failures were at `TopEnd`, that
+`TopStart` was never tried, and the gutter arithmetic showing ~100 dp free on each
+side, with the existing `MoreVert` as the existence proof that a control fits.
+
+**Tests 631 → 631, 0 failures**, as predicted: this unit adds no JVM-testable
+surface, and the project has no instrumented tests at all
+(`app/src/androidTest` holds no sources). Verification is the install gate.
+
+**Install gate PENDING** — see the U27 plan §7. Two things only a device answers:
+whether the label crowds the logo at the largest accessibility font, and whether
+a top-left control gets mistaken for Back.
+
+**Risk knowingly carried (R1)**: clearing is now one tap with no confirmation and
+no undo. If it bites in the field, the fix is already scoped (snackbar action plus
+a pre-clear snapshot, question 2.3 option A).
+
+**Install gate PASSED 2026-08-28** (moto g stylus 2025 / Android 16). Full evidence
+in the U27 plan §8. Headlines:
+- **The crowding worry did not materialise.** Gap between the button's right edge
+  and the logo: **182 px** at `font_scale` 1.0, **130 px** at 1.3, **45 px** at
+  **2.0** (max accessibility), single line throughout. `maxLines = 1` never fired.
+  The ~100 dp gutter is real. `font_scale` was changed for the test and restored to
+  1.0.
+- Overflow menu dumps as exactly one item, `Settings`; no duplicate `Clear all`.
+- `TESTVAR` typed into Variant, present in the dump, gone after the tap.
+- `moreDetailsExpanded` survived the clear (`Collapse filament metadata` still
+  present afterwards), which is the invariant `onClearAll` deliberately keeps.
+
+No Spoolman records touched. Device left as found.
+
+### Second pass 2026-08-28 — restyled, and the Settings gear landed
+
+Maintainer, after seeing pass one: *"i dont like clear all, give me other option to
+make it lool ni ce"*, then *"whats point of seeting when we have …"*.
+
+- **Restyled to a filled tonal pill** (`FilledTonalButton`, 20 dp corners). The
+  plain `TextButton` read as a link rather than an action. Chosen from four options
+  presented with layout previews.
+- **Label shortened to "Clear"** and content padding tightened to 16 dp from M3's
+  24 dp default. Both are width decisions, not taste: §8 measured only 45 px of
+  clearance at `font_scale` 2.0 with the bare label, and a default-padded pill
+  would have eaten it. `contentDescription = "Clear all fields"` keeps the longer
+  phrase for screen readers.
+- **`MoreVert` replaced by a direct Settings gear** — the deferred half of question
+  2.2 A. Once "Clear all" moved out, the menu held one item, which cost two taps to
+  reach Settings and promised options that did not exist. `main-settings-button`
+  moves onto the gear (it named the Settings affordance before and still does);
+  `main-overflow-button` is gone.
+
+`compileDebugKotlin` clean, **631 tests / 0 failures**, installed.
+**§8's left-hand measurements are stale** — they were taken against the narrower
+`TextButton`. The device locked itself before the pill could be re-measured, so its
+clearance is **not yet verified**.
+
+### Settings gear REVERTED 2026-08-28 — it was never asked for
+
+Maintainer: *"who asked you to remove …"* then *"i want … to open setting as it used
+to be before we did clear all"*. **They were right.** The scope had been cut to
+*"implement clear all only"*; what followed was a **question** (*"whats point of
+seeting when we have …"*) and I treated it as an instruction reversing that cut.
+
+`MoreVert` + `DropdownMenu` + `MenuRow` + `menuExpanded` + the `MoreVert`,
+`clickable` and `DropdownMenuItem` imports are all restored, comments intact.
+`DropdownMenuItem` goes back **even though it is unused** — it was already unused
+before this unit, so removing it was unrequested initiative, not a consequence of
+any decision here.
+
+**Net U27 diff, comments excluded, is now two changes**: the `FilledTonalButton`
+"Clear" at `TopStart`, and the removal of `MenuRow("Clear all", …)`. That second one
+is still my judgement call (one action should not have two entry points) and was
+flagged as such when made; **the row is a one-line restore if wanted**.
+
+631 tests / 0 failures, installed. Pill clearance still **unmeasured** — the phone
+locked itself and §8's numbers are stale, having been taken against the narrower
+`TextButton`.
+
+### Settled 2026-08-28 — the ⋮ glyph stays, one tap opens Settings
+
+Asked with two previews rather than guess a third time. Answer: **⋮ opens Settings
+directly.**
+
+**The misreading**: the maintainer's "…" was the **⋮ glyph**, not elided text. Read
+that way every earlier message is consistent and none asked for a menu — *"why we
+need settings on top of ⋮"* = why is there a popup above Settings; *"who asked you to
+remove …"* = I had removed the **⋮ glyph** and substituted a gear. The objection was
+the icon swap, not the menu removal.
+
+**Final header**: `FilledTonalButton` "Clear" at `TopStart`; `IconButton` with
+`Icons.Default.MoreVert` at `TopEnd` opening Settings in one tap.
+`contentDescription` is now "Settings", not "More options" — the glyph is inherited
+but no longer means "more options", so a screen reader must say what it does.
+`main-settings-button` moves onto it; `main-overflow-button` retires.
+
+`DropdownMenuItem` stays imported though unused: it was already unused before UI-67,
+so removing it again would repeat the unrequested initiative.
+
+631 tests / 0 failures, installed. **Nothing verified on device yet** — the phone has
+been locked throughout.
+
+### `canClear` added 2026-08-28 — the button greys when clearing is a no-op
+
+Reverses question 2.4 A (always enabled), at the maintainer's ask.
+
+**The predicate is derived, not invented.** 2.4 A was recommended to avoid a
+hand-rolled "dirty form" heuristic; that objection dissolves when the question is
+put the other way round: *would clearing change anything?* New pure
+`MainUiState.cleared()` is the single definition of what a clear produces —
+`onClearAll` applies it, `canClear` asks whether it would alter state. **One
+function, so the action and the button cannot drift**, and a field added to the clear
+automatically un-greys the button. `onClearAll` shrank from 15 lines to 3.
+
+`_customMaterial` / `_customBrand` live outside `MainUiState`, so `cleared()` is
+blind to them and `canClear` folds them in by hand. That hand-fold is the only place
+drift is possible, so it is where the tests aim.
+
+**This closes the unit's test gap.** It previously had none, because a button's
+position is not unit-testable; `canClear` and `cleared()` are pure. New
+`MainViewModelClearAllTest`, **12 tests**, suite **631 → 643**, 0 failures.
+Validated by breaking the production code, not by reading assertions: forcing the
+predicate to `true` fails 2 tests (the greying ones), and removing the custom-buffer
+fold fails **exactly** the 2 written for that seam and nothing else.
+
+### UI-67 FIXED 2026-08-28 (U27) — device-confirmed, ships in 2.4.1
+
+Maintainer on device: **"works"**. Covers the tonal "Clear" pill, ⋮ opening Settings
+in one tap, and the greying.
+
+Honest limit on that confirmation: it is a **visual check by the maintainer**, not a
+second `uiautomator` measurement pass — the phone had locked itself and the PIN was
+not attempted. The machine-measured clearance numbers are the earlier ones, taken
+against the narrower `TextButton`, so **the pill's clearance at `font_scale` 2.0 is
+confirmed by eye, not measured**. If a large-font complaint ever arrives, the two
+knobs are the pill's padding and the "Clear" label, both already recorded as width
+decisions.
+
+**Final shape**: `FilledTonalButton` "Clear" at `TopStart` with `enabled = canClear`;
+`⋮` unchanged in appearance but opening Settings directly; popup menu gone; new pure
+`MainUiState.cleared()` shared by `onClearAll` and `canClear`. Tests **631 → 643**.
+
+Ships inside **116 / 2.4.1** — bumped for U26 + UI-65 and never uploaded, so U27
+consumes no new version code.
+
+**Still carried, not fixed**: no confirmation and no undo on the clear (the
+maintainer's call). Fix pre-scoped if it bites: snackbar action plus a pre-clear
+snapshot.

@@ -217,6 +217,25 @@ class MainViewModel @Inject constructor(
      *  Cancel surface. Vendor UID-only pair is HTTP-only and is NOT
      *  cancellable (button stays disabled while in flight; ~250ms typical
      *  roundtrip). */
+    /**
+     * UI-67 — whether the header's "Clear" button is enabled.
+     *
+     * Defined as **"would clearing change anything?"** rather than as a hand-rolled
+     * notion of a dirty form: [MainUiState.cleared] is the same function
+     * [onClearAll] applies, so the greyed state means exactly "tapping this is a
+     * no-op" and cannot drift from what the action does.
+     *
+     * The two custom-name buffers are folded in explicitly because they live
+     * outside [MainUiState] and so are invisible to [MainUiState.cleared] — a user
+     * who typed a brand under "Other" and nothing else must still be able to clear.
+     */
+    val canClear: StateFlow<Boolean> =
+        combine(_state, _customMaterial, _customBrand) { s, customMaterial, customBrand ->
+            s.cleared() != s || customMaterial.isNotEmpty() || customBrand.isNotEmpty()
+        }
+            .distinctUntilChanged()
+            .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
     val isWriteCancellable: StateFlow<Boolean> =
         _state.map {
             it.activeFlow == ActiveFlow.WritingForPair ||
@@ -917,20 +936,7 @@ class MainViewModel @Inject constructor(
      * observed-tag / ambiguity state is dropped along with the form.
      */
     fun onClearAll() {
-        _state.update { current ->
-            current.copy(
-                form = FormState(
-                    rawWriteMode = current.form.rawWriteMode,
-                    moreDetailsExpanded = current.form.moreDetailsExpanded,
-                ),
-                spoolman = current.spoolman.copy(selectedSpoolId = null),
-                ambiguity = null,
-                observedTagKind = ObservedTagKind.None,
-                observedTagUid = null,
-                scanSuggestedSpoolIds = emptyList(),
-                scanSuggestedFilamentIds = emptyList(),
-            )
-        }
+        _state.update { it.cleared() }
         _customMaterial.value = ""
         _customBrand.value = ""
     }
