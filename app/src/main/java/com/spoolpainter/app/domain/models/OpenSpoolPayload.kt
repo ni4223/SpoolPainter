@@ -19,4 +19,8 @@ data class OpenSpoolPayload(
     // show after the read.
     val decodeNotes: List<String> = emptyList(),
     val readNotice: String? = null,
+    // Read-side only, like lotNr: the vendor's product code decoded from a
+    // vendor tag (Anycubic SKU, Bambu material variant ID, Snapmaker SKU).
+    // Saved to the Spoolman filament's article_number; never encoded.
+    val sku: String? = null,
 )

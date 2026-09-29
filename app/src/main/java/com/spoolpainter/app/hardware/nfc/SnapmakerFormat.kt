@@ -327,5 +327,6 @@ internal fun decodeSnapmakerPayload(data: ByteArray): OpenSpoolPayload {
         spoolId = null,
         decodeNotes = notes,
         readNotice = readNotice,
+        sku = sku.toUInt().takeIf { it > 0u }?.toString(),
     )
 }

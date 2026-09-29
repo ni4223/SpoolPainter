@@ -166,7 +166,7 @@ class MainViewModelSaveTapTest {
                 TagClassification.Vendor(reason = "factory"),
             ),
         )
-        assertEquals(ObservedTagKind.Vendor, vm.state.value.observedTagKind)
+        assertTrue(vm.state.value.observedTagKind is ObservedTagKind.Vendor)
 
         saveToSpoolman.nextResult = SaveToSpoolmanResult.Success.Saved(spoolId = 50, isNewSpool = true)
         vm.onSaveTapped()

@@ -32,7 +32,10 @@ class VendorUidOnlyPairUseCaseTest {
     )
     private val targetSpool = SpoolmanSpool(id = 42, filament = sampleFilament)
 
-    private fun formInput(selectedSpoolId: Int? = null): VendorUidOnlyPairInput =
+    private fun formInput(
+        selectedSpoolId: Int? = null,
+        articleNumber: String? = null,
+    ): VendorUidOnlyPairInput =
         VendorUidOnlyPairInput(
             form = FormState(
                 material = Material("PLA", 190, 220, 55, 65),
@@ -47,6 +50,7 @@ class VendorUidOnlyPairUseCaseTest {
             newFilamentVendor = "Bambu",
             resolvedMaterialName = "PLA",
             observedUid = sampleUid,
+            articleNumber = articleNumber,
         )
 
     @Test
@@ -130,4 +134,46 @@ class VendorUidOnlyPairUseCaseTest {
         assertEquals(7, partial.partiallyModifiedSpoolId)
         assertEquals(0, spoolman.appendCalls)
     }
+
+    @Test
+    fun `existing-spool path fills the article number on the spool's filament`() = runTest {
+        moveOnBind.nextOutcome = MoveOnBindUseCase.Outcome.Proceed
+        spoolman.nextAppendCardUidResult = SpoolmanOutcome.Success(targetSpool)
+
+        useCase.invoke(formInput(selectedSpoolId = 42, articleNumber = "G00-R0"))
+
+        assertEquals(listOf(sampleFilament.id to "G00-R0"), spoolman.fillArticleNumberCalls)
+    }
+
+    @Test
+    fun `new-spool path fills the article number on the new spool's filament`() = runTest {
+        moveOnBind.nextOutcome = MoveOnBindUseCase.Outcome.Proceed
+        spoolman.nextCreateSpoolResult = SpoolmanOutcome.Success(targetSpool)
+        spoolman.nextAppendCardUidResult = SpoolmanOutcome.Success(targetSpool)
+
+        useCase.invoke(formInput(selectedSpoolId = null, articleNumber = "HPL18-106"))
+
+        assertEquals(listOf(sampleFilament.id to "HPL18-106"), spoolman.fillArticleNumberCalls)
+    }
+
+    @Test
+    fun `no article number on the tag - nothing is filled`() = runTest {
+        moveOnBind.nextOutcome = MoveOnBindUseCase.Outcome.Proceed
+        spoolman.nextAppendCardUidResult = SpoolmanOutcome.Success(targetSpool)
+
+        useCase.invoke(formInput(selectedSpoolId = 42, articleNumber = null))
+
+        assertTrue(spoolman.fillArticleNumberCalls.isEmpty())
+    }
+
+    @Test
+    fun `failed pair does not fill the article number`() = runTest {
+        moveOnBind.nextOutcome = MoveOnBindUseCase.Outcome.Proceed
+        spoolman.nextAppendCardUidResult = SpoolmanOutcome.HttpError(500, "boom")
+
+        useCase.invoke(formInput(selectedSpoolId = 42, articleNumber = "G00-R0"))
+
+        assertTrue(spoolman.fillArticleNumberCalls.isEmpty())
+    }
+
 }

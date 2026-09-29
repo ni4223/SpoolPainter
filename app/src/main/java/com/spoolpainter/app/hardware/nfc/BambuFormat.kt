@@ -113,6 +113,9 @@ fun parseBambuTag(data: ByteArray): OpenSpoolPayload? {
     }
 
     val detailedType = extractString(data, DETAILED_FILAMENT_TYPE_POS, DETAILED_FILAMENT_TYPE_LEN)
+    // Material variant ID (e.g. "A00-G1") identifies the product and colour.
+    val variantId = extractString(data, MATERIAL_VARIANT_ID_POS, MATERIAL_VARIANT_ID_LEN)
+        .trim().takeIf { it.isNotEmpty() }
 
     val r = data[COLOR_RGBA_POS].toInt() and 0xFF
     val g = data[COLOR_RGBA_POS + 1].toInt() and 0xFF
@@ -140,6 +143,7 @@ fun parseBambuTag(data: ByteArray): OpenSpoolPayload? {
         bedMinTemp = bedTemp.toString(),
         bedMaxTemp = bedTemp.toString(),
         subtype = finalSubtype,
-        spoolId = null
+        spoolId = null,
+        sku = variantId,
     )
 }

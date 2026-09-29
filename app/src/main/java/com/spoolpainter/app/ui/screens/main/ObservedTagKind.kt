@@ -9,5 +9,7 @@ sealed interface ObservedTagKind {
     data object None : ObservedTagKind
     data object Blank : ObservedTagKind
     data object OpenSpool : ObservedTagKind
-    data object Vendor : ObservedTagKind
+    /** [sku]: product code decoded from the tag on an explicit Read (see
+     *  OpenSpoolPayload.sku); null when nothing was decoded. */
+    data class Vendor(val sku: String? = null) : ObservedTagKind
 }
