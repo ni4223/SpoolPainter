@@ -223,6 +223,7 @@ class FakeSpoolmanApi : SpoolmanApi {
             spool_weight = body.spool_weight ?: current.spool_weight,
             price = body.price ?: current.price,
             extra = body.extra ?: current.extra,
+            article_number = body.article_number ?: current.article_number,
         )
         filamentList[idx] = updated
         return Response.success(updated)

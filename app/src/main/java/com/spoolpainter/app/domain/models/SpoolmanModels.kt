@@ -35,6 +35,7 @@ data class SpoolmanFilament(
     val weight: Float? = null,
     val spool_weight: Float? = null,
     val price: Float? = null,
+    val article_number: String? = null,
 )
 
 data class SpoolmanVendor(

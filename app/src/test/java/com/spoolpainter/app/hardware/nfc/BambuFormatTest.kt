@@ -55,6 +55,8 @@ class BambuFormatTest {
         assertEquals("60", payload.bedMaxTemp)
         // detailedType "PLA Matte" starts with "PLA" → modifier "Matte"
         assertEquals("Matte", payload.subtype)
+        // Material variant ID (block 1) left blank → no product code.
+        assertNull(payload.sku)
     }
 
     @Test

@@ -33,6 +33,7 @@ data class PatchFilamentBody(
     val spool_weight: Float? = null,
     val price: Float? = null,
     val extra: Map<String, String>? = null,
+    val article_number: String? = null,
 )
 
 /**

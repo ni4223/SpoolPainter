@@ -16,6 +16,7 @@ class AnycubicProcessorTest {
     private val settings = VendorSettings()
 
     private fun fixture(
+        sku: String = "",
         brand: String = "Anycubic",
         filamentType: String = "PLA",
         a: Int = 0xFF, b: Int = 0xCC, g: Int = 0x80, r: Int = 0x10,
@@ -28,7 +29,8 @@ class AnycubicProcessorTest {
         } else {
             raw[0x10] = 0xAA.toByte(); raw[0x11] = 0xBB.toByte()
         }
-        // Brand at 0x28..0x38, filament at 0x3C..0x4C — ASCII null-padded.
+        // SKU at 0x14..0x24, brand at 0x28..0x38, filament at 0x3C..0x4C — ASCII null-padded.
+        sku.toByteArray(Charsets.US_ASCII).copyInto(raw, 0x14)
         brand.toByteArray(Charsets.US_ASCII).copyInto(raw, 0x28)
         filamentType.toByteArray(Charsets.US_ASCII).copyInto(raw, 0x3C)
         // Color (a,b,g,r byte order at 0x50..0x53).
@@ -80,5 +82,39 @@ class AnycubicProcessorTest {
 
     @Test fun `short raw bytes rejected`() {
         assertNull(AnycubicProcessor.parse(uid, ByteArray(50), auth = null, settings = settings))
+    }
+
+    @Test fun `SKU is read from 0x14`() {
+        val out = AnycubicProcessor.parse(uid, fixture(sku = "AHPLBK-101"), auth = null, settings = settings)!!
+        assertEquals("AHPLBK-101", out.sku)
+    }
+
+    @Test fun `blank SKU reads as null`() {
+        val out = AnycubicProcessor.parse(uid, fixture(sku = ""), auth = null, settings = settings)!!
+        assertNull(out.sku)
+    }
+
+    @Test fun `SKU filling its whole 16-byte field is read without running into the next field`() {
+        val out = AnycubicProcessor.parse(uid, fixture(sku = "ABCDEFGHIJKLMNOP"), auth = null, settings = settings)!!
+        assertEquals("ABCDEFGHIJKLMNOP", out.sku)
+    }
+
+    /** Pages 0x00..0x23 of a real Anycubic High Speed PLA tag, dumped with
+     *  NFC Tools. Unlike the fixture's `AHPLRR-107`, its SKU has no leading
+     *  "A" — the field is taken verbatim, not normalised. */
+    @Test fun `real tag dump - SKU without leading A`() {
+        val pages = listOf(
+            "53E385BD", "2C930001", "BE480000", "E1101200", "7B006500", "48504C31",
+            "382D3130", "36000000", "00000000", "00000000", "41430000", "00000000",
+            "00000000", "00000000", "00000000", "504C4100", "00000000", "00000000",
+            "00000000", "00000000", "FFBD9C00", "00000000", "00000000", "3200C800",
+            "BE00E600", "00000000", "00000000", "00000000", "00000000", "37004100",
+            "AF004A01", "E8030000", "00000000", "00000000", "00000000", "00000000",
+        )
+        val raw = pages.joinToString("").chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+
+        val out = AnycubicProcessor.parse(uid, raw, auth = null, settings = settings)!!
+
+        assertEquals("HPL18-106", out.sku)
     }
 }

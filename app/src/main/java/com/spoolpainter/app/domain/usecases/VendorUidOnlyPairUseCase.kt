@@ -14,6 +14,9 @@ data class VendorUidOnlyPairInput(
     /** UID captured at Read time. Decoupled from `form.cardUid` so the use-case
      *  acts on the UID it was handed at Save press, even if the form drifts. */
     val observedUid: CardUid,
+    /** Product code decoded from the vendor tag, if any. Written to the
+     *  paired spool's filament `article_number` when that field is empty. */
+    val articleNumber: String? = null,
 )
 
 sealed interface VendorUidOnlyPairResult {
@@ -82,14 +85,7 @@ open class VendorUidOnlyPairUseCase @Inject constructor(
                 }
             }
         }
-        return when (val append = spoolman.appendCardUidToSpool(selectedSpoolId, input.observedUid)) {
-            is SpoolmanOutcome.Success -> VendorUidOnlyPairResult.Success.UidPaired(
-                spoolId = selectedSpoolId,
-                uid = input.observedUid,
-                isNewSpool = false,
-            )
-            else -> VendorUidOnlyPairResult.SpoolmanFailed(input.observedUid, append)
-        }
+        return appendUid(input, selectedSpoolId, isNewSpool = false)
     }
 
     private suspend fun newSpoolPath(
@@ -138,14 +134,29 @@ open class VendorUidOnlyPairUseCase @Inject constructor(
             SpoolmanOutcome.ParseError(IllegalStateException("no spool id from createSpool")),
         )
 
-        return when (val append = spoolman.appendCardUidToSpool(newId, input.observedUid)) {
-            is SpoolmanOutcome.Success -> VendorUidOnlyPairResult.Success.UidPaired(
-                spoolId = newId,
-                uid = input.observedUid,
-                isNewSpool = true,
-            )
-            else -> VendorUidOnlyPairResult.SpoolmanFailed(input.observedUid, append)
+        return appendUid(input, newId, isNewSpool = true)
+    }
+
+    private suspend fun appendUid(
+        input: VendorUidOnlyPairInput,
+        spoolId: Int,
+        isNewSpool: Boolean,
+    ): VendorUidOnlyPairResult {
+        val append = spoolman.appendCardUidToSpool(spoolId, input.observedUid)
+        if (append !is SpoolmanOutcome.Success) {
+            return VendorUidOnlyPairResult.SpoolmanFailed(input.observedUid, append)
         }
+        // Best-effort and off the pair's critical path: the tag is already
+        // mapped, so a slow or failed fill must not turn this into a failure.
+        val filamentId = append.data.filament?.id
+        if (filamentId != null && !input.articleNumber.isNullOrBlank()) {
+            spoolman.fillArticleNumberInBackground(filamentId, input.articleNumber)
+        }
+        return VendorUidOnlyPairResult.Success.UidPaired(
+            spoolId = spoolId,
+            uid = input.observedUid,
+            isNewSpool = isNewSpool,
+        )
     }
 
     companion object {
