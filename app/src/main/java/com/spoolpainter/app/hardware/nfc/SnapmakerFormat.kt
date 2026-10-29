@@ -38,7 +38,9 @@ private const val RSA_VER_POS      = 2 * 64 + 2 * 16 + 8
 private val MAIN_TYPES = mapOf(1 to "PLA", 2 to "PETG", 3 to "ABS", 4 to "TPU", 5 to "PVA")
 private val SUB_TYPES  = mapOf(
     1 to "Basic", 2 to "Matte", 3 to "SnapSpeed", 4 to "Silk",
-    5 to "Support", 6 to "HF", 7 to "95A", 8 to "95A HF"
+    5 to "Support", 6 to "HF", 7 to "95A", 8 to "95A HF",
+    9 to "90A", 10 to "85A", 11 to "Wood", 12 to "Translucent",
+    13 to "Full Spectrum", 14 to "Glow", 15 to "Rainbow", 16 to "Marble"
 )
 
 // RSA-2048 public keys (PKCS#1 PEM), indexed by version byte on tag
