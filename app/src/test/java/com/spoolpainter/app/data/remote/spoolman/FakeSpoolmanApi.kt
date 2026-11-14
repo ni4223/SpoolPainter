@@ -121,6 +121,7 @@ class FakeSpoolmanApi : SpoolmanApi {
             settings_extruder_temp = body.settings_extruder_temp,
             settings_bed_temp = body.settings_bed_temp,
             extra = body.extra,
+            article_number = body.article_number,
         )
         filamentList += filament
         return Response.success(filament)

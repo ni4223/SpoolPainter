@@ -88,6 +88,8 @@ fun FilamentForm(
     onChange: (FormChange) -> Unit,
     modifier: Modifier = Modifier,
     suggestedFilamentIds: List<Int> = emptyList(),
+    /** Set when [FormState.articleNumber] is the read tag's code, not yet in Spoolman. */
+    articleNumberHint: String? = null,
 ) {
     val identityEnabled = enabled && !identityLocked
     Column(
@@ -138,7 +140,32 @@ fun FilamentForm(
             onSelect = { onChange(FormChange.BrandPicked(it)) },
             onCustomNameChange = { onChange(FormChange.CustomBrandChanged(it)) },
         )
+
+        state.articleNumber?.let { ArticleNumberField(it, hint = articleNumberHint) }
     }
+}
+
+/** Read-only: Spoolman's value, or the read tag's code where Spoolman has none. Never typed. */
+@Composable
+private fun ArticleNumberField(value: String, hint: String?) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = {},
+        label = { Text("Article number") },
+        supportingText = hint?.let { { Text(it) } },
+        singleLine = true,
+        readOnly = true,
+        enabled = false,
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("main-form-article-number"),
+        textStyle = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedBorderColor = MaterialTheme.colorScheme.primary,
+            unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+        ),
+        shape = RoundedCornerShape(20.dp),
+    )
 }
 
 /**
