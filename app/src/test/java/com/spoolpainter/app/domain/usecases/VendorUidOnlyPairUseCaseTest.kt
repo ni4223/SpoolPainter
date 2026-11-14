@@ -45,6 +45,7 @@ class VendorUidOnlyPairUseCaseTest {
                 tempRanges = TempRanges(extruderMin = 200, extruderMax = 220),
                 selectedSpoolId = selectedSpoolId,
                 cardUid = sampleUid,
+                articleNumber = articleNumber,
             ),
             newFilamentName = "Bambu PLA Matte",
             newFilamentVendor = "Bambu",
@@ -136,6 +137,17 @@ class VendorUidOnlyPairUseCaseTest {
     }
 
     @Test
+    fun `new-spool path carries the article number in the filament create`() = runTest {
+        moveOnBind.nextOutcome = MoveOnBindUseCase.Outcome.Proceed
+        spoolman.nextCreateSpoolResult = SpoolmanOutcome.Success(targetSpool)
+        spoolman.nextAppendCardUidResult = SpoolmanOutcome.Success(targetSpool)
+
+        useCase.invoke(formInput(selectedSpoolId = null, articleNumber = "HPL18-106"))
+
+        assertEquals("HPL18-106", spoolman.lastCreateRequest?.expanderOverrides?.articleNumber)
+    }
+
+    @Test
     fun `existing-spool path fills the article number on the spool's filament`() = runTest {
         moveOnBind.nextOutcome = MoveOnBindUseCase.Outcome.Proceed
         spoolman.nextAppendCardUidResult = SpoolmanOutcome.Success(targetSpool)
@@ -146,7 +158,7 @@ class VendorUidOnlyPairUseCaseTest {
     }
 
     @Test
-    fun `new-spool path fills the article number on the new spool's filament`() = runTest {
+    fun `new-spool path also fills, covering a reused filament`() = runTest {
         moveOnBind.nextOutcome = MoveOnBindUseCase.Outcome.Proceed
         spoolman.nextCreateSpoolResult = SpoolmanOutcome.Success(targetSpool)
         spoolman.nextAppendCardUidResult = SpoolmanOutcome.Success(targetSpool)

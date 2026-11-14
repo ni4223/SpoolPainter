@@ -206,6 +206,74 @@ class MainViewModelTest {
     }
 
     @Test
+    fun `paired vendor tag read - Spoolman's article number wins over the tag's`() = runTest {
+        val vm = newVm()
+        val hint = openSpoolPayload.copy(sku = "HPL18-106")
+        nfc.setBufferedTap(NfcResult.Success(sampleUid, TagClassification.Vendor("Ultralight", parsedHint = hint)))
+        val stored = sampleSpool.copy(filament = sampleSpool.filament.copy(article_number = "A00-R1"))
+        spoolman.nextFindSpoolsByCardUidResult = SpoolmanOutcome.Success(listOf(stored))
+
+        vm.onReadTapped()
+
+        assertEquals(42, vm.state.value.form.selectedSpoolId)
+        assertEquals("A00-R1", vm.state.value.effectiveForm().articleNumber)
+    }
+
+    @Test
+    fun `unpaired vendor tag read - picked spool without one shows the tag's code`() = runTest {
+        val vm = newVm()
+        val hint = openSpoolPayload.copy(sku = "HPL18-106")
+        nfc.setBufferedTap(NfcResult.Success(sampleUid, TagClassification.Vendor("Ultralight", parsedHint = hint)))
+        spoolman.nextFindSpoolsByCardUidResult = SpoolmanOutcome.Success(emptyList())
+        vm.onReadTapped()
+        assertEquals("HPL18-106", vm.state.value.effectiveForm().articleNumber)
+
+        vm.onSpoolSelected(sampleSpool.copy(id = 77, extra = null))
+
+        assertEquals("HPL18-106", vm.state.value.effectiveForm().articleNumber)
+    }
+
+    @Test
+    fun `Map tag hands the tag's code to the pair for fill-if-empty`() = runTest {
+        val vm = newVm()
+        settings.pushSettings(Settings(url = "http://10.0.0.5:8000"))
+        val hint = openSpoolPayload.copy(sku = "HPL18-106")
+        nfc.setBufferedTap(NfcResult.Success(sampleUid, TagClassification.Vendor("Ultralight", parsedHint = hint)))
+        spoolman.nextFindSpoolsByCardUidResult = SpoolmanOutcome.Success(emptyList())
+        vm.onReadTapped()
+        vm.onSpoolSelected(sampleSpool.copy(id = 77, extra = null))
+
+        vm.onWriteTapped()
+
+        assertEquals("HPL18-106", vendorUidOnlyPair.lastInput?.articleNumber)
+    }
+
+    @Test
+    fun `editing the colour drops the tag's code`() = runTest {
+        val vm = newVm()
+        val hint = openSpoolPayload.copy(sku = "HPL18-106")
+        nfc.setBufferedTap(NfcResult.Success(sampleUid, TagClassification.Vendor("Ultralight", parsedHint = hint)))
+        spoolman.nextFindSpoolsByCardUidResult = SpoolmanOutcome.Success(emptyList())
+        vm.onReadTapped()
+        assertEquals("HPL18-106", vm.state.value.effectiveForm().articleNumber)
+
+        vm.onColorHexChanged("00FF00")
+
+        assertNull(vm.state.value.effectiveForm().articleNumber)
+    }
+
+    @Test
+    fun `unlinking the filament drops its article number`() = runTest {
+        val vm = newVm()
+        vm.onFilamentSelected(sampleSpool.filament.copy(article_number = "A00-R1"))
+        assertEquals("A00-R1", vm.state.value.form.articleNumber)
+
+        vm.onFilamentSelected(null)
+
+        assertNull(vm.state.value.form.articleNumber)
+    }
+
+    @Test
     fun `onReadTapped PrefillFromTag maps payload to form`() = runTest {
         val vm = newVm()
         nfc.setBufferedTap(NfcResult.Success(sampleUid, TagClassification.OpenSpool(openSpoolPayload)))

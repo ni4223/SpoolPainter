@@ -686,6 +686,7 @@ open class SpoolmanRepository @Inject constructor(
                                 spool_weight = req.expanderOverrides.spoolWeight,
                                 price = req.expanderOverrides.price,
                                 extra = extras,
+                                article_number = req.expanderOverrides.articleNumber,
                             ),
                         )
                     }.also { outcome -> if (outcome is SpoolmanOutcome.Success) prependFilament(outcome.data) }

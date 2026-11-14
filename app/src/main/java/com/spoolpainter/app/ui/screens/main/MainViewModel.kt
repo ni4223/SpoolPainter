@@ -565,7 +565,7 @@ class MainViewModel @Inject constructor(
         if (!canSave.value) return
         if (_saveInFlight.value) return
         val state = _state.value
-        val form = state.form
+        val form = state.effectiveForm()
         // 2026-06-06 reframe: vendor UID mapping moved off Save and onto
         // Write so each button has one job. Save = pure HTTP form edits
         // across all states (vendor or otherwise). Write = NFC + UID for
@@ -629,15 +629,14 @@ class MainViewModel @Inject constructor(
             return
         }
         if (!canWrite.value) return
-        val form = state.form
+        val form = state.effectiveForm()
         val mode = state.writeMode
         // 2026-06-06 reframe: vendor tags can't be NDEF-written, but the
         // UID still needs to land in Spoolman's `extra.card_uids`. Route
         // vendor + Spoolman + spool-selected to the HTTP-only pair use
         // case so Save stays a pure form-edit action.
-        val observedKind = state.observedTagKind
-        if (mode == WriteMode.Spoolman && observedKind is ObservedTagKind.Vendor) {
-            launchVendorUidOnlyPair(form, state.observedTagUid, observedKind.sku)
+        if (mode == WriteMode.Spoolman && state.observedTagKind is ObservedTagKind.Vendor) {
+            launchVendorUidOnlyPair(form, state.observedTagUid, state.pendingTagSku())
             return
         }
         when (mode) {
@@ -905,6 +904,9 @@ class MainViewModel @Inject constructor(
                     form = current.form.copy(
                         selectedFilamentId = null,
                         selectedSpoolId = null,
+                        // The unlinked filament's code must not follow the
+                        // form onto the sister filament this flow creates.
+                        articleNumber = null,
                     ),
                     spoolman = current.spoolman.copy(selectedSpoolId = null),
                 )
@@ -1069,7 +1071,7 @@ class MainViewModel @Inject constructor(
 
 
     fun onMaterialPicked(value: Material?) {
-        _state.update { it.copy(form = it.form.copy(material = value)) }
+        _state.update { it.withIdentityEdit(value != it.form.material) { f -> f.copy(material = value) } }
         if (value?.name != "Other") {
             _customMaterial.value = ""
         }
@@ -1099,7 +1101,7 @@ class MainViewModel @Inject constructor(
     }
 
     fun onBrandPicked(value: Brand?) {
-        _state.update { it.copy(form = it.form.copy(brand = value)) }
+        _state.update { it.withIdentityEdit(value != it.form.brand) { f -> f.copy(brand = value) } }
         if (value?.name != "Other") {
             _customBrand.value = ""
         }
@@ -1110,7 +1112,7 @@ class MainViewModel @Inject constructor(
     }
 
     fun onColorHexChanged(value: String?) {
-        _state.update { it.copy(form = it.form.copy(colorHex = value)) }
+        _state.update { it.withIdentityEdit(value != it.form.colorHex) { f -> f.copy(colorHex = value) } }
     }
 
     fun onVariantChanged(value: String?) {
@@ -1124,6 +1126,11 @@ class MainViewModel @Inject constructor(
     fun onSettingsTapped() {
         _effects.trySend(UiEffect.Navigate("settings"))
     }
+
+    /** Material, brand and colour identify the product: editing one means the
+     *  tag's product code (see [effectiveForm]) no longer applies. */
+    private fun MainUiState.withIdentityEdit(changed: Boolean, edit: (FormState) -> FormState): MainUiState =
+        copy(form = edit(form)).let { if (changed) it.forgetTagSku() else it }
 
     private fun mapClassification(c: TagClassification?): ObservedTagKind? = when (c) {
         is TagClassification.Blank -> ObservedTagKind.Blank
