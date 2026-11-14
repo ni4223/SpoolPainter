@@ -10,7 +10,8 @@ private const val TAG = "AnycubicProcessor"
 /**
  * Anycubic MifareUltralight tag processor. No auth — page reads return raw
  * bytes directly. The tag is identified by the four-byte magic
- * `7B 00 65 00` at offset 0x10. ARGB color is stored in a/b/g/r byte order
+ * `7B 00 65 00` at offset 0x10, followed by the product SKU (ASCII, e.g.
+ * `HPL18-106`) at 0x14..0x24. ARGB color is stored in a/b/g/r byte order
  * at 0x50..0x53 (note: not r/g/b/a — quirk of the Anycubic format upstream).
  *
  * Ported from `OpenRFID/src/tag/anycubic/processor.py` (GPL-3.0, see NOTICE).
@@ -54,6 +55,7 @@ object AnycubicProcessor : VendorTagProcessor {
             return null
         }
 
+        val sku = readAscii(raw, 0x14, 16).trim().takeIf { it.isNotEmpty() }
         val rawBrand = readAscii(raw, 0x28, 16)
         // Anycubic writes a short brand code ("AC") in this slot rather
         // than the full vendor name. Normalize so the form prefill matches
@@ -99,6 +101,7 @@ object AnycubicProcessor : VendorTagProcessor {
             bedMaxTemp = bedMax.toString(),
             subtype = subtype,
             spoolId = null,
+            sku = sku,
         )
     }
 

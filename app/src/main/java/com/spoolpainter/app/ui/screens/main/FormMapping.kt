@@ -56,6 +56,7 @@ internal object FormMapping {
             // MainViewModel.applyResult.
             variant = decodeExtraVariant(spool.filament.extra?.get("variant")),
             tempRanges = tempRanges,
+            articleNumber = spool.filament.article_number.nonBlank(),
             selectedSpoolId = spool.id,
             // Selecting a spool implies its parent filament is also "selected"
             // for write routing — show the filament chip + carry spool metadata
@@ -163,6 +164,7 @@ internal object FormMapping {
             brand = Brand(filament.vendor?.name ?: "Unknown"),
             colorHex = canonicaliseColorHex(filament.color_hex),
             variant = decodeExtraVariant(filament.extra?.get("variant")),
+            articleNumber = filament.article_number.nonBlank(),
             tempRanges = TempRanges(
                 extruderMin = filament.settings_extruder_temp,
                 extruderMax = materialData?.defaultMaxTemp,
@@ -186,6 +188,8 @@ internal object FormMapping {
         FormState(cardUid = currentUid, rawWriteMode = rawWriteMode)
 
     internal fun canonicaliseColorHex(raw: String?): String? = ColorHexCodec.canonicalise(raw)
+
+    private fun String?.nonBlank(): String? = this?.takeIf { it.isNotBlank() }
 
     private fun deriveSpoolmanTemps(
         materialData: Material?,

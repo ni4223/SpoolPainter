@@ -290,6 +290,7 @@ fun parseSnapmakerTag(
         bedMinTemp = bed.toString(),
         bedMaxTemp = bed.toString(),
         subtype = subType,
-        spoolId = null
+        spoolId = null,
+        sku = sku.toUInt().takeIf { it > 0u }?.toString(),
     )
 }

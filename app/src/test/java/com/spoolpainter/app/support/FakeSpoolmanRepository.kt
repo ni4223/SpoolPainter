@@ -211,6 +211,12 @@ class FakeSpoolmanRepository(
             )
     }
 
+    val fillArticleNumberCalls = mutableListOf<Pair<Int, String>>()
+
+    override fun fillArticleNumberInBackground(filamentId: Int, articleNumber: String) {
+        fillArticleNumberCalls += filamentId to articleNumber
+    }
+
     var applyVariantToFilamentOfSpoolCalls: Int = 0
         private set
     var lastApplyVariantToFilamentOfSpool: Pair<Int, String>? = null
