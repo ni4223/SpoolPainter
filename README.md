@@ -43,6 +43,13 @@ It is a single-user, sideloadable Android app. No accounts, no cloud, no analyti
 |---|
 | ![Spool picker filtered live by a typed query](screenshots/11-search.png) |
 
+## What's new (unreleased)
+
+- **Pick a filament from the filament database.** The Filament picker now has a SpoolmanDB section with the same shared catalogue Spoolman's web UI imports from, so uncommon filaments no longer need to be typed in by hand. The picker's search box does double duty: it filters your inventory as before, and the same query also searches the database (results appear under a "SpoolmanDB" heading, 20 at a time with a Load more row).
+- **Picking an entry prefills the whole form.** Material, brand, colour, variant, temperatures, density, and spool weights fill in from the database entry, ready to tweak before saving. If that entry was already imported once, the app simply selects your existing filament instead of creating a duplicate. A "From SpoolmanDB" chip marks the origin; tapping its X drops the database link but keeps the prefilled values.
+- **Spoolman shows the database origin.** On Save, the filament and its brand are stamped with the database entry's identifier (`external_id`), so Spoolman's web UI highlights them as a database import, just like an import made there.
+- **Needs Spoolman v0.26 or newer.** On older servers the database section shows a short hint ("Database search requires Spoolman v0.26+") and otherwise stays out of the way.
+
 ## What's new in v2.4.1
 
 - **The brand you pick is the brand that gets written.** If you type a brand under **Other**, that exact spelling now goes onto the tag and into Spoolman. Previously the app quietly swapped in its own capitalisation when it recognised the name, so a typed "Jayo" was written as "JAYO" while the form still showed "Jayo". The Brand list also shows the spelling from your own Spoolman server rather than the built-in one, so a vendor you created as "Tecbears" is now pickable instead of being hidden behind "TECBEARS". Filaments you already saved keep their current names, only new ones use the corrected spelling.
