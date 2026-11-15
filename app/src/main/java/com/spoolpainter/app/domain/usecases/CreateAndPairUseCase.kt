@@ -8,7 +8,6 @@ import com.spoolpainter.app.domain.primitives.NfcIntent
 import com.spoolpainter.app.domain.primitives.NfcResult
 import com.spoolpainter.app.hardware.nfc.NfcRepository
 import com.spoolpainter.app.ui.screens.main.FormState
-import kotlinx.coroutines.flow.first
 import javax.inject.Inject
 
 data class CreateAndPairInput(
@@ -52,6 +51,10 @@ open class CreateAndPairUseCase @Inject constructor(
         //    a stray tap is recoverable.
         val payload = makePayload(snapshot, spoolId = spoolId)
         val writeResult = armWriteAndAwait(payload)
+            // No tap landed within the wait window. Maps to the same
+            // Cancelled("timeout") the ViewModel's old outer timeout
+            // produced, so the "No tag tapped" UX is unchanged.
+            ?: return CreateAndPairResult.Cancelled(reason = "timeout", spoolId = spoolId)
 
         // The UID we observed during the tap, regardless of write outcome.
         // For Verify/Failed paths this lets us still commit the spool↔UID
@@ -154,10 +157,21 @@ open class CreateAndPairUseCase @Inject constructor(
      * write path performs an immediate read-back compare on the same tag
      * connection, so a Success here means both the bytes were written and
      * the tag verifies — one physical tap, no second tap needed.
+     *
+     * Returns null when no tap landed within the tap-wait window (the arm
+     * is disarmed in that case); terminal I/O after a consumed tap is
+     * covered by [NfcRepository.awaitTerminal]'s grace budget, so a slow
+     * physical write is never cancelled mid-flight.
      */
-    private suspend fun armWriteAndAwait(payload: OpenSpoolPayload): WriteResult {
+    private suspend fun armWriteAndAwait(payload: OpenSpoolPayload): WriteResult? {
         nfc.arm(NfcIntent.Write(payload, expectedUid = null))
         val outcome = awaitTerminalNfc()
+        if (outcome == null) {
+            // Nobody tapped — disarm so the stale arm can't consume a late
+            // tap into the void (this flow has already given up).
+            nfc.disarm()
+            return null
+        }
         return when (outcome) {
             is NfcResult.Success ->
                 if (outcome.uid.hex.isEmpty()) {
@@ -203,6 +217,18 @@ open class CreateAndPairUseCase @Inject constructor(
         )
     }
 
-    private suspend fun awaitTerminalNfc(): NfcResult =
-        nfc.state.first { it is NfcResult.Success || it is NfcResult.Error }
+    private suspend fun awaitTerminalNfc(): NfcResult? =
+        nfc.awaitTerminal(WRITE_TAP_WAIT_MS)
+
+    private companion object {
+        /**
+         * How long we wait for the user to physically tap a tag after Write
+         * is armed. Preserves the old MainViewModel WRITE_TIMEOUT_MS_DEFAULT
+         * (15s) UX budget. Once a tap is consumed, terminal I/O gets a
+         * separate generous grace inside [NfcRepository.awaitTerminal] — the
+         * old design wrapped everything in one 15s timeout and cancelled the
+         * use case while the physical NDEF write was still in flight.
+         */
+        const val WRITE_TAP_WAIT_MS: Long = 15_000L
+    }
 }

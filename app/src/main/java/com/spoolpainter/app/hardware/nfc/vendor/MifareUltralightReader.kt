@@ -4,6 +4,11 @@ import android.nfc.Tag
 import android.nfc.tech.MifareUltralight
 import android.nfc.tech.NfcA
 import android.util.Log
+import com.spoolpainter.app.hardware.nfc.TagIoWatchdogTimeoutException
+import com.spoolpainter.app.hardware.nfc.TagTechCloser
+import com.spoolpainter.app.hardware.nfc.VENDOR_TECH_IO_TIMEOUT_MS
+import com.spoolpainter.app.hardware.nfc.withTechWatchdog
+import kotlinx.coroutines.CoroutineDispatcher
 
 private const val TAG = "MifareUltralightReader"
 
@@ -26,21 +31,49 @@ private const val TAG = "MifareUltralightReader"
  */
 object MifareUltralightReader {
 
-    fun tryReadPages(tag: Tag, pageCount: Int = 36): ByteArray? {
+    /**
+     * Blocking, UNBOUNDED entry point (kept for JVM tests). Production
+     * callers must use [tryReadPagesBounded] so a connect hung on marginal
+     * RF contact is force-closed instead of wedging the OS NFC stack for
+     * the rest of the process lifetime.
+     */
+    fun tryReadPages(tag: Tag, pageCount: Int = 36): ByteArray? =
+        readPagesSession(tag, pageCount, closer = null)
+
+    /**
+     * Watchdog-bounded production entry point: the connect/read session
+     * gets [timeoutMs] (default [VENDOR_TECH_IO_TIMEOUT_MS] — full page
+     * walks legitimately take seconds) before the tech is force-closed and
+     * [TagIoWatchdogTimeoutException] is thrown.
+     */
+    suspend fun tryReadPagesBounded(
+        tag: Tag,
+        pageCount: Int = 36,
+        dispatcher: CoroutineDispatcher,
+        timeoutMs: Long = VENDOR_TECH_IO_TIMEOUT_MS,
+    ): ByteArray? =
+        withTechWatchdog(dispatcher, timeoutMs) { closer ->
+            readPagesSession(tag, pageCount, closer)
+        }
+
+    internal fun readPagesSession(tag: Tag, pageCount: Int, closer: TagTechCloser?): ByteArray? {
         // Preferred path: native MifareUltralight tech.
         MifareUltralight.get(tag)?.let { mu ->
-            return readViaUltralight(mu, pageCount)
+            return readViaUltralight(mu, pageCount, closer)
         }
         // Fallback: NfcA + raw READ commands.
         Log.d(TAG, "tryReadPages: no MifareUltralight tech, falling back to NfcA")
         NfcA.get(tag)?.let { na ->
-            return readViaNfcA(na, pageCount)
+            return readViaNfcA(na, pageCount, closer)
         }
         Log.w(TAG, "tryReadPages: neither MifareUltralight nor NfcA available")
         return null
     }
 
-    private fun readViaUltralight(mu: MifareUltralight, pageCount: Int): ByteArray? {
+    private fun readViaUltralight(mu: MifareUltralight, pageCount: Int, closer: TagTechCloser?): ByteArray? {
+        // Register the tech BEFORE connect() so the watchdog can
+        // force-close it if the binder call hangs on marginal RF contact.
+        closer?.register(mu)
         return try {
             mu.connect()
             // readPages returns 16 bytes (4 pages of 4 bytes) per call.
@@ -69,7 +102,9 @@ object MifareUltralightReader {
         }
     }
 
-    private fun readViaNfcA(na: NfcA, pageCount: Int): ByteArray? {
+    private fun readViaNfcA(na: NfcA, pageCount: Int, closer: TagTechCloser?): ByteArray? {
+        // Register the tech BEFORE connect() — see readViaUltralight.
+        closer?.register(na)
         return try {
             na.connect()
             val out = ByteArray(pageCount * 4)
