@@ -14,6 +14,8 @@ import com.spoolpainter.app.ui.screens.main.FormState
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -158,14 +160,30 @@ class VendorUidOnlyPairUseCaseTest {
     }
 
     @Test
-    fun `new-spool path also fills, covering a reused filament`() = runTest {
+    fun `new-spool path leaves the code to the create, no second fill`() = runTest {
         moveOnBind.nextOutcome = MoveOnBindUseCase.Outcome.Proceed
         spoolman.nextCreateSpoolResult = SpoolmanOutcome.Success(targetSpool)
         spoolman.nextAppendCardUidResult = SpoolmanOutcome.Success(targetSpool)
 
-        useCase.invoke(formInput(selectedSpoolId = null, articleNumber = "HPL18-106"))
+        val result = useCase.invoke(formInput(selectedSpoolId = null, articleNumber = "HPL18-106"))
 
+        assertTrue(spoolman.fillArticleNumberCalls.isEmpty())
+        assertNull((result as VendorUidOnlyPairResult.Success.UidPaired).articleNumberFill)
+    }
+
+    @Test
+    fun `new spool on a picked filament fills, since the create carried no code`() = runTest {
+        moveOnBind.nextOutcome = MoveOnBindUseCase.Outcome.Proceed
+        spoolman.nextCreateSpoolResult = SpoolmanOutcome.Success(targetSpool)
+        spoolman.nextAppendCardUidResult = SpoolmanOutcome.Success(targetSpool)
+        val base = formInput(selectedSpoolId = null, articleNumber = "HPL18-106")
+        val input = base.copy(form = base.form.copy(selectedFilamentId = sampleFilament.id))
+
+        val result = useCase.invoke(input)
+
+        assertNull(spoolman.lastCreateRequest?.expanderOverrides?.articleNumber)
         assertEquals(listOf(sampleFilament.id to "HPL18-106"), spoolman.fillArticleNumberCalls)
+        assertNotNull((result as VendorUidOnlyPairResult.Success.UidPaired).articleNumberFill)
     }
 
     @Test

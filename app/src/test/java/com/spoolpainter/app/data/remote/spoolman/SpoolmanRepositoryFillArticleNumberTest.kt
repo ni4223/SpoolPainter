@@ -55,13 +55,28 @@ class SpoolmanRepositoryFillArticleNumberTest {
     }
 
     @Test
-    fun `background fill fills the article number`() = runTest {
+    fun `stale cached code does not skip the write`() = runTest {
+        val h = SpoolmanRepositoryHarness(tempFolder)
+        seed(h, articleNumber = "HPL18-106")
+        h.repository.refresh()
+        // Cleared in Spoolman after the app cached it.
+        h.fakeApi.filamentList[0] = h.fakeApi.filamentList[0].copy(article_number = null)
+
+        h.repository.fillArticleNumberIfEmpty(7, "HPL18-106")
+
+        assertEquals("HPL18-106", h.fakeApi.filamentList.single().article_number)
+        assertTrue(h.fakeApi.callLog.any { it.startsWith("patchFilament(7,") })
+    }
+
+    @Test
+    fun `background fill fills the article number and reports the stored filament`() = runTest {
         val h = SpoolmanRepositoryHarness(tempFolder)
         seed(h, articleNumber = null)
 
-        h.repository.fillArticleNumberInBackground(7, "900001")
+        val outcome = h.repository.fillArticleNumberInBackground(7, "900001").await()
 
         assertEquals("900001", h.fakeApi.filamentList.single().article_number)
+        assertEquals("900001", (outcome as SpoolmanOutcome.Success).data.article_number)
     }
 
     @Test
@@ -69,8 +84,9 @@ class SpoolmanRepositoryFillArticleNumberTest {
         val h = SpoolmanRepositoryHarness(tempFolder)
 
         // Unknown filament → 404; must be logged, not thrown to the caller.
-        h.repository.fillArticleNumberInBackground(99, "900001")
+        val outcome = h.repository.fillArticleNumberInBackground(99, "900001").await()
 
+        assertTrue("got $outcome", outcome !is SpoolmanOutcome.Success)
         assertTrue(h.fakeApi.callLog.none { it.startsWith("patchFilament(") })
     }
 

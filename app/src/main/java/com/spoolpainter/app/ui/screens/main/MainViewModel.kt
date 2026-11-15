@@ -13,6 +13,7 @@ import com.spoolpainter.app.domain.models.SpoolmanFilament
 import com.spoolpainter.app.domain.models.SpoolmanSpool
 import com.spoolpainter.app.domain.models.TempRanges
 import com.spoolpainter.app.domain.models.OpenSpoolPayload
+import com.spoolpainter.app.domain.models.productCode
 import com.spoolpainter.app.domain.primitives.ExtraCardUidsCodec
 import com.spoolpainter.app.domain.primitives.SpoolMatchScorer
 import com.spoolpainter.app.domain.primitives.TagClassification
@@ -37,6 +38,7 @@ import com.spoolpainter.app.domain.usecases.VendorUidOnlyPairUseCase
 import com.spoolpainter.app.hardware.nfc.NfcRepository
 import com.spoolpainter.app.ui.common.UiEffect
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
@@ -1122,6 +1124,7 @@ class MainViewModel @Inject constructor(
     }
 
     fun onCustomMaterialChanged(value: String) {
+        if (value != _customMaterial.value) _state.update { it.forgetTagSku() }
         _customMaterial.value = value
     }
 
@@ -1133,6 +1136,7 @@ class MainViewModel @Inject constructor(
     }
 
     fun onCustomBrandChanged(value: String) {
+        if (value != _customBrand.value) _state.update { it.forgetTagSku() }
         _customBrand.value = value
     }
 
@@ -1141,7 +1145,7 @@ class MainViewModel @Inject constructor(
     }
 
     fun onVariantChanged(value: String?) {
-        _state.update { it.copy(form = it.form.copy(variant = value)) }
+        _state.update { it.withIdentityEdit(value != it.form.variant) { f -> f.copy(variant = value) } }
     }
 
     fun onTempRangesChanged(value: TempRanges) {
@@ -1152,15 +1156,15 @@ class MainViewModel @Inject constructor(
         _effects.trySend(UiEffect.Navigate("settings"))
     }
 
-    /** Material, brand and colour identify the product: editing one means the
-     *  tag's product code (see [effectiveForm]) no longer applies. */
+    /** Material, brand, colour and variant identify the product: editing one
+     *  means the tag's product code (see [effectiveForm]) no longer applies. */
     private fun MainUiState.withIdentityEdit(changed: Boolean, edit: (FormState) -> FormState): MainUiState =
         copy(form = edit(form)).let { if (changed) it.forgetTagSku() else it }
 
     private fun mapClassification(c: TagClassification?): ObservedTagKind? = when (c) {
         is TagClassification.Blank -> ObservedTagKind.Blank
         is TagClassification.OpenSpool -> ObservedTagKind.OpenSpool
-        is TagClassification.Vendor -> ObservedTagKind.Vendor(c.parsedHint?.sku)
+        is TagClassification.Vendor -> ObservedTagKind.Vendor(c.parsedHint?.productCode())
         else -> null
     }
 
@@ -1756,6 +1760,27 @@ class MainViewModel @Inject constructor(
         }
     }
 
+    /** The tag is already mapped; this only settles what the Article number
+     *  field shows — the stored value, or nothing plus a snackbar on failure. */
+    private fun reportArticleNumberFill(
+        spoolId: Int,
+        fill: Deferred<SpoolmanOutcome<SpoolmanFilament>>,
+    ) {
+        viewModelScope.launch {
+            val outcome = fill.await()
+            val stored = (outcome as? SpoolmanOutcome.Success)?.data?.article_number?.takeIf { it.isNotBlank() }
+            _state.update {
+                if (it.form.selectedSpoolId != spoolId) it
+                else it.copy(form = it.form.copy(articleNumber = stored))
+            }
+            if (outcome !is SpoolmanOutcome.Success) {
+                _effects.trySend(
+                    UiEffect.ShowSnackbar("Tag mapped, but its article number couldn't be saved to Spoolman."),
+                )
+            }
+        }
+    }
+
     private fun applyVendorUidOnlyPairResult(result: VendorUidOnlyPairResult) {
         when (result) {
             is VendorUidOnlyPairResult.Success.UidPaired -> {
@@ -1767,7 +1792,9 @@ class MainViewModel @Inject constructor(
                     val filamentId = current.spoolman.spools
                         .firstOrNull { it.id == result.spoolId }?.filament?.id
                     current.copy(
-                        form = current.form.copy(
+                        // effectiveForm: the tag's code stays in the field
+                        // once observedTagKind is cleared below.
+                        form = current.effectiveForm().copy(
                             cardUid = result.uid,
                             selectedSpoolId = result.spoolId,
                             selectedFilamentId = filamentId ?: current.form.selectedFilamentId,
@@ -1781,6 +1808,7 @@ class MainViewModel @Inject constructor(
                         ),
                     )
                 }
+                result.articleNumberFill?.let { fill -> reportArticleNumberFill(result.spoolId, fill) }
             }
             is VendorUidOnlyPairResult.SpoolmanFailed -> {
                 _state.update { it.copy(activeFlow = ActiveFlow.Idle) }

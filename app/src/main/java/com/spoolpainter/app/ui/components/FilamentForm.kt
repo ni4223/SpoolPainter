@@ -160,10 +160,6 @@ private fun ArticleNumberField(value: String, hint: String?) {
             .fillMaxWidth()
             .testTag("main-form-article-number"),
         textStyle = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
-        colors = OutlinedTextFieldDefaults.colors(
-            focusedBorderColor = MaterialTheme.colorScheme.primary,
-            unfocusedBorderColor = MaterialTheme.colorScheme.outline,
-        ),
         shape = RoundedCornerShape(20.dp),
     )
 }

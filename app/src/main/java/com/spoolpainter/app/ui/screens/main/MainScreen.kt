@@ -526,6 +526,15 @@ private fun InlineReadWriteRow(
     }
 }
 
+/** Where the tag's code shown in the form will be saved. Never promises an
+ *  overwrite: a filament Save matches to may already have its own code. */
+private fun articleNumberHint(state: MainUiState): String? = when {
+    state.pendingTagSku() == null -> null
+    state.form.selectedSpoolId == null && state.form.selectedFilamentId == null ->
+        "From tag — saved to the filament unless it already has one"
+    else -> "From tag — saved to this filament when you map the tag"
+}
+
 /**
  * State-aware hint rendered as supporting text under the Write button while
  * Write is disabled. Pairs with the Save button's current label so the
@@ -538,13 +547,6 @@ private fun InlineReadWriteRow(
  *
  * Returns null in non-blocking states so no caption renders.
  */
-private fun articleNumberHint(state: MainUiState): String? = when {
-    state.pendingTagSku() == null -> null
-    state.form.selectedSpoolId == null && state.form.selectedFilamentId == null ->
-        "From tag — saved with the new filament"
-    else -> "From tag — saved to this filament when you map the tag"
-}
-
 private fun computeWriteHint(
     activeFlow: ActiveFlow,
     selectedSpoolId: Int?,

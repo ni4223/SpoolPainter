@@ -16,6 +16,8 @@ import com.spoolpainter.app.domain.primitives.ExtraCardUidsCodec
 import com.spoolpainter.app.domain.usecases.NewFilamentRequest
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -203,7 +205,9 @@ open class SpoolmanRepository @Inject constructor(
      * Records a vendor tag's product code as the filament's `article_number`.
      * Only fills an empty field — a value already there (typed by the user, or
      * set by another tool) is never overwritten. Reads the filament fresh
-     * rather than from the cache, like the other filament edits.
+     * rather than from the cache, and PATCHes without [patchFilament]'s
+     * cache diff: that diff could match a stale cached code and skip a write
+     * the fresh read just showed is needed.
      */
     open suspend fun fillArticleNumberIfEmpty(
         filamentId: Int,
@@ -214,19 +218,29 @@ open class SpoolmanRepository @Inject constructor(
             if (!filament.article_number.isNullOrBlank()) {
                 SpoolmanOutcome.Success(filament)
             } else {
-                patchFilament(filamentId, PatchFilamentBody(article_number = articleNumber))
+                performHttp("patchFilament") {
+                    api.patchFilament(filamentId, PatchFilamentBody(article_number = articleNumber))
+                }.also { o ->
+                    if (o is SpoolmanOutcome.Success) {
+                        replaceFilamentInCache(o.data)
+                        refreshAfterWrite()
+                    }
+                }
             }
         }
     }
 
     /**
-     * Fire-and-forget [fillArticleNumberIfEmpty] on the app scope, for callers
-     * that have already finished their own write: the fill is best-effort, so
-     * it must not hold up or time out the caller's flow. Failures are logged.
+     * [fillArticleNumberIfEmpty] on the app scope, for callers that have
+     * already finished their own write: the fill is best-effort, so it must
+     * not hold up or time out the caller's flow. Failures are logged; await
+     * the result to report it or to show the stored code.
      */
-    open fun fillArticleNumberInBackground(filamentId: Int, articleNumber: String) {
-        scope.launch {
-            val outcome = fillArticleNumberIfEmpty(filamentId, articleNumber)
+    open fun fillArticleNumberInBackground(
+        filamentId: Int,
+        articleNumber: String,
+    ): Deferred<SpoolmanOutcome<SpoolmanFilament>> = scope.async {
+        fillArticleNumberIfEmpty(filamentId, articleNumber).also { outcome ->
             if (outcome !is SpoolmanOutcome.Success) {
                 android.util.Log.w("SpoolmanRepo", "fillArticleNumberIfEmpty failed (non-fatal): $outcome")
             }
@@ -517,6 +531,15 @@ open class SpoolmanRepository @Inject constructor(
                             spoolPrice = req.expanderOverrides.spoolPrice,
                             spoolWeight = req.expanderOverrides.spoolWeightForSpool,
                         ).map { spool ->
+                            // A matched filament didn't get the create's
+                            // article_number: fill it if it has none.
+                            val code = req.expanderOverrides.articleNumber
+                            val matched = resolvedFilament.value
+                            if (!resolvedFilament.wasCreatedFresh &&
+                                !code.isNullOrBlank() && matched.article_number.isNullOrBlank()
+                            ) {
+                                fillArticleNumberInBackground(matched.id, code)
+                            }
                             NewSpoolBundle(
                                 spool = spool,
                                 filamentWasFresh = resolvedFilament.wasCreatedFresh,

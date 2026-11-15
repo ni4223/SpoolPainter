@@ -29,7 +29,9 @@ import com.spoolpainter.app.support.FakeSettingsRepository
 import com.spoolpainter.app.support.FakeSpoolmanRepository
 import com.spoolpainter.app.support.FakeTwoTagUseCase
 import com.spoolpainter.app.support.FakeVendorUidOnlyPairUseCase
+import com.spoolpainter.app.domain.usecases.VendorUidOnlyPairResult
 import com.spoolpainter.app.ui.common.UiEffect
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -247,6 +249,72 @@ class MainViewModelTest {
         vm.onWriteTapped()
 
         assertEquals("HPL18-106", vendorUidOnlyPair.lastInput?.articleNumber)
+    }
+
+    /** Read an unpaired vendor tag carrying [sku], then pick spool 77 for Map tag. */
+    private suspend fun readVendorTagAndPickSpool(vm: MainViewModel, sku: String = "HPL18-106") {
+        settings.pushSettings(Settings(url = "http://10.0.0.5:8000"))
+        val hint = openSpoolPayload.copy(sku = sku)
+        nfc.setBufferedTap(NfcResult.Success(sampleUid, TagClassification.Vendor("Ultralight", parsedHint = hint)))
+        spoolman.nextFindSpoolsByCardUidResult = SpoolmanOutcome.Success(emptyList())
+        vm.onReadTapped()
+        vm.onSpoolSelected(sampleSpool.copy(id = 77, extra = null))
+    }
+
+    private fun paired(fill: SpoolmanOutcome<SpoolmanFilament>?) =
+        VendorUidOnlyPairResult.Success.UidPaired(
+            spoolId = 77,
+            uid = sampleUid,
+            isNewSpool = false,
+            articleNumberFill = fill?.let { CompletableDeferred(it) },
+        )
+
+    @Test
+    fun `after Map tag the field shows the code Spoolman stored`() = runTest {
+        val vm = newVm()
+        readVendorTagAndPickSpool(vm)
+        vendorUidOnlyPair.nextResult = paired(
+            SpoolmanOutcome.Success(SpoolmanFilament(id = 10, article_number = "HPL18-106")),
+        )
+
+        vm.onWriteTapped()
+
+        assertEquals(ObservedTagKind.None, vm.state.value.observedTagKind)
+        assertEquals("HPL18-106", vm.state.value.form.articleNumber)
+    }
+
+    @Test
+    fun `after Map tag a failed fill clears the field and says so`() = runTest {
+        val vm = newVm()
+        readVendorTagAndPickSpool(vm)
+        vendorUidOnlyPair.nextResult = paired(SpoolmanOutcome.HttpError(500, "boom"))
+
+        vm.effects.test {
+            vm.onWriteTapped()
+            assertTrue(awaitNonAmbientSnackbar().message.contains("article number"))
+            cancelAndIgnoreRemainingEvents()
+        }
+        assertNull(vm.state.value.form.articleNumber)
+    }
+
+    @Test
+    fun `typing a custom brand or changing the variant drops the tag's code`() = runTest {
+        val vm = newVm()
+        readVendorTagAndPickSpool(vm)
+        vm.onCustomBrandChanged("Acme")
+        assertNull(vm.state.value.effectiveForm().articleNumber)
+
+        readVendorTagAndPickSpool(vm)
+        vm.onVariantChanged("Silk")
+        assertNull(vm.state.value.effectiveForm().articleNumber)
+    }
+
+    @Test
+    fun `garbled tag code is not offered as an article number`() = runTest {
+        val vm = newVm()
+        readVendorTagAndPickSpool(vm, sku = "\uFFFD\uFFFD\uFFFD")
+
+        assertNull(vm.state.value.effectiveForm().articleNumber)
     }
 
     @Test
