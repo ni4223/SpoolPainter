@@ -1,9 +1,11 @@
 package com.spoolpainter.app.data.remote.spoolman
 
+import com.spoolpainter.app.domain.models.ExternalFilament
 import com.spoolpainter.app.domain.models.SpoolmanFilament
 import com.spoolpainter.app.domain.models.SpoolmanInfo
 import com.spoolpainter.app.domain.models.SpoolmanSpool
 import com.spoolpainter.app.domain.models.SpoolmanVendor
+import okhttp3.Headers
 import okhttp3.ResponseBody.Companion.toResponseBody
 import retrofit2.Response
 
@@ -16,6 +18,21 @@ class FakeSpoolmanApi : SpoolmanApi {
     var nextVendorId: Int = 1
     var nextFilamentId: Int = 1
     var nextSpoolId: Int = 1
+
+    // SpoolmanDB search stub: naive contains-match over manufacturer/name/
+    // material. totalCount != null also emits the x-total-count header;
+    // null omits it (older-server fallback path).
+    var externalFilamentResults: List<ExternalFilament> = emptyList()
+    var externalFilamentSearchTotalCount: Int? = null
+    var failSearchExternalFilaments: Failure? = null
+    var lastExternalFilamentSearch: Triple<String, Int, Int>? = null
+        private set
+
+    // Captured POST bodies for create-chain assertions.
+    var lastCreateVendorBody: CreateVendorRequest? = null
+        private set
+    var lastCreateFilamentBody: CreateFilamentRequest? = null
+        private set
 
     val spoolExtraFields: MutableSet<String> = mutableSetOf()
     val filamentExtraFields: MutableSet<String> = mutableSetOf()
@@ -46,6 +63,28 @@ class FakeSpoolmanApi : SpoolmanApi {
         callLog += "getInfo"
         failGetInfo?.let { return it.toResponse() }
         return Response.success(info)
+    }
+
+    override suspend fun searchExternalFilaments(
+        query: String,
+        limit: Int,
+        offset: Int,
+    ): Response<List<ExternalFilament>> {
+        callLog += "searchExternalFilaments(query=$query,limit=$limit,offset=$offset)"
+        failSearchExternalFilaments?.let { return it.toResponse() }
+        lastExternalFilamentSearch = Triple(query, limit, offset)
+        val matched = if (query.isBlank()) {
+            externalFilamentResults
+        } else {
+            externalFilamentResults.filter {
+                it.manufacturer.contains(query, ignoreCase = true) ||
+                    it.name.contains(query, ignoreCase = true) ||
+                    it.material.contains(query, ignoreCase = true)
+            }
+        }
+        return externalFilamentSearchTotalCount
+            ?.let { total -> Response.success(matched, Headers.headersOf("x-total-count", total.toString())) }
+            ?: Response.success(matched)
     }
 
     override suspend fun listSpools(
@@ -92,9 +131,10 @@ class FakeSpoolmanApi : SpoolmanApi {
     }
 
     override suspend fun createVendor(body: CreateVendorRequest): Response<SpoolmanVendor> {
-        callLog += "createVendor(${body.name})"
+        callLog += "createVendor(${body.name},external_id=${body.external_id})"
         failCreateVendor?.let { return it.toResponse() }
-        val vendor = SpoolmanVendor(id = nextVendorId++, name = body.name)
+        lastCreateVendorBody = body
+        val vendor = SpoolmanVendor(id = nextVendorId++, name = body.name, external_id = body.external_id)
         vendorList += vendor
         return Response.success(vendor)
     }
@@ -106,6 +146,7 @@ class FakeSpoolmanApi : SpoolmanApi {
             return staged.toResponse()
         }
         failCreateFilament?.let { return it.toResponse() }
+        lastCreateFilamentBody = body
         body.extra?.keys?.forEach { key ->
             if (key !in filamentExtraFields) {
                 return Response.error(400, "Unknown extra field: $key".toResponseBody(null))
@@ -120,6 +161,12 @@ class FakeSpoolmanApi : SpoolmanApi {
             color_hex = body.color_hex,
             settings_extruder_temp = body.settings_extruder_temp,
             settings_bed_temp = body.settings_bed_temp,
+            density = body.density,
+            diameter = body.diameter,
+            weight = body.weight,
+            spool_weight = body.spool_weight,
+            price = body.price,
+            external_id = body.external_id,
             extra = body.extra,
         )
         filamentList += filament
