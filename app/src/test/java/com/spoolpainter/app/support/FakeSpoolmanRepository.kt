@@ -14,7 +14,9 @@ import com.spoolpainter.app.domain.models.SpoolmanSpool
 import com.spoolpainter.app.domain.models.SpoolmanVendor
 import com.spoolpainter.app.domain.primitives.CardUid
 import com.spoolpainter.app.domain.usecases.NewFilamentRequest
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -212,9 +214,19 @@ class FakeSpoolmanRepository(
     }
 
     val fillArticleNumberCalls = mutableListOf<Pair<Int, String>>()
+    /** Completes each background fill; default: Spoolman now holds the code. */
+    var nextFillArticleNumberResult: SpoolmanOutcome<SpoolmanFilament>? = null
 
-    override fun fillArticleNumberInBackground(filamentId: Int, articleNumber: String) {
+    override fun fillArticleNumberInBackground(
+        filamentId: Int,
+        articleNumber: String,
+    ): Deferred<SpoolmanOutcome<SpoolmanFilament>> {
         fillArticleNumberCalls += filamentId to articleNumber
+        return CompletableDeferred(
+            nextFillArticleNumberResult ?: SpoolmanOutcome.Success(
+                SpoolmanFilament(id = filamentId, article_number = articleNumber),
+            ),
+        )
     }
 
     var applyVariantToFilamentOfSpoolCalls: Int = 0

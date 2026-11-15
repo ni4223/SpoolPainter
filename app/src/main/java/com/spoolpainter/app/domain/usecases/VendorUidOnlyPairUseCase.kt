@@ -2,9 +2,11 @@ package com.spoolpainter.app.domain.usecases
 
 import com.spoolpainter.app.data.remote.spoolman.SpoolmanOutcome
 import com.spoolpainter.app.data.remote.spoolman.SpoolmanRepository
+import com.spoolpainter.app.domain.models.SpoolmanFilament
 import com.spoolpainter.app.domain.primitives.CardUid
 import com.spoolpainter.app.ui.screens.main.FormState
 import javax.inject.Inject
+import kotlinx.coroutines.Deferred
 
 data class VendorUidOnlyPairInput(
     val form: FormState,
@@ -25,6 +27,9 @@ sealed interface VendorUidOnlyPairResult {
             val spoolId: Int,
             val uid: CardUid,
             val isNewSpool: Boolean,
+            /** The background article_number fill, when one was started. The
+             *  pair already succeeded; await this only to report the fill. */
+            val articleNumberFill: Deferred<SpoolmanOutcome<SpoolmanFilament>>? = null,
         ) : Success
     }
     data class SpoolmanFailed(val uid: CardUid, val outcome: SpoolmanOutcome<*>) : VendorUidOnlyPairResult
@@ -85,7 +90,7 @@ open class VendorUidOnlyPairUseCase @Inject constructor(
                 }
             }
         }
-        return appendUid(input, selectedSpoolId, isNewSpool = false)
+        return appendUid(input, selectedSpoolId, isNewSpool = false, fillArticleNumber = true)
     }
 
     private suspend fun newSpoolPath(
@@ -134,13 +139,19 @@ open class VendorUidOnlyPairUseCase @Inject constructor(
             SpoolmanOutcome.ParseError(IllegalStateException("no spool id from createSpool")),
         )
 
-        return appendUid(input, newId, isNewSpool = true)
+        // The create already recorded a code it carried (new filament, or the
+        // matched one's empty field), so only fill when it carried none.
+        return appendUid(
+            input, newId, isNewSpool = true,
+            fillArticleNumber = req.expanderOverrides.articleNumber.isNullOrBlank(),
+        )
     }
 
     private suspend fun appendUid(
         input: VendorUidOnlyPairInput,
         spoolId: Int,
         isNewSpool: Boolean,
+        fillArticleNumber: Boolean,
     ): VendorUidOnlyPairResult {
         val append = spoolman.appendCardUidToSpool(spoolId, input.observedUid)
         if (append !is SpoolmanOutcome.Success) {
@@ -149,13 +160,16 @@ open class VendorUidOnlyPairUseCase @Inject constructor(
         // Best-effort and off the pair's critical path: the tag is already
         // mapped, so a slow or failed fill must not turn this into a failure.
         val filamentId = append.data.filament?.id
-        if (filamentId != null && !input.articleNumber.isNullOrBlank()) {
+        val fill = if (fillArticleNumber && filamentId != null && !input.articleNumber.isNullOrBlank()) {
             spoolman.fillArticleNumberInBackground(filamentId, input.articleNumber)
+        } else {
+            null
         }
         return VendorUidOnlyPairResult.Success.UidPaired(
             spoolId = spoolId,
             uid = input.observedUid,
             isNewSpool = isNewSpool,
+            articleNumberFill = fill,
         )
     }
 

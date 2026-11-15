@@ -15,9 +15,10 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 
 /**
- * Save paths: the tag's product code goes into a new filament's create, and
- * Save never patches it onto an existing filament. Filling an existing
- * filament's empty field happens only on Map tag (VendorUidOnlyPairUseCase).
+ * Save paths: the tag's product code goes into a new filament's create, or
+ * into the empty field of a filament the create matched. Save never patches
+ * it onto a picked spool's filament; that is filled on Map tag
+ * (VendorUidOnlyPairUseCase).
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class ArticleNumberSavePathsTest {
@@ -58,13 +59,22 @@ class ArticleNumberSavePathsTest {
     }
 
     @Test
-    fun `reused filament is left alone`() = runTest {
+    fun `matched filament with no code gets the tag's code`() = runTest {
         val h = harness(filament(articleNumber = null))
 
         h.repository.createSpoolForNewFilament(req("HPL18-106"))
 
         assertTrue(h.fakeApi.callLog.none { it.startsWith("createFilament") })
-        assertNull(h.fakeApi.filamentList.single().article_number)
+        assertEquals("HPL18-106", h.fakeApi.filamentList.single().article_number)
+    }
+
+    @Test
+    fun `matched filament keeps its own code`() = runTest {
+        val h = harness(filament(articleNumber = "AHPLRR-107"))
+
+        h.repository.createSpoolForNewFilament(req("HPL18-106"))
+
+        assertEquals("AHPLRR-107", h.fakeApi.filamentList.single().article_number)
         assertTrue(h.fakeApi.callLog.none { it.startsWith("patchFilament(") })
     }
 

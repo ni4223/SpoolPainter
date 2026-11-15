@@ -134,21 +134,11 @@ data class FormState(
 enum class WeightMethod { Remaining, Measured }
 
 /**
- * Decision I/J: when an existing spool OR existing filament is selected,
- * filament-scope spec fields lock — the override bag carries variant only,
- * which is the single legitimate filament-record edit on those paths
- * (defence-in-depth; the use case routes through applyVariantToFilamentOfSpool).
- *
- * On the new-filament path, the full override bag flows so a brand-new
- * filament POST can carry density/weight/spool_weight/price along with the
- * standard 1.75mm diameter (decision M+N). spoolPrice is set to the same
- * priceMajor value so the spool record gets per-spool pricing too.
- */
-/**
  * The form as displayed and saved. A Read vendor tag's product code
- * (OpenSpoolPayload.sku) shows wherever Spoolman has no article number. It is
- * written when Save creates a new filament, or on Map tag into the paired
- * filament's empty field. Spoolman's own value always wins and is never changed.
+ * (OpenSpoolPayload.sku) shows wherever Spoolman has no article number. Save
+ * writes it into the filament it creates (or the empty field of one it
+ * matches); Map tag writes it into the paired filament's empty field.
+ * Spoolman's own value always wins and is never changed.
  */
 fun MainUiState.effectiveForm(): FormState =
     pendingTagSku()?.let { form.copy(articleNumber = it) } ?: form
@@ -161,6 +151,17 @@ fun MainUiState.pendingTagSku(): String? =
 fun MainUiState.forgetTagSku(): MainUiState =
     (observedTagKind as? ObservedTagKind.Vendor)?.let { copy(observedTagKind = it.copy(sku = null)) } ?: this
 
+/**
+ * Decision I/J: when an existing spool OR existing filament is selected,
+ * filament-scope spec fields lock — the override bag carries variant only,
+ * which is the single legitimate filament-record edit on those paths
+ * (defence-in-depth; the use case routes through applyVariantToFilamentOfSpool).
+ *
+ * On the new-filament path, the full override bag flows so a brand-new
+ * filament POST can carry density/weight/spool_weight/price along with the
+ * standard 1.75mm diameter (decision M+N). spoolPrice is set to the same
+ * priceMajor value so the spool record gets per-spool pricing too.
+ */
 fun FormState.toExpanderOverrides(): ExpanderOverrides {
     // Existing-spool path (v2.1 unlock — UI-13 follow-up): filament-record
     // edits Color + Density + Diameter + Filament weight + Temps now flow

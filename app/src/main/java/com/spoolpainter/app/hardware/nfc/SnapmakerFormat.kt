@@ -291,6 +291,7 @@ fun parseSnapmakerTag(
         bedMaxTemp = bed.toString(),
         subtype = subType,
         spoolId = null,
-        sku = sku.toUInt().takeIf { it > 0u }?.toString(),
+        // 0 and 0xFFFFFFFF are unwritten / erased flash, not codes.
+        sku = sku.toUInt().takeIf { it != 0u && it != UInt.MAX_VALUE }?.toString(),
     )
 }
