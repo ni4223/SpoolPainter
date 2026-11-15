@@ -2,9 +2,11 @@ package com.spoolpainter.app.domain.usecases
 
 import com.spoolpainter.app.data.remote.spoolman.SpoolmanOutcome
 import com.spoolpainter.app.data.remote.spoolman.SpoolmanRepository
+import com.spoolpainter.app.domain.models.SpoolmanFilament
 import com.spoolpainter.app.domain.primitives.CardUid
 import com.spoolpainter.app.ui.screens.main.FormState
 import javax.inject.Inject
+import kotlinx.coroutines.Deferred
 
 data class VendorUidOnlyPairInput(
     val form: FormState,
@@ -14,6 +16,9 @@ data class VendorUidOnlyPairInput(
     /** UID captured at Read time. Decoupled from `form.cardUid` so the use-case
      *  acts on the UID it was handed at Save press, even if the form drifts. */
     val observedUid: CardUid,
+    /** Product code decoded from the vendor tag, if any. Written to the
+     *  paired spool's filament `article_number` when that field is empty. */
+    val articleNumber: String? = null,
 )
 
 sealed interface VendorUidOnlyPairResult {
@@ -22,6 +27,9 @@ sealed interface VendorUidOnlyPairResult {
             val spoolId: Int,
             val uid: CardUid,
             val isNewSpool: Boolean,
+            /** The background article_number fill, when one was started. The
+             *  pair already succeeded; await this only to report the fill. */
+            val articleNumberFill: Deferred<SpoolmanOutcome<SpoolmanFilament>>? = null,
         ) : Success
     }
     data class SpoolmanFailed(val uid: CardUid, val outcome: SpoolmanOutcome<*>) : VendorUidOnlyPairResult
@@ -82,14 +90,7 @@ open class VendorUidOnlyPairUseCase @Inject constructor(
                 }
             }
         }
-        return when (val append = spoolman.appendCardUidToSpool(selectedSpoolId, input.observedUid)) {
-            is SpoolmanOutcome.Success -> VendorUidOnlyPairResult.Success.UidPaired(
-                spoolId = selectedSpoolId,
-                uid = input.observedUid,
-                isNewSpool = false,
-            )
-            else -> VendorUidOnlyPairResult.SpoolmanFailed(input.observedUid, append)
-        }
+        return appendUid(input, selectedSpoolId, isNewSpool = false, fillArticleNumber = true)
     }
 
     private suspend fun newSpoolPath(
@@ -138,14 +139,38 @@ open class VendorUidOnlyPairUseCase @Inject constructor(
             SpoolmanOutcome.ParseError(IllegalStateException("no spool id from createSpool")),
         )
 
-        return when (val append = spoolman.appendCardUidToSpool(newId, input.observedUid)) {
-            is SpoolmanOutcome.Success -> VendorUidOnlyPairResult.Success.UidPaired(
-                spoolId = newId,
-                uid = input.observedUid,
-                isNewSpool = true,
-            )
-            else -> VendorUidOnlyPairResult.SpoolmanFailed(input.observedUid, append)
+        // The create already recorded a code it carried (new filament, or the
+        // matched one's empty field), so only fill when it carried none.
+        return appendUid(
+            input, newId, isNewSpool = true,
+            fillArticleNumber = req.expanderOverrides.articleNumber.isNullOrBlank(),
+        )
+    }
+
+    private suspend fun appendUid(
+        input: VendorUidOnlyPairInput,
+        spoolId: Int,
+        isNewSpool: Boolean,
+        fillArticleNumber: Boolean,
+    ): VendorUidOnlyPairResult {
+        val append = spoolman.appendCardUidToSpool(spoolId, input.observedUid)
+        if (append !is SpoolmanOutcome.Success) {
+            return VendorUidOnlyPairResult.SpoolmanFailed(input.observedUid, append)
         }
+        // Best-effort and off the pair's critical path: the tag is already
+        // mapped, so a slow or failed fill must not turn this into a failure.
+        val filamentId = append.data.filament?.id
+        val fill = if (fillArticleNumber && filamentId != null && !input.articleNumber.isNullOrBlank()) {
+            spoolman.fillArticleNumberInBackground(filamentId, input.articleNumber)
+        } else {
+            null
+        }
+        return VendorUidOnlyPairResult.Success.UidPaired(
+            spoolId = spoolId,
+            uid = input.observedUid,
+            isNewSpool = isNewSpool,
+            articleNumberFill = fill,
+        )
     }
 
     companion object {

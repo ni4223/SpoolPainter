@@ -121,6 +121,7 @@ class FakeSpoolmanApi : SpoolmanApi {
             settings_extruder_temp = body.settings_extruder_temp,
             settings_bed_temp = body.settings_bed_temp,
             extra = body.extra,
+            article_number = body.article_number,
         )
         filamentList += filament
         return Response.success(filament)
@@ -223,6 +224,7 @@ class FakeSpoolmanApi : SpoolmanApi {
             spool_weight = body.spool_weight ?: current.spool_weight,
             price = body.price ?: current.price,
             extra = body.extra ?: current.extra,
+            article_number = body.article_number ?: current.article_number,
         )
         filamentList[idx] = updated
         return Response.success(updated)

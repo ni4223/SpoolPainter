@@ -254,7 +254,8 @@ fun MainScreen(
                     }
                     InnerSectionCard(testTag = "main-form-card") {
                         FilamentForm(
-                            state = state.form,
+                            state = state.effectiveForm(),
+                            articleNumberHint = articleNumberHint(state),
                             customMaterial = customMaterial,
                             customBrand = customBrand,
                             enabled = state.activeFlow == ActiveFlow.Idle,
@@ -468,7 +469,7 @@ private fun InlineReadWriteRow(
                     )
                 }
                 val writeLabel = when {
-                    writeMode == WriteMode.Spoolman && observedTagKind == ObservedTagKind.Vendor -> "Map tag"
+                    writeMode == WriteMode.Spoolman && observedTagKind is ObservedTagKind.Vendor -> "Map tag"
                     writeMode == WriteMode.RawNoUrl -> "Write to NFC"
                     else -> "Write tag"
                 }
@@ -511,6 +512,15 @@ private fun InlineReadWriteRow(
     }
 }
 
+/** Where the tag's code shown in the form will be saved. Never promises an
+ *  overwrite: a filament Save matches to may already have its own code. */
+private fun articleNumberHint(state: MainUiState): String? = when {
+    state.pendingTagSku() == null -> null
+    state.form.selectedSpoolId == null && state.form.selectedFilamentId == null ->
+        "From tag — saved to the filament unless it already has one"
+    else -> "From tag — saved to this filament when you map the tag"
+}
+
 /**
  * State-aware hint rendered as supporting text under the Write button while
  * Write is disabled. Pairs with the Save button's current label so the
@@ -533,7 +543,7 @@ private fun computeWriteHint(
     if (activeFlow != ActiveFlow.Idle) return null
     if (writeMode == WriteMode.RawNoUrl) return null
     if (selectedSpoolId != null) return null
-    if (observed == ObservedTagKind.Vendor) return "Create a spool to map this tag."
+    if (observed is ObservedTagKind.Vendor) return "Create a spool to map this tag."
     if (selectedFilamentId != null) return "Create spool first."
     return "Create filament and spool first."
 }
@@ -1099,7 +1109,7 @@ private fun VendorTagHint(
     showChip: Boolean,
     parsed: Boolean,
 ) {
-    if (!showChip || observed != ObservedTagKind.Vendor || !hasUid) return
+    if (!showChip || observed !is ObservedTagKind.Vendor || !hasUid) return
     val body = when {
         alreadyLinked -> "We can't read this tag's contents. Tap Save to pair it with the selected spool."
         urlConfigured -> "We can't read this tag's contents. Pick a spool or fill the form, then tap Save to pair it."

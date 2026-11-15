@@ -16,6 +16,8 @@ import com.spoolpainter.app.domain.primitives.ExtraCardUidsCodec
 import com.spoolpainter.app.domain.usecases.NewFilamentRequest
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -198,6 +200,52 @@ open class SpoolmanRepository @Inject constructor(
             .flatMap { filament -> patchVariantIfChanged(filament, canon) }
     }
 
+    /**
+     * Records a vendor tag's product code as the filament's `article_number`.
+     * Only fills an empty field — a value already there (typed by the user, or
+     * set by another tool) is never overwritten. Reads the filament fresh
+     * rather than from the cache, and PATCHes without [patchFilament]'s
+     * cache diff: that diff could match a stale cached code and skip a write
+     * the fresh read just showed is needed.
+     */
+    open suspend fun fillArticleNumberIfEmpty(
+        filamentId: Int,
+        articleNumber: String,
+    ): SpoolmanOutcome<SpoolmanFilament> {
+        val api = cachedApi ?: return urlNotConfigured()
+        return performHttp("getFilament") { api.getFilament(filamentId) }.flatMap { filament ->
+            if (!filament.article_number.isNullOrBlank()) {
+                SpoolmanOutcome.Success(filament)
+            } else {
+                performHttp("patchFilament") {
+                    api.patchFilament(filamentId, PatchFilamentBody(article_number = articleNumber))
+                }.also { o ->
+                    if (o is SpoolmanOutcome.Success) {
+                        replaceFilamentInCache(o.data)
+                        refreshAfterWrite()
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * [fillArticleNumberIfEmpty] on the app scope, for callers that have
+     * already finished their own write: the fill is best-effort, so it must
+     * not hold up or time out the caller's flow. Failures are logged; await
+     * the result to report it or to show the stored code.
+     */
+    open fun fillArticleNumberInBackground(
+        filamentId: Int,
+        articleNumber: String,
+    ): Deferred<SpoolmanOutcome<SpoolmanFilament>> = scope.async {
+        fillArticleNumberIfEmpty(filamentId, articleNumber).also { outcome ->
+            if (outcome !is SpoolmanOutcome.Success) {
+                android.util.Log.w("SpoolmanRepo", "fillArticleNumberIfEmpty failed (non-fatal): $outcome")
+            }
+        }
+    }
+
     private suspend fun patchVariantIfChanged(
         filament: SpoolmanFilament,
         canonVariant: String,
@@ -304,13 +352,15 @@ open class SpoolmanRepository @Inject constructor(
         spool_weight = body.spool_weight?.takeIf { it != current.spool_weight },
         price = body.price?.takeIf { it != current.price },
         extra = body.extra?.takeIf { it != current.extra },
+        article_number = body.article_number?.takeIf { it != current.article_number },
     )
 
     private fun PatchFilamentBody.isEmpty(): Boolean =
         name == null && color_hex == null &&
             settings_extruder_temp == null && settings_bed_temp == null &&
             density == null && diameter == null && weight == null &&
-            spool_weight == null && price == null && extra == null
+            spool_weight == null && price == null && extra == null &&
+            article_number == null
 
     open suspend fun appendCardUidToSpool(spoolId: Int, uid: CardUid): SpoolmanOutcome<SpoolmanSpool> {
         if (uid.hex.isEmpty()) return invalidArg("uid is empty")
@@ -466,6 +516,15 @@ open class SpoolmanRepository @Inject constructor(
                             spoolPrice = req.expanderOverrides.spoolPrice,
                             spoolWeight = req.expanderOverrides.spoolWeightForSpool,
                         ).map { spool ->
+                            // A matched filament didn't get the create's
+                            // article_number: fill it if it has none.
+                            val code = req.expanderOverrides.articleNumber
+                            val matched = resolvedFilament.value
+                            if (!resolvedFilament.wasCreatedFresh &&
+                                !code.isNullOrBlank() && matched.article_number.isNullOrBlank()
+                            ) {
+                                fillArticleNumberInBackground(matched.id, code)
+                            }
                             NewSpoolBundle(
                                 spool = spool,
                                 filamentWasFresh = resolvedFilament.wasCreatedFresh,
@@ -650,6 +709,7 @@ open class SpoolmanRepository @Inject constructor(
                                 spool_weight = req.expanderOverrides.spoolWeight,
                                 price = req.expanderOverrides.price,
                                 extra = extras,
+                                article_number = req.expanderOverrides.articleNumber,
                             ),
                         )
                     }.also { outcome -> if (outcome is SpoolmanOutcome.Success) prependFilament(outcome.data) }
