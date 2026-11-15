@@ -10,12 +10,13 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
@@ -126,7 +127,7 @@ fun FilamentPicker(
     val selected = sorted.firstOrNull { it.id == selectedFilamentId }
     val displayValue = selected?.selectedDisplay().orEmpty()
     // SpoolmanDB: hidden entirely while Idle with a blank query; any other
-    // state (or a started query) renders the pinned footer section.
+    // state (or a started query) renders the in-list section.
     val showExternalSection = externalSearchState !is ExternalSearchUiState.Idle || query.isNotBlank()
 
     fun closeAndResetQuery() {
@@ -229,9 +230,9 @@ fun FilamentPicker(
                         testTag = "filament-picker-search",
                     )
                 },
-                footer = if (showExternalSection) {
+                footerItems = if (showExternalSection) {
                     {
-                        ExternalDbSection(
+                        externalDbSectionItems(
                             label = externalDbLabel,
                             state = externalSearchState,
                             onPick = { item ->
@@ -251,38 +252,45 @@ fun FilamentPicker(
 }
 
 /**
- * SpoolmanDB section pinned below the local filament rows. State-driven:
- * gate row (< 0.26), keep-typing hint, searching, result rows + load-more,
- * or a muted error row. Picking closes the dropdown like a local pick.
+ * SpoolmanDB section appended INSIDE the scrolling dropdown list, below the
+ * local filament rows — so a long result set scrolls as one list instead of
+ * clipping. State-driven: gate row (< 0.26), keep-typing hint, searching,
+ * result rows + load-more, or a muted error row. Picking closes the dropdown
+ * like a local pick.
+ *
+ * Item keys: structural rows use the shared "external-section-*" prefix
+ * (divider/header/state/error/load-more); result rows use "external-${id}"
+ * so paging in more rows reuses composed items.
  */
-@Composable
-private fun ExternalDbSection(
+private fun LazyListScope.externalDbSectionItems(
     label: String,
     state: ExternalSearchUiState,
     onPick: (ExternalFilament) -> Unit,
     onLoadMore: () -> Unit,
-    modifier: Modifier = Modifier,
 ) {
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .testTag("filament-picker-external-section"),
-    ) {
+    item(key = "external-section-divider") {
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+    }
+    item(key = "external-section-header") {
         Text(
             text = label,
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 10.dp, bottom = 4.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("filament-picker-external-section")
+                .padding(start = 12.dp, end = 12.dp, top = 10.dp, bottom = 4.dp),
         )
-        when (state) {
-            ExternalSearchUiState.Unsupported ->
-                ExternalMutedRow("Database search requires Spoolman v0.26+")
-            ExternalSearchUiState.Idle ->
-                ExternalMutedRow("Keep typing to search the database")
-            ExternalSearchUiState.Searching ->
-                ExternalMutedRow("Searching…")
-            is ExternalSearchUiState.Error ->
+    }
+    when (state) {
+        ExternalSearchUiState.Unsupported ->
+            mutedStateItem("Database search requires Spoolman v0.26+")
+        ExternalSearchUiState.Idle ->
+            mutedStateItem("Keep typing to search the database")
+        ExternalSearchUiState.Searching ->
+            mutedStateItem("Searching…")
+        is ExternalSearchUiState.Error ->
+            item(key = "external-section-error") {
                 Text(
                     text = state.message,
                     style = MaterialTheme.typography.bodyMedium,
@@ -291,16 +299,18 @@ private fun ExternalDbSection(
                         .fillMaxWidth()
                         .padding(horizontal = 12.dp, vertical = 8.dp),
                 )
-            is ExternalSearchUiState.Results -> {
-                if (state.items.isEmpty()) {
-                    ExternalMutedRow("No matches in $label")
-                } else {
-                    state.items.forEach { item ->
-                        ExternalFilamentRow(item = item, onClick = { onPick(item) })
-                    }
+            }
+        is ExternalSearchUiState.Results -> {
+            if (state.items.isEmpty()) {
+                mutedStateItem("No matches in $label")
+            } else {
+                items(items = state.items, key = { "external-${it.id}" }) { item ->
+                    ExternalFilamentRow(item = item, onClick = { onPick(item) })
                 }
-                val remaining = state.totalCount - state.items.size
-                if (remaining > 0) {
+            }
+            val remaining = state.totalCount - state.items.size
+            if (remaining > 0) {
+                item(key = "external-section-load-more") {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -319,6 +329,14 @@ private fun ExternalDbSection(
                 }
             }
         }
+    }
+}
+
+/** One muted status row (gate / keep-typing / searching / no-matches). All
+ *  share the single "external-section-state" key — exactly one ever renders. */
+private fun LazyListScope.mutedStateItem(text: String) {
+    item(key = "external-section-state") {
+        ExternalMutedRow(text)
     }
 }
 

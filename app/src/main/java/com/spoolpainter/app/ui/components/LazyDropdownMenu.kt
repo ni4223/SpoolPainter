@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 // (items() replaced by itemsIndexed() for the U20 divider)
@@ -78,10 +79,10 @@ fun <T : Any> LazyDropdownMenu(
     // everything out) and shows a non-clickable "No matches" row so the user can
     // edit their query. Omit for today's behavior (empty items renders nothing).
     header: (@Composable () -> Unit)? = null,
-    // SpoolmanDB — opt-in pinned footer below the scrolling rows (e.g. the
-    // external filament database section). Renders after the rows / the
-    // "No matches" row; omit for none.
-    footer: (@Composable () -> Unit)? = null,
+    // Opt-in extra items appended INSIDE the scrolling list, after the rows
+    // (or the "No matches" row when that renders), so a long extra section
+    // scrolls together with the rows instead of clipping below them.
+    footerItems: (LazyListScope.() -> Unit)? = null,
 ) {
     // With a header the popup must stay open on an empty (filtered-to-nothing)
     // list; without one, an empty list renders nothing as before.
@@ -112,7 +113,7 @@ fun <T : Any> LazyDropdownMenu(
                     header()
                 }
             }
-            if (items.isEmpty()) {
+            if (items.isEmpty() && footerItems == null) {
                 // Header present + nothing matched the query (guarded above).
                 Text(
                     text = "No matches",
@@ -128,28 +129,38 @@ fun <T : Any> LazyDropdownMenu(
                         .fillMaxWidth()
                         .heightIn(max = maxHeightDp.dp),
                 ) {
-                    itemsIndexed(items = items, key = { _, item -> itemKey(item) }) { index, item ->
-                        // Draw a divider before the first item flagged by
-                        // dividerBefore (but never at the very top).
-                        if (index > 0 && dividerBefore?.invoke(item) == true) {
-                            HorizontalDivider(
-                                color = MaterialTheme.colorScheme.outlineVariant,
+                    if (items.isEmpty()) {
+                        // Header present + nothing matched the query (guarded above).
+                        item {
+                            Text(
+                                text = "No matches",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 12.dp),
                             )
                         }
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { onItemClick(item) }
-                                .padding(horizontal = 12.dp, vertical = 10.dp),
-                        ) {
-                            itemContent(item)
+                    } else {
+                        itemsIndexed(items = items, key = { _, item -> itemKey(item) }) { index, item ->
+                            // Draw a divider before the first item flagged by
+                            // dividerBefore (but never at the very top).
+                            if (index > 0 && dividerBefore?.invoke(item) == true) {
+                                HorizontalDivider(
+                                    color = MaterialTheme.colorScheme.outlineVariant,
+                                )
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onItemClick(item) }
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                            ) {
+                                itemContent(item)
+                            }
                         }
                     }
-                }
-            }
-            if (footer != null) {
-                Box(modifier = Modifier.fillMaxWidth()) {
-                    footer()
+                    footerItems?.invoke(this)
                 }
             }
         }
