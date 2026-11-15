@@ -294,4 +294,138 @@ class FormMappingTest {
         )
         assertEquals(CardUid("AABBCCDD"), form.cardUid)
     }
+
+    private fun external(
+        id: String = "polymaker-polylite-pla",
+        material: String = "PLA",
+        manufacturer: String = "Polymaker",
+        name: String = "PolyLite PLA",
+        colorHex: String? = null,
+        colorHexes: List<String>? = null,
+        extruderTemp: Int? = null,
+        bedTemp: Int? = null,
+        density: Double? = null,
+        weight: Double? = null,
+        spoolWeight: Double? = null,
+        diameter: Double? = null,
+    ) = com.spoolpainter.app.domain.models.ExternalFilament(
+        id = id,
+        manufacturer = manufacturer,
+        name = name,
+        material = material,
+        density = density,
+        weight = weight,
+        spoolWeight = spoolWeight,
+        diameter = diameter,
+        colorHex = colorHex,
+        colorHexes = colorHexes,
+        extruderTemp = extruderTemp,
+        bedTemp = bedTemp,
+    )
+
+    @Test
+    fun `applyExternalFilament seeds identity, overrides and external ids, clears selections`() {
+        val form = FormMapping.applyExternalFilament(
+            FormState(cardUid = uid, rawWriteMode = true, moreDetailsExpanded = true),
+            external(
+                density = 1.25,
+                weight = 1000.0,
+                spoolWeight = 210.0,
+                diameter = 1.75,
+                colorHexes = listOf("FF0000", "00FF00"),
+            ),
+        )
+        assertEquals("PLA", form.material?.name)
+        assertEquals("Polymaker", form.brand?.name)
+        assertEquals("FF0000", form.colorHex)
+        assertEquals(1.25f, form.densityGPerCm3)
+        assertEquals(1000f, form.fullSpoolWeightG)
+        assertEquals(210f, form.emptySpoolWeightG)
+        assertEquals("polymaker-polylite-pla", form.externalFilamentId)
+        assertEquals(1.75, form.externalDiameterMm)
+        assertNull(form.selectedFilamentId)
+        assertNull(form.selectedSpoolId)
+        // Toggle states + UID ride along like the fromFilament path.
+        assertEquals(uid, form.cardUid)
+        assertEquals(true, form.rawWriteMode)
+        assertEquals(true, form.moreDetailsExpanded)
+    }
+
+    @Test
+    fun `applyExternalFilament variant strips exactly one material-word occurrence`() {
+        assertEquals("PolyLite", FormMapping.deriveExternalVariant("PolyLite PLA", "PLA"))
+        assertEquals("Matte", FormMapping.deriveExternalVariant("PLA Matte", "PLA"))
+        assertNull(FormMapping.deriveExternalVariant("PLA", "PLA"))
+        // Only the first occurrence goes; match is case-insensitive.
+        assertEquals("Hard PLA", FormMapping.deriveExternalVariant("PLA Hard PLA", "PLA"))
+        assertEquals("PolyLite", FormMapping.deriveExternalVariant("PolyLite pla", "PLA"))
+        // Material substring inside another word must not match (word boundary).
+        assertEquals("PL-X", FormMapping.deriveExternalVariant("PL-X", "PLA"))
+    }
+
+    @Test
+    fun `applyExternalFilament variant uses stripped name end-to-end`() {
+        val form = FormMapping.applyExternalFilament(
+            FormState(),
+            external(name = "PLA Matte"),
+        )
+        assertEquals("Matte", form.variant)
+    }
+
+    @Test
+    fun `applyExternalFilament color prefers colorHex and canonicalises`() {
+        val withHash = FormMapping.applyExternalFilament(FormState(), external(colorHex = "#aabbcc"))
+        assertEquals("AABBCC", withHash.colorHex)
+
+        val multi = FormMapping.applyExternalFilament(
+            FormState(),
+            external(colorHexes = listOf("00FF00", "0000FF")),
+        )
+        assertEquals("00FF00", multi.colorHex)
+    }
+
+    @Test
+    fun `applyExternalFilament present temps set min=max`() {
+        val form = FormMapping.applyExternalFilament(
+            FormState(),
+            external(extruderTemp = 205, bedTemp = 60),
+        )
+        assertEquals(205, form.tempRanges.extruderMin)
+        assertEquals(205, form.tempRanges.extruderMax)
+        assertEquals(60, form.tempRanges.bedMin)
+        assertEquals(60, form.tempRanges.bedMax)
+    }
+
+    @Test
+    fun `applyExternalFilament null temps keep the material preset seeds`() {
+        val form = FormMapping.applyExternalFilament(
+            FormState(),
+            external(material = "PLA", extruderTemp = null, bedTemp = null),
+        )
+        assertEquals(190, form.tempRanges.extruderMin)
+        assertEquals(220, form.tempRanges.extruderMax)
+        assertEquals(40, form.tempRanges.bedMin)
+        assertEquals(65, form.tempRanges.bedMax)
+    }
+
+    @Test
+    fun `applyExternalFilament unknown material synthesises from DB temps and density`() {
+        val form = FormMapping.applyExternalFilament(
+            FormState(),
+            external(
+                material = "Carbonite",
+                extruderTemp = 300,
+                bedTemp = 80,
+                density = 1.42,
+            ),
+        )
+        assertEquals("Carbonite", form.material?.name)
+        assertEquals(300, form.material?.defaultMinTemp)
+        assertEquals(320, form.material?.defaultMaxTemp)
+        assertEquals(80, form.material?.defaultBedMinTemp)
+        assertEquals(90, form.material?.defaultBedMaxTemp)
+        assertEquals(1.42f, form.material?.density)
+        // Synthesised material still seeds the temps when DB temps exist.
+        assertEquals(300, form.tempRanges.extruderMin)
+    }
 }

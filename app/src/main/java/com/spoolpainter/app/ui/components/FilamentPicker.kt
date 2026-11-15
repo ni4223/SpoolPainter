@@ -1,10 +1,20 @@
 package com.spoolpainter.app.ui.components
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -20,19 +30,27 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.spoolpainter.app.data.local.FilamentSortKey
 import com.spoolpainter.app.data.local.SortDirection
+import com.spoolpainter.app.domain.models.ExternalFilament
 import com.spoolpainter.app.domain.models.SpoolmanFilament
+import com.spoolpainter.app.ui.screens.main.ExternalSearchUiState
 
 /**
  * Rendered inside the always-open Filament section. Lists ALL filaments
  * alphabetically by vendor + name + variant. Tapping a row prefills the form
  * via MainViewModel.onFilamentSelected; the X clears the selection.
+ * Below the local rows sits the SpoolmanDB section (server ≥ 0.26): the
+ * same search field drives the local filter AND a debounced external
+ * database search; picking a DB row prefills the form for a fresh import.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -49,6 +67,13 @@ fun FilamentPicker(
     // picker is opened, in scorer-rank order (best first), separated by a thin
     // divider (no header). Passive: never changes the selection.
     scanSuggestedFilamentIds: List<Int> = emptyList(),
+    // SpoolmanDB section. The picker forwards the live query to the ViewModel
+    // (debounced server search) while the local filter keeps using it as-is.
+    externalDbLabel: String = "SpoolmanDB",
+    externalSearchState: ExternalSearchUiState = ExternalSearchUiState.Idle,
+    onExternalFilamentQueryChanged: (String) -> Unit = {},
+    onExternalFilamentLoadMore: () -> Unit = {},
+    onExternalFilamentPicked: (ExternalFilament) -> Unit = {},
 ) {
     var expanded by remember { mutableStateOf(false) }
     // U21 (UI-48) — type-to-search query. Reset whenever the picker closes so
@@ -97,6 +122,14 @@ fun FilamentPicker(
     }
     val selected = sorted.firstOrNull { it.id == selectedFilamentId }
     val displayValue = selected?.selectedDisplay().orEmpty()
+    // SpoolmanDB: hidden entirely while Idle with a blank query; any other
+    // state (or a started query) renders the pinned footer section.
+    val showExternalSection = externalSearchState !is ExternalSearchUiState.Idle || query.isNotBlank()
+
+    fun closeAndResetQuery() {
+        query = ""
+        onExternalFilamentQueryChanged("")
+    }
 
     ExposedDropdownMenuBox(
         expanded = expanded && enabled,
@@ -120,7 +153,7 @@ fun FilamentPicker(
                             // may toggle on trailing-icon taps and we don't
                             // want a clear to also pop the menu open.
                             expanded = false
-                            query = ""
+                            closeAndResetQuery()
                             onSelect(null)
                         },
                         modifier = Modifier
@@ -165,11 +198,11 @@ fun FilamentPicker(
                 anchor = anchor,
                 onDismiss = {
                     expanded = false
-                    query = ""
+                    closeAndResetQuery()
                 },
                 onItemClick = { row ->
                     expanded = false
-                    query = ""
+                    closeAndResetQuery()
                     onSelect(row.filament)
                 },
                 itemKey = { row -> row.filament.id },
@@ -185,13 +218,193 @@ fun FilamentPicker(
                 header = {
                     PickerSearchField(
                         query = query,
-                        onQueryChange = { query = it },
+                        onQueryChange = { newQuery ->
+                            query = newQuery
+                            onExternalFilamentQueryChanged(newQuery)
+                        },
                         placeholder = "Search filaments",
                         testTag = "filament-picker-search",
                     )
                 },
+                footer = if (showExternalSection) {
+                    {
+                        ExternalDbSection(
+                            label = externalDbLabel,
+                            state = externalSearchState,
+                            onPick = { item ->
+                                expanded = false
+                                closeAndResetQuery()
+                                onExternalFilamentPicked(item)
+                            },
+                            onLoadMore = onExternalFilamentLoadMore,
+                        )
+                    }
+                } else {
+                    null
+                },
             )
         }
+    }
+}
+
+/**
+ * SpoolmanDB section pinned below the local filament rows. State-driven:
+ * gate row (< 0.26), keep-typing hint, searching, result rows + load-more,
+ * or a muted error row. Picking closes the dropdown like a local pick.
+ */
+@Composable
+private fun ExternalDbSection(
+    label: String,
+    state: ExternalSearchUiState,
+    onPick: (ExternalFilament) -> Unit,
+    onLoadMore: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .testTag("filament-picker-external-section"),
+    ) {
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 10.dp, bottom = 4.dp),
+        )
+        when (state) {
+            ExternalSearchUiState.Unsupported ->
+                ExternalMutedRow("Database search requires Spoolman v0.26+")
+            ExternalSearchUiState.Idle ->
+                ExternalMutedRow("Keep typing to search the database")
+            ExternalSearchUiState.Searching ->
+                ExternalMutedRow("Searching…")
+            is ExternalSearchUiState.Error ->
+                Text(
+                    text = state.message,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                )
+            is ExternalSearchUiState.Results -> {
+                if (state.items.isEmpty()) {
+                    ExternalMutedRow("No matches in $label")
+                } else {
+                    state.items.forEach { item ->
+                        ExternalFilamentRow(item = item, onClick = { onPick(item) })
+                    }
+                }
+                val remaining = state.totalCount - state.items.size
+                if (remaining > 0) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(onClick = onLoadMore)
+                            .padding(horizontal = 12.dp, vertical = 10.dp)
+                            .testTag("filament-picker-external-load-more"),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = "Load more ($remaining more)",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ExternalMutedRow(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+    )
+}
+
+@Composable
+private fun ExternalFilamentRow(item: ExternalFilament, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 10.dp)
+            .testTag("filament-picker-external-row-${item.id}"),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        ExternalSwatch(
+            colorHex = item.colorHex,
+            colorHexes = item.colorHexes,
+        )
+        Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                text = "${item.manufacturer} · ${item.name}",
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = item.material,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+/** 24dp swatch; multi-colour entries (colorHexes) layer the second colour
+ *  bottom-end with a surface ring so multi-colour filaments read at a glance. */
+@Composable
+private fun ExternalSwatch(colorHex: String?, colorHexes: List<String>?) {
+    val primary = colorHex ?: colorHexes?.firstOrNull()
+    val second = colorHexes?.getOrNull(1)
+    val fallback = MaterialTheme.colorScheme.surfaceVariant
+    val ring = MaterialTheme.colorScheme.surfaceContainer
+    Box(modifier = Modifier.size(24.dp)) {
+        Box(
+            modifier = Modifier
+                .size(24.dp)
+                .clip(CircleShape)
+                .background(parseExternalSwatchColor(primary) ?: fallback),
+        )
+        if (second != null) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .size(14.dp)
+                    .border(1.5.dp, ring, CircleShape)
+                    .clip(CircleShape)
+                    .background(parseExternalSwatchColor(second) ?: fallback),
+            )
+        }
+    }
+}
+
+private fun parseExternalSwatchColor(hex: String?): Color? {
+    val cleaned = hex?.removePrefix("#") ?: return null
+    if (cleaned.length != 6) return null
+    return try {
+        Color(
+            red = cleaned.substring(0, 2).toInt(16),
+            green = cleaned.substring(2, 4).toInt(16),
+            blue = cleaned.substring(4, 6).toInt(16),
+        )
+    } catch (_: NumberFormatException) {
+        null
     }
 }
 

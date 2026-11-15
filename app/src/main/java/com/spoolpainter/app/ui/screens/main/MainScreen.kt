@@ -95,6 +95,8 @@ fun MainScreen(
     val filaments by viewModel.filaments.collectAsStateWithLifecycle()
     val materials by viewModel.materials.collectAsStateWithLifecycle()
     val brands by viewModel.brands.collectAsStateWithLifecycle()
+    val externalDbLabel by viewModel.externalDbLabel.collectAsStateWithLifecycle()
+    val externalSearchState by viewModel.externalSearchState.collectAsStateWithLifecycle()
     val isSpoolmanRefreshing by viewModel.isSpoolmanRefreshing.collectAsStateWithLifecycle()
     val repairConfirmState by repairConfirmViewModel.uiState.collectAsStateWithLifecycle()
     val pairAnotherState by remember(state.activeFlow) {
@@ -256,6 +258,10 @@ fun MainScreen(
                             filamentSortKey = state.filamentSortKey,
                             filamentSortDirection = state.filamentSortDirection,
                             scanSuggestedFilamentIds = state.scanSuggestedFilamentIds,
+                            externalDbLabel = externalDbLabel,
+                            externalSearchState = externalSearchState,
+                            onExternalFilamentQueryChanged = viewModel::onExternalFilamentQueryChanged,
+                            onExternalFilamentLoadMore = viewModel::onExternalFilamentLoadMore,
                             onChange = { change ->
                                 when (change) {
                                     is FormChange.MaterialPicked -> viewModel.onMaterialPicked(change.value)
@@ -273,6 +279,8 @@ fun MainScreen(
                                     is FormChange.DensityChanged -> viewModel.onDensityChanged(change.value)
                                     is FormChange.WeightMethodPicked -> viewModel.onWeightMethodPicked(change.value)
                                     is FormChange.ActiveWeightChanged -> viewModel.onActiveWeightChanged(change.value)
+                                    is FormChange.ExternalFilamentPicked -> viewModel.onExternalFilamentPicked(change.external)
+                                    FormChange.ExternalSelectionCleared -> viewModel.onExternalSelectionCleared()
                                 }
                             },
                         )

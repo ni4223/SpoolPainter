@@ -78,6 +78,10 @@ fun <T : Any> LazyDropdownMenu(
     // everything out) and shows a non-clickable "No matches" row so the user can
     // edit their query. Omit for today's behavior (empty items renders nothing).
     header: (@Composable () -> Unit)? = null,
+    // SpoolmanDB — opt-in pinned footer below the scrolling rows (e.g. the
+    // external filament database section). Renders after the rows / the
+    // "No matches" row; omit for none.
+    footer: (@Composable () -> Unit)? = null,
 ) {
     // With a header the popup must stay open on an empty (filtered-to-nothing)
     // list; without one, an empty list renders nothing as before.
@@ -141,6 +145,11 @@ fun <T : Any> LazyDropdownMenu(
                             itemContent(item)
                         }
                     }
+                }
+            }
+            if (footer != null) {
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    footer()
                 }
             }
         }

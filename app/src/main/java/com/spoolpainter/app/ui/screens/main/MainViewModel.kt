@@ -4,10 +4,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.spoolpainter.app.data.local.MaterialBrandRepository
 import com.spoolpainter.app.data.local.SettingsRepository
+import com.spoolpainter.app.data.remote.spoolman.ConnectivityState
 import com.spoolpainter.app.data.remote.spoolman.SpoolmanOutcome
 import com.spoolpainter.app.data.remote.spoolman.SpoolmanRepository
 import com.spoolpainter.app.data.remote.spoolman.UrlNotConfiguredException
+import com.spoolpainter.app.data.remote.spoolman.supportsExternalDbSearch
 import com.spoolpainter.app.domain.models.Brand
+import com.spoolpainter.app.domain.models.ExternalFilament
 import com.spoolpainter.app.domain.models.Material
 import com.spoolpainter.app.domain.models.SpoolmanFilament
 import com.spoolpainter.app.domain.models.SpoolmanSpool
@@ -40,6 +43,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -47,6 +51,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
@@ -79,6 +85,28 @@ class MainViewModel @Inject constructor(
 
     /** Merged preset + Spoolman-vendor + user-added brands (case-insensitive dedup, presets first). */
     val brands: StateFlow<List<String>> = materialBrandRepo.brands
+
+    /** SpoolmanDB — display name of the external filament database (server-configurable). */
+    val externalDbLabel: StateFlow<String> = spoolman.serverInfo
+        .map { it?.external_db_name?.takeIf { name -> name.isNotBlank() } ?: "SpoolmanDB" }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, "SpoolmanDB")
+
+    private val _externalSearchState = MutableStateFlow<ExternalSearchUiState>(ExternalSearchUiState.Idle)
+    private var externalSearchJob: Job? = null
+    private var externalLoadMoreJob: Job? = null
+    private var lastExternalQuery: String = ""
+
+    /**
+     * SpoolmanDB search section state. The serverInfo gate fails closed:
+     * any non-supporting (or unknown) version forces Unsupported regardless
+     * of the internal state, so stale Results can never surface on an old
+     * server (e.g. after a URL switch).
+     */
+    val externalSearchState: StateFlow<ExternalSearchUiState> =
+        combine(spoolman.serverInfo, _externalSearchState) { info, internal ->
+            if (info.supportsExternalDbSearch()) internal else ExternalSearchUiState.Unsupported
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, ExternalSearchUiState.Unsupported)
 
     private val _state = MutableStateFlow(MainUiState())
     val state: StateFlow<MainUiState> = _state.asStateFlow()
@@ -406,6 +434,25 @@ class MainViewModel @Inject constructor(
                 }
             }
         }
+        // SpoolmanDB gate: serverInfo only refreshes inside testConnection()
+        // today, so when a reachable server's version is still unknown,
+        // probe once so the Unsupported gate resolves instead of sticking.
+        viewModelScope.launch {
+            if (spoolman.serverInfo.value != null) return@launch
+            spoolman.connectivity
+                .map { it as? ConnectivityState.Reachable }
+                .filterNotNull()
+                .first()
+            if (spoolman.serverInfo.value == null) {
+                try {
+                    spoolman.testConnection()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    // Gate stays Unsupported — fails closed.
+                }
+            }
+        }
     }
 
     /**
@@ -558,6 +605,10 @@ class MainViewModel @Inject constructor(
                     newFilamentName = derivedName,
                     newFilamentVendor = brandName.ifBlank { "Generic" },
                     resolvedMaterialName = materialName.takeIf { it.isNotBlank() },
+                    // SpoolmanDB import: linkage + DB diameter ride the form
+                    // state so the save chain stamps the origin.
+                    externalFilamentId = form.externalFilamentId,
+                    diameterMm = form.externalDiameterMm,
                 )
                 val result = withTimeoutOrNull(writeTimeoutMs) {
                     saveToSpoolman.invoke(input)
@@ -740,6 +791,10 @@ class MainViewModel @Inject constructor(
                         prefilledRemainingWeightG = null,
                         prefilledPriceMajor = null,
                         prefilledEmptySpoolWeightG = null,
+                        // SpoolmanDB linkage is meaningless once the spool
+                        // selection is dropped — a fresh pick re-seeds it.
+                        externalFilamentId = null,
+                        externalDiameterMm = null,
                     ),
                     spoolman = current.spoolman.copy(selectedSpoolId = null),
                 )
@@ -812,6 +867,107 @@ class MainViewModel @Inject constructor(
         }
         _customMaterial.value = ""
         _customBrand.value = ""
+    }
+
+    /**
+     * SpoolmanDB — the filament picker's search field drives BOTH the local
+     * filter (picker-side, unchanged) and this debounced server search.
+     * Query trimmed; <2 chars → Idle with the in-flight job cancelled.
+     * Never touches the local filament list state.
+     */
+    fun onExternalFilamentQueryChanged(query: String) {
+        val trimmed = query.trim()
+        externalSearchJob?.cancel()
+        if (trimmed.length < 2 || !spoolman.serverInfo.value.supportsExternalDbSearch()) {
+            _externalSearchState.value = ExternalSearchUiState.Idle
+            return
+        }
+        lastExternalQuery = trimmed
+        _externalSearchState.value = ExternalSearchUiState.Searching
+        externalSearchJob = viewModelScope.launch {
+            delay(EXTERNAL_SEARCH_DEBOUNCE_MS)
+            when (val outcome = spoolman.searchExternalFilaments(trimmed, limit = 20, offset = 0)) {
+                is SpoolmanOutcome.Success ->
+                    _externalSearchState.value = ExternalSearchUiState.Results(
+                        items = outcome.data.items,
+                        totalCount = outcome.data.totalCount,
+                    )
+                is SpoolmanOutcome.HttpError ->
+                    _externalSearchState.value = ExternalSearchUiState.Error(humanReadable(outcome))
+                is SpoolmanOutcome.NetworkError ->
+                    _externalSearchState.value = ExternalSearchUiState.Error(humanReadable(outcome))
+                is SpoolmanOutcome.ParseError ->
+                    _externalSearchState.value = ExternalSearchUiState.Error(humanReadable(outcome))
+            }
+        }
+    }
+
+    /** SpoolmanDB — append the next page. Dedupes by id defensively; no-op
+     *  when everything is loaded or a load is already in flight. */
+    fun onExternalFilamentLoadMore() {
+        val current = _externalSearchState.value as? ExternalSearchUiState.Results ?: return
+        if (!current.hasMore || externalLoadMoreJob?.isActive == true) return
+        val query = lastExternalQuery
+        externalLoadMoreJob = viewModelScope.launch {
+            when (
+                val outcome = spoolman.searchExternalFilaments(
+                    query,
+                    limit = 20,
+                    offset = current.items.size,
+                )
+            ) {
+                is SpoolmanOutcome.Success -> {
+                    val merged = (current.items + outcome.data.items).distinctBy { it.id }
+                    _externalSearchState.value = ExternalSearchUiState.Results(
+                        items = merged,
+                        totalCount = maxOf(current.totalCount, outcome.data.totalCount),
+                    )
+                }
+                is SpoolmanOutcome.HttpError ->
+                    _externalSearchState.value = ExternalSearchUiState.Error(humanReadable(outcome))
+                is SpoolmanOutcome.NetworkError ->
+                    _externalSearchState.value = ExternalSearchUiState.Error(humanReadable(outcome))
+                is SpoolmanOutcome.ParseError ->
+                    _externalSearchState.value = ExternalSearchUiState.Error(humanReadable(outcome))
+            }
+        }
+    }
+
+    /**
+     * SpoolmanDB — pick an external filament. If this DB entry was already
+     * imported once (inventory filament with a matching external_id),
+     * delegate to the existing-filament selection so no duplicate is
+     * created. Otherwise prefill the form for the create-new path: Save
+     * then stamps filament+vendor with the external_id so Spoolman
+     * highlights the DB origin.
+     */
+    fun onExternalFilamentPicked(external: ExternalFilament) {
+        val alreadyImported = filaments.value.firstOrNull { it.external_id == external.id }
+        if (alreadyImported != null) {
+            onFilamentSelected(alreadyImported)
+            return
+        }
+        _state.update { current ->
+            current.copy(
+                form = FormMapping.applyExternalFilament(current.form, external),
+                spoolman = current.spoolman.copy(selectedSpoolId = null),
+                ambiguity = null,
+                scanSuggestedSpoolIds = emptyList(),
+                scanSuggestedFilamentIds = emptyList(),
+            )
+        }
+        _customMaterial.value = ""
+        _customBrand.value = ""
+    }
+
+    /** SpoolmanDB — dismiss the origin chip: drop only the external linkage;
+     *  the prefilled values stay for manual editing. */
+    fun onExternalSelectionCleared() {
+        _state.update {
+            it.copy(
+                form = it.form.copy(externalFilamentId = null, externalDiameterMm = null),
+            )
+        }
     }
 
     fun onMoreDetailsToggled() {
@@ -1721,6 +1877,7 @@ class MainViewModel @Inject constructor(
         const val READ_TIMEOUT_MS_DEFAULT: Long = 10_000L
         const val WRITE_TIMEOUT_MS_DEFAULT: Long = 15_000L
         const val AMBIENT_HINT_COOLDOWN_MS: Long = 15_000L
+        const val EXTERNAL_SEARCH_DEBOUNCE_MS: Long = 300L
 
         /**
          * Dead-man cap for the NFC flows. The real "how long do we wait for
