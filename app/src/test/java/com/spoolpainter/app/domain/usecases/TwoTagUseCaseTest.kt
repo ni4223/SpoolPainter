@@ -104,4 +104,21 @@ class TwoTagUseCaseTest {
         assertTrue("got $result", result is TwoTagResult.VerifyFailed)
         assertEquals(0, spoolman.appendCalls)
     }
+
+    @Test
+    fun `timeout without tap returns Cancelled and disarms`() = runTest {
+        // No queued terminal state: arm leaves the fake in Writing and the
+        // tap-wait elapses (virtual time) inside the use case itself —
+        // previously this hang was cut by the ViewModel's outer 15s
+        // withTimeoutOrNull, which also cancelled mid-write.
+        seedCaches()
+
+        val result = useCase.invoke(TwoTagInput(spoolId = 42))
+
+        assertTrue("got $result", result is TwoTagResult.Cancelled)
+        assertEquals("timeout", (result as TwoTagResult.Cancelled).reason)
+        assertEquals(1, nfc.armCalls)
+        assertEquals(1, nfc.disarmCalls)
+        assertEquals(0, spoolman.appendCalls)
+    }
 }

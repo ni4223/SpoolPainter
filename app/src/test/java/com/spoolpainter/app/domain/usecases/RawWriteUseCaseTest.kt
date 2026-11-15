@@ -104,4 +104,18 @@ class RawWriteUseCaseTest {
 
         assertTrue("got $result", result is RawWriteResult.NfcFailed)
     }
+
+    @Test
+    fun `timeout without tap returns Cancelled and disarms`() = runTest {
+        // No queued terminal state: arm leaves the fake in Writing and the
+        // tap-wait elapses (virtual time) inside the use case itself — the
+        // same Cancelled("timeout") the ViewModel's old outer 15s
+        // withTimeoutOrNull used to produce.
+        val result = useCase.invoke(input())
+
+        assertTrue("got $result", result is RawWriteResult.Cancelled)
+        assertEquals("timeout", (result as RawWriteResult.Cancelled).reason)
+        assertEquals(1, nfc.armCalls)
+        assertEquals(1, nfc.disarmCalls)
+    }
 }

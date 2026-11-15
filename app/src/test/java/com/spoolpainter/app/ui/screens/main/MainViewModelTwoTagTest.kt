@@ -306,6 +306,47 @@ class MainViewModelTwoTagTest {
     }
 
     @Test
+    fun `re-routed vendor pair is cancellable via the Write toggle`() = runTest {
+        // The re-route launch is stored in writeJob (superseding the
+        // completing two-tag job) so the PairingVendorUidOnly escape hatch
+        // actually reaches it — without this, the second-tag flow wedged with
+        // no user-facing Cancel.
+        val vm = newVm()
+        stagePromptingPairAnother(vm)
+        twoTag.nextResult = TwoTagResult.VendorTagRejected(CardUid("11223344"))
+        vendorUidOnlyPair.nextResult = com.spoolpainter.app.domain.usecases.VendorUidOnlyPairResult.Cancelled("delay-stub")
+        vendorUidOnlyPair.nextDelayMs = 50L
+
+        vm.onPairAnotherTagAccepted()
+        assertEquals(ActiveFlow.PairingVendorUidOnly, vm.state.value.activeFlow)
+        assertTrue(vm.isWriteCancellable.value)
+
+        vm.onWriteTapped() // Cancel toggle
+        assertEquals(ActiveFlow.Idle, vm.state.value.activeFlow)
+    }
+
+    @Test
+    fun `re-routed vendor pair throwing returns activeFlow to Idle instead of wedging`() = runTest {
+        // Wedge regression for the re-route site: the old MoveOnBindConfirmer
+        // check() throw (vendor tag already bound to another spool →
+        // move-on-bind) killed this coroutine with activeFlow stranded in
+        // PairingVendorUidOnly — both buttons dead until restart.
+        val vm = newVm()
+        stagePromptingPairAnother(vm)
+        twoTag.nextResult = TwoTagResult.VendorTagRejected(CardUid("11223344"))
+        vendorUidOnlyPair.nextThrowable = IllegalStateException("another request is already pending")
+
+        vm.effects.test {
+            vm.onPairAnotherTagAccepted()
+            val emission = awaitNonAmbientSnackbar()
+            assertEquals("Something went wrong. Please try again.", emission.message)
+            cancelAndIgnoreRemainingEvents()
+        }
+        assertEquals(ActiveFlow.Idle, vm.state.value.activeFlow)
+        assertTrue("canWrite should re-enable after the catch", vm.canWrite.value)
+    }
+
+    @Test
     fun `applyTwoTagResult MoveOnBindPartial emits partial snackbar with spool id`() = runTest {
         val vm = newVm()
         stagePromptingPairAnother(vm)

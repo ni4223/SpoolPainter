@@ -8,7 +8,6 @@ import com.spoolpainter.app.domain.primitives.NfcIntent
 import com.spoolpainter.app.domain.primitives.NfcResult
 import com.spoolpainter.app.domain.primitives.TagClassification
 import com.spoolpainter.app.hardware.nfc.NfcRepository
-import kotlinx.coroutines.flow.first
 import javax.inject.Inject
 
 class ReadAndPairUseCase @Inject constructor(
@@ -18,6 +17,11 @@ class ReadAndPairUseCase @Inject constructor(
 
     suspend operator fun invoke(): ReadAndPairResult {
         val nfcOutcome = readTag()
+            // No tap landed within the wait window. NfcFailed (not Cancelled)
+            // because applyResult surfaces NfcFailed.reason verbatim as the
+            // snackbar — using the old ViewModel timeout-branch copy here
+            // keeps the user-visible "No tag tapped. Try again." UX intact.
+            ?: return ReadAndPairResult.NfcFailed("No tag tapped. Try again.")
         return when (nfcOutcome) {
             is NfcResult.Error -> ReadAndPairResult.NfcFailed(nfcOutcome.reason)
             is NfcResult.Success -> handleSuccess(nfcOutcome)
@@ -25,7 +29,7 @@ class ReadAndPairUseCase @Inject constructor(
         }
     }
 
-    private suspend fun readTag(): NfcResult {
+    private suspend fun readTag(): NfcResult? {
         // A buffered passive tap already carries its vendor decode (handleTag
         // runs the parse on every non-write tap), so consuming it gives the
         // prefill immediately — no re-tap. Only when there's no fresh buffer do
@@ -33,7 +37,14 @@ class ReadAndPairUseCase @Inject constructor(
         val buffered = nfc.consumeLastSeen(NfcIntent.Read)
         if (buffered != null) return buffered
         nfc.arm(NfcIntent.Read)
-        return nfc.state.first { it is NfcResult.Success || it is NfcResult.Error }
+        val outcome = nfc.awaitTerminal(READ_TAP_WAIT_MS)
+        if (outcome == null) {
+            // Nobody tapped — disarm so the stale arm can't consume a late
+            // tap into the void (this flow has already given up).
+            nfc.disarm()
+            return null
+        }
+        return outcome
     }
 
     private suspend fun handleSuccess(success: NfcResult.Success): ReadAndPairResult {
@@ -97,5 +108,14 @@ class ReadAndPairUseCase @Inject constructor(
             }
             is SpoolmanOutcome.ParseError -> ReadAndPairResult.SpoolmanFailed(uid, classification, outcome)
         }
+    }
+
+    private companion object {
+        /**
+         * How long we wait for the user to physically tap a tag after Read
+         * is armed. Preserves the old MainViewModel READ_TIMEOUT_MS_DEFAULT
+         * (10s) UX budget for "press Read, then tap".
+         */
+        const val READ_TAP_WAIT_MS: Long = 10_000L
     }
 }
