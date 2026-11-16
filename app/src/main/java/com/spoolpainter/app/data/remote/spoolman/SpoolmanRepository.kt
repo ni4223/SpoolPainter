@@ -7,7 +7,9 @@ import com.spoolpainter.app.data.local.SettingsRepository
 import com.spoolpainter.app.data.local.presets.MaterialPresetSource
 import com.spoolpainter.app.di.AppScope
 import com.spoolpainter.app.di.IoDispatcher
+import com.spoolpainter.app.domain.models.ExternalFilamentPage
 import com.spoolpainter.app.domain.models.SpoolmanFilament
+import com.spoolpainter.app.domain.models.SpoolmanInfo
 import com.spoolpainter.app.domain.models.SpoolmanSpool
 import com.spoolpainter.app.domain.models.SpoolmanVendor
 import com.spoolpainter.app.domain.primitives.CardUid
@@ -55,6 +57,11 @@ open class SpoolmanRepository @Inject constructor(
     private val _spools = MutableStateFlow<List<SpoolmanSpool>>(emptyList())
     open val spools: StateFlow<List<SpoolmanSpool>> = _spools.asStateFlow()
 
+    // Latest GET api/v1/info payload (refreshed by testConnection — the only
+    // place info is probed today). Drives supportsExternalDbSearch() gating.
+    private val _serverInfo = MutableStateFlow<SpoolmanInfo?>(null)
+    open val serverInfo: StateFlow<SpoolmanInfo?> = _serverInfo.asStateFlow()
+
     @Volatile
     private var cachedApi: SpoolmanApi? = null
 
@@ -71,6 +78,7 @@ open class SpoolmanRepository @Inject constructor(
                 _vendors.value = emptyList()
                 _filaments.value = emptyList()
                 _spools.value = emptyList()
+                _serverInfo.value = null
                 _connectivity.value = ConnectivityState.Unknown
                 // Auto-register extra-field schemas + populate caches on every
                 // URL bind. The user shouldn't have to tap Test Connection or
@@ -86,7 +94,35 @@ open class SpoolmanRepository @Inject constructor(
     open suspend fun testConnection(): SpoolmanOutcome<String> {
         val api = cachedApi ?: return urlNotConfigured()
         return performHttp("getInfo") { api.getInfo() }.map { info ->
+            _serverInfo.value = info
             info.version ?: "unknown"
+        }
+    }
+
+    /**
+     * SpoolmanDB search — `GET /api/v1/external/filament/search` (server
+     * ≥ 0.26.0, gate via [supportsExternalDbSearch]). Returns the page plus
+     * the total match count from the `x-total-count` response header; when
+     * the header is absent (older servers — gated anyway) it falls back to
+     * the page size.
+     */
+    open suspend fun searchExternalFilaments(
+        query: String,
+        limit: Int = 20,
+        offset: Int = 0,
+    ): SpoolmanOutcome<ExternalFilamentPage> {
+        val api = cachedApi ?: return urlNotConfigured()
+        return performHttpResponse("searchExternalFilaments") {
+            api.searchExternalFilaments(query, limit, offset)
+        }.map { response ->
+            val items = response.body()!!
+            // OkHttp header lookup is case-insensitive, so "x-total-count"
+            // matches however the server capitalises it.
+            val totalCount = response.headers()["x-total-count"]
+                ?.trim()
+                ?.toIntOrNull()
+                ?: items.size
+            ExternalFilamentPage(items = items, totalCount = totalCount)
         }
     }
 
@@ -456,9 +492,20 @@ open class SpoolmanRepository @Inject constructor(
             ?: return invalidArg("materialName is empty")
         val api = cachedApi ?: return urlNotConfigured()
 
-        return resolveOrCreateVendor(api, vendorName)
+        // SpoolmanDB import: when this create originates from an external
+        // filament pick, the vendor's external_id is the manufacturer name
+        // (Spoolman's convention for external-DB vendors).
+        val vendorExternalId = req.externalFilamentId?.let { vendorName }
+
+        return resolveOrCreateVendor(api, vendorName, externalId = vendorExternalId)
             .flatMap { resolvedVendor ->
-                resolveOrCreateFilament(api, resolvedVendor.value, materialName, req)
+                resolveOrCreateFilament(
+                    api,
+                    resolvedVendor.value,
+                    materialName,
+                    req,
+                    externalId = req.externalFilamentId,
+                )
                     .flatMap { resolvedFilament ->
                         createSpoolStep(
                             api,
@@ -576,13 +623,16 @@ open class SpoolmanRepository @Inject constructor(
     internal suspend fun resolveOrCreateVendor(
         api: SpoolmanApi,
         name: String,
+        externalId: String? = null,
     ): SpoolmanOutcome<Resolved<SpoolmanVendor>> {
         return performHttp("listVendors") { api.listVendors() }.flatMap { list ->
             val match = list.firstOrNull { it.name.equals(name, ignoreCase = true) && it.id != null }
             if (match != null) {
                 SpoolmanOutcome.Success(Resolved(match, wasCreatedFresh = false))
             } else {
-                performHttp("createVendor") { api.createVendor(CreateVendorRequest(name)) }
+                performHttp("createVendor") {
+                    api.createVendor(CreateVendorRequest(name, external_id = externalId))
+                }
                     .also { outcome -> if (outcome is SpoolmanOutcome.Success) prependVendor(outcome.data) }
                     .map { vendor -> Resolved(vendor, wasCreatedFresh = true) }
             }
@@ -594,13 +644,42 @@ open class SpoolmanRepository @Inject constructor(
         vendor: SpoolmanVendor,
         materialName: String,
         req: NewFilamentRequest,
+        externalId: String? = null,
     ): SpoolmanOutcome<Resolved<SpoolmanFilament>> {
         val vendorId = vendor.id ?: return SpoolmanOutcome.ParseError(
             IllegalStateException("vendor.id missing for ${vendor.name}"),
         )
+        // SpoolmanDB import: an exact external_id match wins over the fuzzy
+        // material/colour matcher — if this external filament was already
+        // imported once, reuse that record instead of POSTing a duplicate.
+        if (externalId != null) {
+            _filaments.value.firstOrNull { it.external_id == externalId }?.let { cached ->
+                android.util.Log.d(
+                    "SpoolmanRepo",
+                    "external filament match hit: id=${cached.id} externalId=$externalId",
+                )
+                return SpoolmanOutcome.Success(Resolved(cached, wasCreatedFresh = false))
+            }
+        }
         val variantNormalised = canonVariant(req.variant)
         val targetHex = ColorHexCodec.canonicalise(req.colorHex)
         return performHttp("listFilaments") { api.listFilaments() }.flatMap { list ->
+            // SpoolmanDB import: also dedup against the LIVE list — the
+            // in-memory cache above can be stale when the same external
+            // filament was imported elsewhere (e.g. via the Spoolman web UI)
+            // since our last refresh. Exact external_id beats the fuzzy
+            // matcher; backfill the cache (prependFilament is id-deduped) so
+            // subsequent calls take the early shortcut above.
+            if (externalId != null) {
+                list.firstOrNull { it.external_id == externalId }?.let { live ->
+                    android.util.Log.d(
+                        "SpoolmanRepo",
+                        "external filament live-list match hit: id=${live.id} externalId=$externalId",
+                    )
+                    prependFilament(live)
+                    return@flatMap SpoolmanOutcome.Success(Resolved(live, wasCreatedFresh = false))
+                }
+            }
             val match = list.firstOrNull { f ->
                 if (f.vendor?.id != vendorId) return@firstOrNull false
                 if (!(f.material ?: "").equals(materialName, ignoreCase = true)) return@firstOrNull false
@@ -643,13 +722,18 @@ open class SpoolmanRepository @Inject constructor(
                                 settings_bed_temp = req.tempRanges.bedMin,
                                 density = req.expanderOverrides.density
                                     ?: MaterialPresetSource.densityFor(materialName),
+                                // diameterMm (SpoolmanDB import) behaves like an
+                                // explicit override: form overrides win, then the
+                                // external value, then the 1.75mm default.
                                 diameter = req.expanderOverrides.diameter
+                                    ?: req.diameterMm?.toFloat()
                                     ?: MaterialPresetSource.DEFAULT_DIAMETER_MM,
                                 weight = req.expanderOverrides.weight
                                     ?: MaterialPresetSource.DEFAULT_FULL_SPOOL_WEIGHT_G,
                                 spool_weight = req.expanderOverrides.spoolWeight,
                                 price = req.expanderOverrides.price,
                                 extra = extras,
+                                external_id = externalId,
                             ),
                         )
                     }.also { outcome -> if (outcome is SpoolmanOutcome.Success) prependFilament(outcome.data) }
@@ -680,7 +764,18 @@ open class SpoolmanRepository @Inject constructor(
     private suspend inline fun <T> performHttp(
         label: String,
         crossinline block: suspend () -> Response<T>,
-    ): SpoolmanOutcome<T> = withContext(ioDispatcher) {
+    ): SpoolmanOutcome<T> = performHttpResponse<T>(label, block).map { it.body()!! }
+
+    /**
+     * [performHttp]'s header-aware sibling: returns the raw retrofit
+     * [Response] so callers can read response headers (e.g. the
+     * `x-total-count` total-count header of the external filament search).
+     * Body-null / error semantics are identical to [performHttp].
+     */
+    private suspend inline fun <T> performHttpResponse(
+        label: String,
+        crossinline block: suspend () -> Response<T>,
+    ): SpoolmanOutcome<Response<T>> = withContext(ioDispatcher) {
         try {
             val response = block()
             when {
@@ -695,7 +790,7 @@ open class SpoolmanRepository @Inject constructor(
                     SpoolmanOutcome.ParseError(IllegalStateException("empty body for $label"))
                 else -> {
                     _connectivity.value = ConnectivityState.Reachable
-                    SpoolmanOutcome.Success(response.body()!!)
+                    SpoolmanOutcome.Success(response)
                 }
             }
         } catch (e: CancellationException) {
@@ -780,3 +875,24 @@ open class SpoolmanRepository @Inject constructor(
 }
 
 class UrlNotConfiguredException : IOException("Spoolman URL not configured")
+
+/**
+ * `/api/v1/external/filament/search` shipped in Spoolman 0.26.0 (offset
+ * paging in 0.27.0). Gate: parsed (major, minor, patch) ≥ (0, 26, 0).
+ * A null receiver, a null/blank version, or anything that doesn't parse as
+ * a clean dotted numeric triple (pre-releases like "0.26.0-beta" included)
+ * fails closed → false.
+ */
+fun SpoolmanInfo?.supportsExternalDbSearch(): Boolean {
+    if (this == null) return false
+    val parts = version?.trim()?.split('.') ?: return false
+    if (parts.size != 3) return false
+    val major = parts[0].toIntOrNull() ?: return false
+    val minor = parts[1].toIntOrNull() ?: return false
+    if (parts[2].toIntOrNull() == null) return false
+    return when {
+        major != 0 -> major > 0
+        minor != 26 -> minor > 26
+        else -> true
+    }
+}

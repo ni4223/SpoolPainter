@@ -224,4 +224,23 @@ class ReadAndPairUseCaseTest {
         assertTrue(result is ReadAndPairResult.NfcFailed)
         assertEquals("zero-length UID, non-NFC-A tag?", (result as ReadAndPairResult.NfcFailed).reason)
     }
+
+    @Test
+    fun `timeout without tap returns NfcFailed with retry copy and disarms`() = runTest {
+        // No buffered tap, no queued terminal state: arm leaves the fake in
+        // Reading and the 10s tap-wait elapses (virtual time) inside the use
+        // case. The reason carries the exact snackbar copy the ViewModel's
+        // old null-timeout branch emitted, so applyResult surfaces the same
+        // user-visible message via its NfcFailed branch.
+        nfc.setBufferedTap(null)
+
+        val result = useCase.invoke()
+
+        assertTrue("got $result", result is ReadAndPairResult.NfcFailed)
+        assertEquals("No tag tapped. Try again.", (result as ReadAndPairResult.NfcFailed).reason)
+        assertEquals(1, nfc.armCalls)
+        assertEquals(1, nfc.disarmCalls)
+        // No Spoolman lookup happened — the flow ended at the NFC wait.
+        assertEquals(null, spoolman.lastFindUid)
+    }
 }

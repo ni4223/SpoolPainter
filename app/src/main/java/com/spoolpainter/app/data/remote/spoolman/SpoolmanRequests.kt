@@ -2,6 +2,9 @@ package com.spoolpainter.app.data.remote.spoolman
 
 data class CreateVendorRequest(
     val name: String,
+    // SpoolmanDB import: the manufacturer name string when the vendor is
+    // created from an external-DB filament pick; null omits the field.
+    val external_id: String? = null,
 )
 
 data class CreateFilamentRequest(
@@ -20,6 +23,8 @@ data class CreateFilamentRequest(
     val spool_weight: Float? = null,
     val price: Float? = null,
     val extra: Map<String, String>? = null,
+    // SpoolmanDB import (server ≥ 0.26.0): external filament slug.
+    val external_id: String? = null,
 )
 
 data class PatchFilamentBody(

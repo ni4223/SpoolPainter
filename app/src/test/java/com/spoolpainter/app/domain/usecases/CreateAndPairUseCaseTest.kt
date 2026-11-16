@@ -192,4 +192,20 @@ class CreateAndPairUseCaseTest {
         assertTrue("got $result", result is CreateAndPairResult.SpoolmanFailed)
         assertEquals(0, spoolman.appendCalls)
     }
+
+    @Test
+    fun `timeout without tap returns Cancelled and disarms`() = runTest {
+        // No queued terminal state: arm leaves the fake in Writing and the
+        // tap-wait elapses (virtual time) inside the use case itself — the
+        // same Cancelled("timeout") the ViewModel's old outer 15s
+        // withTimeoutOrNull used to produce.
+        val result = useCase.invoke(input(spoolId = 42))
+
+        assertTrue("got $result", result is CreateAndPairResult.Cancelled)
+        assertEquals("timeout", (result as CreateAndPairResult.Cancelled).reason)
+        assertEquals(42, result.spoolId)
+        assertEquals(1, nfc.armCalls)
+        assertEquals(1, nfc.disarmCalls)
+        assertEquals(0, spoolman.appendCalls)
+    }
 }

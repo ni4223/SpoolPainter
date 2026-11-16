@@ -15,6 +15,13 @@ import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
+// Hard bound for a single NDEF tech session (connect + read/write +
+// close). Normal NDEF operations complete in well under a second; 8s
+// leaves generous margin for slow chips while still guaranteeing that a
+// connect hung on marginal RF contact gets force-closed instead of
+// wedging the OS NFC stack until process death (see TagIoWatchdog.kt).
+private const val TECH_IO_TIMEOUT_MS = 8_000L
+
 @Singleton
 open class NfcAdapterWrapper @Inject constructor(
     private val adapter: NfcAdapter?,
@@ -45,7 +52,9 @@ open class NfcAdapterWrapper @Inject constructor(
 
     open suspend fun read(tag: Tag): RawTagRead = withContext(dispatcher) {
         val uid = CardUid.fromBytes(tag.id)
-        val records = readRecordsBlocking(tag)
+        val records = withTechWatchdog(dispatcher, TECH_IO_TIMEOUT_MS) { closer ->
+            readRecordsBlocking(tag, closer)
+        }
         RawTagRead(uid, records, tag.techList?.toList().orEmpty())
     }
 
@@ -53,8 +62,15 @@ open class NfcAdapterWrapper @Inject constructor(
         val ndef = Ndef.get(tag)
         if (ndef != null) {
             try {
-                writeViaNdef(ndef, records)
+                withTechWatchdog(dispatcher, TECH_IO_TIMEOUT_MS) { closer ->
+                    writeViaNdef(ndef, records, closer)
+                }
                 return@withContext
+            } catch (e: TagIoWatchdogTimeoutException) {
+                // The watchdog already force-closed the tech; falling
+                // through to an NdefFormatable pass would burn another
+                // full I/O budget on a wedged tag handle. Hard abort.
+                throw e
             } catch (e: java.io.IOException) {
                 // Ndef.writeNdefMessage failed. If the tag also exposes
                 // NdefFormatable, fall through to a fresh format pass —
@@ -64,7 +80,9 @@ open class NfcAdapterWrapper @Inject constructor(
                 // attempt; v2 is more careful and so needs a deliberate
                 // recovery hop.
                 val formatable = android.nfc.tech.NdefFormatable.get(tag) ?: throw e
-                writeViaFormatable(formatable, records)
+                withTechWatchdog(dispatcher, TECH_IO_TIMEOUT_MS) { closer ->
+                    writeViaFormatable(formatable, records, closer)
+                }
                 return@withContext
             }
         }
@@ -75,13 +93,17 @@ open class NfcAdapterWrapper @Inject constructor(
         //      surface as NdefFormatable in the techList. Format + write.
         val formatable = android.nfc.tech.NdefFormatable.get(tag)
             ?: throw NonNdefTagException()
-        writeViaFormatable(formatable, records)
+        withTechWatchdog(dispatcher, TECH_IO_TIMEOUT_MS) { closer ->
+            writeViaFormatable(formatable, records, closer)
+        }
     }
 
     private fun writeViaFormatable(
         formatable: android.nfc.tech.NdefFormatable,
         records: List<NdefRecordView>,
+        closer: TagTechCloser,
     ) {
+        closer.register(formatable)
         try {
             formatable.connect()
             val message = records.toNdefMessage()
@@ -103,7 +125,8 @@ open class NfcAdapterWrapper @Inject constructor(
         }
     }
 
-    private fun writeViaNdef(ndef: Ndef, records: List<NdefRecordView>) {
+    private fun writeViaNdef(ndef: Ndef, records: List<NdefRecordView>, closer: TagTechCloser) {
+        closer.register(ndef)
         try {
             ndef.connect()
             val message = records.toNdefMessage()
@@ -139,11 +162,14 @@ open class NfcAdapterWrapper @Inject constructor(
     }
 
     open suspend fun readRecords(tag: Tag): List<NdefRecordView>? = withContext(dispatcher) {
-        readRecordsBlocking(tag)
+        withTechWatchdog(dispatcher, TECH_IO_TIMEOUT_MS) { closer ->
+            readRecordsBlocking(tag, closer)
+        }
     }
 
-    private fun readRecordsBlocking(tag: Tag): List<NdefRecordView>? {
+    private fun readRecordsBlocking(tag: Tag, closer: TagTechCloser): List<NdefRecordView>? {
         val ndef = Ndef.get(tag) ?: return null
+        closer.register(ndef)
         return try {
             ndef.connect()
             ndef.ndefMessage?.records?.map { it.toView() }

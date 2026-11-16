@@ -11,7 +11,6 @@ import com.spoolpainter.app.domain.primitives.NfcIntent
 import com.spoolpainter.app.domain.primitives.NfcResult
 import com.spoolpainter.app.domain.primitives.TagClassification
 import com.spoolpainter.app.hardware.nfc.NfcRepository
-import kotlinx.coroutines.flow.first
 import javax.inject.Inject
 
 data class TwoTagInput(val spoolId: Int)
@@ -46,6 +45,12 @@ open class TwoTagUseCase @Inject constructor(
 
         nfc.arm(NfcIntent.Write(payload, expectedUid = null))
         val outcome = awaitTerminalNfc()
+        if (outcome == null) {
+            // No tap landed within the wait window — disarm so the stale arm
+            // can't consume a late tap into the void (the caller is gone).
+            nfc.disarm()
+            return TwoTagResult.Cancelled("timeout")
+        }
 
         val (tappedUid, classification) = when (outcome) {
             is NfcResult.Success ->
@@ -101,8 +106,24 @@ open class TwoTagUseCase @Inject constructor(
         return TwoTagResult.Success.SecondTagPaired(spoolId = input.spoolId, uid = tappedUid)
     }
 
-    private suspend fun awaitTerminalNfc(): NfcResult =
-        nfc.state.first { it is NfcResult.Success || it is NfcResult.Error }
+    private suspend fun awaitTerminalNfc(): NfcResult? =
+        // Phase-aware wait: only the tap-wait is UX-bounded; the blocking
+        // write I/O after the tap is covered by awaitTerminal's internal
+        // grace budget so this coroutine never cancels a live write.
+        nfc.awaitTerminal(WRITE_TAP_WAIT_MS)
+
+    private companion object {
+        /**
+         * How long we wait for the user to physically tap a tag after Write
+         * is armed. Preserves the old MainViewModel WRITE_TIMEOUT_MS_DEFAULT
+         * (15s) UX budget for "press Write, then tap". Once a tap is
+         * consumed, terminal I/O gets a separate generous grace inside
+         * [NfcRepository.awaitTerminal] — the old design wrapped everything
+         * in one 15s timeout and cancelled the use case while the physical
+         * NDEF write was still in flight.
+         */
+        const val WRITE_TAP_WAIT_MS: Long = 15_000L
+    }
 
     private sealed interface DerivedPayload {
         data class Ok(val payload: OpenSpoolPayload) : DerivedPayload

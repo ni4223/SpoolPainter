@@ -1,5 +1,6 @@
 package com.spoolpainter.app.data.remote.spoolman
 
+import com.spoolpainter.app.domain.models.ExternalFilament
 import com.spoolpainter.app.domain.models.SpoolmanFilament
 import com.spoolpainter.app.domain.models.SpoolmanInfo
 import com.spoolpainter.app.domain.models.SpoolmanSpool
@@ -17,6 +18,15 @@ interface SpoolmanApi {
 
     @GET("api/v1/info")
     suspend fun getInfo(): Response<SpoolmanInfo>
+
+    /** SpoolmanDB search (server ≥ 0.26.0; offset paging ≥ 0.27.0). Raw
+     *  [Response] so callers can read the `x-total-count` header. */
+    @GET("api/v1/external/filament/search")
+    suspend fun searchExternalFilaments(
+        @Query("query") query: String,
+        @Query("limit") limit: Int,
+        @Query("offset") offset: Int,
+    ): Response<List<ExternalFilament>>
 
     @GET("api/v1/spool")
     suspend fun listSpools(

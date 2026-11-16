@@ -4,10 +4,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.spoolpainter.app.data.local.MaterialBrandRepository
 import com.spoolpainter.app.data.local.SettingsRepository
+import com.spoolpainter.app.data.remote.spoolman.ConnectivityState
 import com.spoolpainter.app.data.remote.spoolman.SpoolmanOutcome
 import com.spoolpainter.app.data.remote.spoolman.SpoolmanRepository
 import com.spoolpainter.app.data.remote.spoolman.UrlNotConfiguredException
+import com.spoolpainter.app.data.remote.spoolman.supportsExternalDbSearch
 import com.spoolpainter.app.domain.models.Brand
+import com.spoolpainter.app.domain.models.ExternalFilament
 import com.spoolpainter.app.domain.models.Material
 import com.spoolpainter.app.domain.models.SpoolmanFilament
 import com.spoolpainter.app.domain.models.SpoolmanSpool
@@ -37,8 +40,10 @@ import com.spoolpainter.app.domain.usecases.VendorUidOnlyPairUseCase
 import com.spoolpainter.app.hardware.nfc.NfcRepository
 import com.spoolpainter.app.ui.common.UiEffect
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -46,6 +51,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
@@ -79,6 +86,28 @@ class MainViewModel @Inject constructor(
     /** Merged preset + Spoolman-vendor + user-added brands (case-insensitive dedup, presets first). */
     val brands: StateFlow<List<String>> = materialBrandRepo.brands
 
+    /** SpoolmanDB — display name of the external filament database (server-configurable). */
+    val externalDbLabel: StateFlow<String> = spoolman.serverInfo
+        .map { it?.external_db_name?.takeIf { name -> name.isNotBlank() } ?: "SpoolmanDB" }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, "SpoolmanDB")
+
+    private val _externalSearchState = MutableStateFlow<ExternalSearchUiState>(ExternalSearchUiState.Idle)
+    private var externalSearchJob: Job? = null
+    private var externalLoadMoreJob: Job? = null
+    private var lastExternalQuery: String = ""
+
+    /**
+     * SpoolmanDB search section state. The serverInfo gate fails closed:
+     * any non-supporting (or unknown) version forces Unsupported regardless
+     * of the internal state, so stale Results can never surface on an old
+     * server (e.g. after a URL switch).
+     */
+    val externalSearchState: StateFlow<ExternalSearchUiState> =
+        combine(spoolman.serverInfo, _externalSearchState) { info, internal ->
+            if (info.supportsExternalDbSearch()) internal else ExternalSearchUiState.Unsupported
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, ExternalSearchUiState.Unsupported)
+
     private val _state = MutableStateFlow(MainUiState())
     val state: StateFlow<MainUiState> = _state.asStateFlow()
 
@@ -105,6 +134,10 @@ class MainViewModel @Inject constructor(
     // tap also gets help. Stored as the wall-clock instant of the last hint.
     private var lastAmbientHintEpochMs: Long = 0L
 
+    // Retained (internal API) even though the NFC flows no longer use them:
+    // the tap-wait UX budgets moved into the use cases (see
+    // NfcRepository.awaitTerminal and the use-case *_TAP_WAIT_MS constants).
+    // writeTimeoutMs still caps the HTTP-only Save / vendor-UID pair flows.
     internal val readTimeoutMs: Long = READ_TIMEOUT_MS_DEFAULT
     internal val writeTimeoutMs: Long = WRITE_TIMEOUT_MS_DEFAULT
 
@@ -204,13 +237,15 @@ class MainViewModel @Inject constructor(
      *  Includes second-tag listening from the pair-another flow so the inline
      *  [Read|Write] row's shared Cancel button covers it too — sheet auto-
      *  dismisses during second-tag listening so the user only sees one
-     *  Cancel surface. Vendor UID-only pair is HTTP-only and is NOT
-     *  cancellable (button stays disabled while in flight; ~250ms typical
-     *  roundtrip). */
+     *  Cancel surface. Vendor UID-only pair is HTTP-only (~250ms typical
+     *  roundtrip) but can sit in flight for the full write timeout — or wedge
+     *  entirely if its coroutine died — so it is cancellable too now; the
+     *  Write toggle doubles as the escape hatch (no sheet renders for it). */
     val isWriteCancellable: StateFlow<Boolean> =
         _state.map {
             it.activeFlow == ActiveFlow.WritingForPair ||
                 it.activeFlow == ActiveFlow.WritingRaw ||
+                it.activeFlow == ActiveFlow.PairingVendorUidOnly ||
                 it.activeFlow is ActiveFlow.WritingSecondTag
         }
             .distinctUntilChanged()
@@ -399,6 +434,25 @@ class MainViewModel @Inject constructor(
                 }
             }
         }
+        // SpoolmanDB gate: serverInfo only refreshes inside testConnection()
+        // today, so when a reachable server's version is still unknown,
+        // probe once so the Unsupported gate resolves instead of sticking.
+        viewModelScope.launch {
+            if (spoolman.serverInfo.value != null) return@launch
+            spoolman.connectivity
+                .map { it as? ConnectivityState.Reachable }
+                .filterNotNull()
+                .first()
+            if (spoolman.serverInfo.value == null) {
+                try {
+                    spoolman.testConnection()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    // Gate stays Unsupported — fails closed.
+                }
+            }
+        }
     }
 
     /**
@@ -459,13 +513,18 @@ class MainViewModel @Inject constructor(
             )
         }
         readJob = viewModelScope.launch {
-            val result = withTimeoutOrNull(readTimeoutMs) { readAndPair.invoke() }
-            if (result == null) {
-                nfc.disarm()
-                _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
-                _effects.trySend(UiEffect.ShowSnackbar("No tag tapped. Try again."))
-            } else {
-                applyResult(result)
+            runNfcFlowSafely {
+                // SAFETY_TIMEOUT_MS is a dead-man cap only — the 10s
+                // "waiting for a tap" UX budget is enforced inside
+                // ReadAndPairUseCase via NfcRepository.awaitTerminal.
+                val result = withTimeoutOrNull(SAFETY_TIMEOUT_MS) { readAndPair.invoke() }
+                if (result == null) {
+                    nfc.disarm()
+                    _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
+                    _effects.trySend(UiEffect.ShowSnackbar("No tag tapped. Try again."))
+                } else {
+                    applyResult(result)
+                }
             }
         }
     }
@@ -482,6 +541,32 @@ class MainViewModel @Inject constructor(
         writeJob = null
         viewModelScope.launch { nfc.disarm() }
         _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
+    }
+
+    /**
+     * NFC flows run as coroutines that set an in-flight activeFlow, await a
+     * use case, then apply*Result back to Idle. If the coroutine dies before
+     * apply*Result, activeFlow strands in the in-flight state and BOTH Read
+     * and Write stay disabled until app restart (the "wedged after one spool"
+     * bug — e.g. a use case throwing IllegalStateException into the flow).
+     * This wrapper guarantees the terminal transition instead: the throwable
+     * is logged, NFC is disarmed, activeFlow returns to Idle, and the user
+     * gets an honest snackbar. CancellationException rethrows untouched —
+     * withTimeoutOrNull swallows its own timeouts internally, so a
+     * CancellationException arriving here is a real job cancel and its
+     * semantics (the explicit cancel branches) must survive.
+     */
+    private suspend fun runNfcFlowSafely(block: suspend () -> Unit) {
+        try {
+            block()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (t: Throwable) {
+            android.util.Log.e("NfcFlow", "NFC flow died before returning to Idle", t)
+            _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
+            viewModelScope.launch { nfc.disarm() }
+            _effects.trySend(UiEffect.ShowSnackbar("Something went wrong. Please try again."))
+        }
     }
 
     /**
@@ -520,6 +605,10 @@ class MainViewModel @Inject constructor(
                     newFilamentName = derivedName,
                     newFilamentVendor = brandName.ifBlank { "Generic" },
                     resolvedMaterialName = materialName.takeIf { it.isNotBlank() },
+                    // SpoolmanDB import: linkage + DB diameter ride the form
+                    // state so the save chain stamps the origin.
+                    externalFilamentId = form.externalFilamentId,
+                    diameterMm = form.externalDiameterMm,
                 )
                 val result = withTimeoutOrNull(writeTimeoutMs) {
                     saveToSpoolman.invoke(input)
@@ -557,6 +646,15 @@ class MainViewModel @Inject constructor(
             onPairAnotherTagAccepted()
             return
         }
+        if (state.activeFlow == ActiveFlow.PairingVendorUidOnly) {
+            // Escape hatch — vendor UID-only pair is HTTP-only and renders no
+            // sheet, so without this branch it's a dead end: Write disabled,
+            // nothing tappable for up to the 15s write timeout (or forever if
+            // its coroutine died). Toggle mirrors the WritingForPair/WritingRaw
+            // cancel: kill the job, disarm NFC, back to Idle.
+            cancelWriteInFlight()
+            return
+        }
         if (!canWrite.value) return
         val form = state.form
         val mode = state.writeMode
@@ -589,43 +687,53 @@ class MainViewModel @Inject constructor(
     private fun launchCreateAndPair(form: FormState, spoolId: Int, isNewSpool: Boolean) {
         _state.update { it.copy(activeFlow = ActiveFlow.WritingForPair) }
         writeJob = viewModelScope.launch {
-            val materialName = resolveMaterialName(form.material, _customMaterial.value)
-            val brandName = resolveBrandName(form.brand, _customBrand.value)
-            val variantPart = form.variant?.trim().orEmpty()
-            val derivedName = listOfNotNull(
-                brandName.takeIf { it.isNotBlank() },
-                materialName.takeIf { it.isNotBlank() },
-                variantPart.takeIf { it.isNotBlank() },
-            ).joinToString(" ").ifBlank { materialName }
-            val input = CreateAndPairInput(
-                spoolId = spoolId,
-                isNewSpool = isNewSpool,
-                form = form,
-                newFilamentName = derivedName,
-                newFilamentVendor = brandName.ifBlank { "Generic" },
-                resolvedMaterialName = materialName.takeIf { it.isNotBlank() },
-            )
-            val result = withTimeoutOrNull(writeTimeoutMs) {
-                createAndPair.invoke(input)
-            } ?: CreateAndPairResult.Cancelled(reason = "timeout", spoolId = spoolId)
-            applyWriteResult(result)
+            runNfcFlowSafely {
+                val materialName = resolveMaterialName(form.material, _customMaterial.value)
+                val brandName = resolveBrandName(form.brand, _customBrand.value)
+                val variantPart = form.variant?.trim().orEmpty()
+                val derivedName = listOfNotNull(
+                    brandName.takeIf { it.isNotBlank() },
+                    materialName.takeIf { it.isNotBlank() },
+                    variantPart.takeIf { it.isNotBlank() },
+                ).joinToString(" ").ifBlank { materialName }
+                val input = CreateAndPairInput(
+                    spoolId = spoolId,
+                    isNewSpool = isNewSpool,
+                    form = form,
+                    newFilamentName = derivedName,
+                    newFilamentVendor = brandName.ifBlank { "Generic" },
+                    resolvedMaterialName = materialName.takeIf { it.isNotBlank() },
+                )
+                // SAFETY_TIMEOUT_MS is a dead-man cap only — the 15s
+                // tap-wait UX budget is enforced inside
+                // CreateAndPairUseCase via NfcRepository.awaitTerminal.
+                val result = withTimeoutOrNull(SAFETY_TIMEOUT_MS) {
+                    createAndPair.invoke(input)
+                } ?: CreateAndPairResult.Cancelled(reason = "timeout", spoolId = spoolId)
+                applyWriteResult(result)
+            }
         }
     }
 
     private fun launchRawWrite(form: FormState) {
         _state.update { it.copy(activeFlow = ActiveFlow.WritingRaw) }
         writeJob = viewModelScope.launch {
-            val materialName = resolveMaterialName(form.material, _customMaterial.value)
-            val brandName = resolveBrandName(form.brand, _customBrand.value)
-            val input = RawWriteInput(
-                form = form,
-                resolvedMaterialName = materialName.takeIf { it.isNotBlank() },
-                newFilamentVendor = brandName.ifBlank { "Unknown" },
-            )
-            val result = withTimeoutOrNull(writeTimeoutMs) {
-                rawWrite.invoke(input)
-            } ?: RawWriteResult.Cancelled("timeout")
-            applyRawWriteResult(result)
+            runNfcFlowSafely {
+                val materialName = resolveMaterialName(form.material, _customMaterial.value)
+                val brandName = resolveBrandName(form.brand, _customBrand.value)
+                val input = RawWriteInput(
+                    form = form,
+                    resolvedMaterialName = materialName.takeIf { it.isNotBlank() },
+                    newFilamentVendor = brandName.ifBlank { "Unknown" },
+                )
+                // SAFETY_TIMEOUT_MS is a dead-man cap only — the 15s
+                // tap-wait UX budget is enforced inside RawWriteUseCase via
+                // NfcRepository.awaitTerminal.
+                val result = withTimeoutOrNull(SAFETY_TIMEOUT_MS) {
+                    rawWrite.invoke(input)
+                } ?: RawWriteResult.Cancelled("timeout")
+                applyRawWriteResult(result)
+            }
         }
     }
 
@@ -637,25 +745,27 @@ class MainViewModel @Inject constructor(
         }
         _state.update { it.copy(activeFlow = ActiveFlow.PairingVendorUidOnly) }
         writeJob = viewModelScope.launch {
-            val materialName = resolveMaterialName(form.material, _customMaterial.value)
-            val brandName = resolveBrandName(form.brand, _customBrand.value)
-            val variantPart = form.variant?.trim().orEmpty()
-            val derivedName = listOfNotNull(
-                brandName.takeIf { it.isNotBlank() },
-                materialName.takeIf { it.isNotBlank() },
-                variantPart.takeIf { it.isNotBlank() },
-            ).joinToString(" ").ifBlank { materialName }
-            val input = VendorUidOnlyPairInput(
-                form = form,
-                newFilamentName = derivedName,
-                newFilamentVendor = brandName.ifBlank { "Generic" },
-                resolvedMaterialName = materialName.takeIf { it.isNotBlank() },
-                observedUid = observed,
-            )
-            val result = withTimeoutOrNull(writeTimeoutMs) {
-                vendorUidOnlyPair.invoke(input)
-            } ?: VendorUidOnlyPairResult.Cancelled("timeout")
-            applyVendorUidOnlyPairResult(result)
+            runNfcFlowSafely {
+                val materialName = resolveMaterialName(form.material, _customMaterial.value)
+                val brandName = resolveBrandName(form.brand, _customBrand.value)
+                val variantPart = form.variant?.trim().orEmpty()
+                val derivedName = listOfNotNull(
+                    brandName.takeIf { it.isNotBlank() },
+                    materialName.takeIf { it.isNotBlank() },
+                    variantPart.takeIf { it.isNotBlank() },
+                ).joinToString(" ").ifBlank { materialName }
+                val input = VendorUidOnlyPairInput(
+                    form = form,
+                    newFilamentName = derivedName,
+                    newFilamentVendor = brandName.ifBlank { "Generic" },
+                    resolvedMaterialName = materialName.takeIf { it.isNotBlank() },
+                    observedUid = observed,
+                )
+                val result = withTimeoutOrNull(writeTimeoutMs) {
+                    vendorUidOnlyPair.invoke(input)
+                } ?: VendorUidOnlyPairResult.Cancelled("timeout")
+                applyVendorUidOnlyPairResult(result)
+            }
         }
     }
 
@@ -681,6 +791,10 @@ class MainViewModel @Inject constructor(
                         prefilledRemainingWeightG = null,
                         prefilledPriceMajor = null,
                         prefilledEmptySpoolWeightG = null,
+                        // SpoolmanDB linkage is meaningless once the spool
+                        // selection is dropped — a fresh pick re-seeds it.
+                        externalFilamentId = null,
+                        externalDiameterMm = null,
                     ),
                     spoolman = current.spoolman.copy(selectedSpoolId = null),
                 )
@@ -753,6 +867,107 @@ class MainViewModel @Inject constructor(
         }
         _customMaterial.value = ""
         _customBrand.value = ""
+    }
+
+    /**
+     * SpoolmanDB — the filament picker's search field drives BOTH the local
+     * filter (picker-side, unchanged) and this debounced server search.
+     * Query trimmed; <2 chars → Idle with the in-flight job cancelled.
+     * Never touches the local filament list state.
+     */
+    fun onExternalFilamentQueryChanged(query: String) {
+        val trimmed = query.trim()
+        externalSearchJob?.cancel()
+        if (trimmed.length < 2 || !spoolman.serverInfo.value.supportsExternalDbSearch()) {
+            _externalSearchState.value = ExternalSearchUiState.Idle
+            return
+        }
+        lastExternalQuery = trimmed
+        _externalSearchState.value = ExternalSearchUiState.Searching
+        externalSearchJob = viewModelScope.launch {
+            delay(EXTERNAL_SEARCH_DEBOUNCE_MS)
+            when (val outcome = spoolman.searchExternalFilaments(trimmed, limit = 20, offset = 0)) {
+                is SpoolmanOutcome.Success ->
+                    _externalSearchState.value = ExternalSearchUiState.Results(
+                        items = outcome.data.items,
+                        totalCount = outcome.data.totalCount,
+                    )
+                is SpoolmanOutcome.HttpError ->
+                    _externalSearchState.value = ExternalSearchUiState.Error(humanReadable(outcome))
+                is SpoolmanOutcome.NetworkError ->
+                    _externalSearchState.value = ExternalSearchUiState.Error(humanReadable(outcome))
+                is SpoolmanOutcome.ParseError ->
+                    _externalSearchState.value = ExternalSearchUiState.Error(humanReadable(outcome))
+            }
+        }
+    }
+
+    /** SpoolmanDB — append the next page. Dedupes by id defensively; no-op
+     *  when everything is loaded or a load is already in flight. */
+    fun onExternalFilamentLoadMore() {
+        val current = _externalSearchState.value as? ExternalSearchUiState.Results ?: return
+        if (!current.hasMore || externalLoadMoreJob?.isActive == true) return
+        val query = lastExternalQuery
+        externalLoadMoreJob = viewModelScope.launch {
+            when (
+                val outcome = spoolman.searchExternalFilaments(
+                    query,
+                    limit = 20,
+                    offset = current.items.size,
+                )
+            ) {
+                is SpoolmanOutcome.Success -> {
+                    val merged = (current.items + outcome.data.items).distinctBy { it.id }
+                    _externalSearchState.value = ExternalSearchUiState.Results(
+                        items = merged,
+                        totalCount = maxOf(current.totalCount, outcome.data.totalCount),
+                    )
+                }
+                is SpoolmanOutcome.HttpError ->
+                    _externalSearchState.value = ExternalSearchUiState.Error(humanReadable(outcome))
+                is SpoolmanOutcome.NetworkError ->
+                    _externalSearchState.value = ExternalSearchUiState.Error(humanReadable(outcome))
+                is SpoolmanOutcome.ParseError ->
+                    _externalSearchState.value = ExternalSearchUiState.Error(humanReadable(outcome))
+            }
+        }
+    }
+
+    /**
+     * SpoolmanDB — pick an external filament. If this DB entry was already
+     * imported once (inventory filament with a matching external_id),
+     * delegate to the existing-filament selection so no duplicate is
+     * created. Otherwise prefill the form for the create-new path: Save
+     * then stamps filament+vendor with the external_id so Spoolman
+     * highlights the DB origin.
+     */
+    fun onExternalFilamentPicked(external: ExternalFilament) {
+        val alreadyImported = filaments.value.firstOrNull { it.external_id == external.id }
+        if (alreadyImported != null) {
+            onFilamentSelected(alreadyImported)
+            return
+        }
+        _state.update { current ->
+            current.copy(
+                form = FormMapping.applyExternalFilament(current.form, external),
+                spoolman = current.spoolman.copy(selectedSpoolId = null),
+                ambiguity = null,
+                scanSuggestedSpoolIds = emptyList(),
+                scanSuggestedFilamentIds = emptyList(),
+            )
+        }
+        _customMaterial.value = ""
+        _customBrand.value = ""
+    }
+
+    /** SpoolmanDB — dismiss the origin chip: drop only the external linkage;
+     *  the prefilled values stay for manual editing. */
+    fun onExternalSelectionCleared() {
+        _state.update {
+            it.copy(
+                form = it.form.copy(externalFilamentId = null, externalDiameterMm = null),
+            )
+        }
     }
 
     fun onMoreDetailsToggled() {
@@ -1180,6 +1395,10 @@ class MainViewModel @Inject constructor(
                         ),
                     )
                 }
+                // Clean flow end: drop the spent NFC session so a later Read
+                // can't resurrect the consumed write tap. Safe here — the next
+                // arm only happens after the user taps "Pair another".
+                viewModelScope.launch { nfc.disarm() }
             }
             is CreateAndPairResult.VerifyFailed -> {
                 // Spool exists in Spoolman before the write tap; keep the
@@ -1258,7 +1477,15 @@ class MainViewModel @Inject constructor(
                 // misleading. Only show the snackbar for the genuine timeout
                 // / no-tap path.
                 if (!result.reason.startsWith("repair declined", ignoreCase = true)) {
-                    _effects.trySend(UiEffect.ShowSnackbar("No tag tapped. Try again."))
+                    // Lift hint: Android never re-dispatches a tag that stays
+                    // in the RF field, so a user holding the phone on the
+                    // spool must physically break the field before a retry
+                    // tap can be delivered.
+                    _effects.trySend(
+                        UiEffect.ShowSnackbar(
+                            "No tag tapped. Try again. Lift the tag off the phone first, then tap it again.",
+                        ),
+                    )
                 }
             }
         }
@@ -1341,10 +1568,15 @@ class MainViewModel @Inject constructor(
         val spoolId = current.spoolId
         _state.update { it.copy(activeFlow = ActiveFlow.WritingSecondTag(spoolId)) }
         writeJob = viewModelScope.launch {
-            val result = withTimeoutOrNull(writeTimeoutMs) {
-                twoTag.invoke(TwoTagInput(spoolId))
-            } ?: TwoTagResult.Cancelled("timeout")
-            applyTwoTagResult(result)
+            runNfcFlowSafely {
+                // SAFETY_TIMEOUT_MS is a dead-man cap only — the 15s
+                // tap-wait UX budget is enforced inside TwoTagUseCase via
+                // NfcRepository.awaitTerminal.
+                val result = withTimeoutOrNull(SAFETY_TIMEOUT_MS) {
+                    twoTag.invoke(TwoTagInput(spoolId))
+                } ?: TwoTagResult.Cancelled("timeout")
+                applyTwoTagResult(result)
+            }
         }
     }
 
@@ -1365,6 +1597,9 @@ class MainViewModel @Inject constructor(
             is TwoTagResult.Success.SecondTagPaired -> {
                 val spoolId = _state.value.form.selectedSpoolId
                 _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
+                // Clean flow end — disarm so the terminal Success state (and
+                // any spent tap buffer) can't leak into the next flow.
+                viewModelScope.launch { nfc.disarm() }
                 val msg = spoolId?.let { pairedMessage(it, written = true) }
                     ?: "Tag written and paired."
                 _effects.trySend(UiEffect.ShowSnackbar(msg))
@@ -1387,39 +1622,47 @@ class MainViewModel @Inject constructor(
                             observedTagUid = result.uid,
                         )
                     }
-                    viewModelScope.launch {
-                        val materialName = resolveMaterialName(state.form.material, _customMaterial.value)
-                        val brandName = resolveBrandName(state.form.brand, _customBrand.value)
-                        val variantPart = state.form.variant?.trim().orEmpty()
-                        val derivedName = listOfNotNull(
-                            brandName.takeIf { it.isNotBlank() },
-                            materialName.takeIf { it.isNotBlank() },
-                            variantPart.takeIf { it.isNotBlank() },
-                        ).joinToString(" ").ifBlank { materialName }
-                        val input = VendorUidOnlyPairInput(
-                            form = state.form,
-                            newFilamentName = derivedName,
-                            newFilamentVendor = brandName.ifBlank { "Generic" },
-                            resolvedMaterialName = materialName.takeIf { it.isNotBlank() },
-                            observedUid = result.uid,
-                        )
-                        val r = withTimeoutOrNull(writeTimeoutMs) {
-                            vendorUidOnlyPair.invoke(input)
-                        } ?: VendorUidOnlyPairResult.Cancelled("timeout")
-                        when (r) {
-                            is VendorUidOnlyPairResult.Success.UidPaired -> {
-                                _state.update {
-                                    it.copy(
-                                        activeFlow = ActiveFlow.Idle,
-                                        observedTagKind = ObservedTagKind.None,
-                                        observedTagUid = null,
+                    // Stored in writeJob (superseding the completing two-tag
+                    // job) so the PairingVendorUidOnly Write-toggle cancel
+                    // actually reaches this coroutine.
+                    writeJob = viewModelScope.launch {
+                        runNfcFlowSafely {
+                            val materialName = resolveMaterialName(state.form.material, _customMaterial.value)
+                            val brandName = resolveBrandName(state.form.brand, _customBrand.value)
+                            val variantPart = state.form.variant?.trim().orEmpty()
+                            val derivedName = listOfNotNull(
+                                brandName.takeIf { it.isNotBlank() },
+                                materialName.takeIf { it.isNotBlank() },
+                                variantPart.takeIf { it.isNotBlank() },
+                            ).joinToString(" ").ifBlank { materialName }
+                            val input = VendorUidOnlyPairInput(
+                                form = state.form,
+                                newFilamentName = derivedName,
+                                newFilamentVendor = brandName.ifBlank { "Generic" },
+                                resolvedMaterialName = materialName.takeIf { it.isNotBlank() },
+                                observedUid = result.uid,
+                            )
+                            val r = withTimeoutOrNull(writeTimeoutMs) {
+                                vendorUidOnlyPair.invoke(input)
+                            } ?: VendorUidOnlyPairResult.Cancelled("timeout")
+                            when (r) {
+                                is VendorUidOnlyPairResult.Success.UidPaired -> {
+                                    _state.update {
+                                        it.copy(
+                                            activeFlow = ActiveFlow.Idle,
+                                            observedTagKind = ObservedTagKind.None,
+                                            observedTagUid = null,
+                                        )
+                                    }
+                                    // Clean flow end — disarm the NFC session
+                                    // the two-tag flow left behind.
+                                    viewModelScope.launch { nfc.disarm() }
+                                    _effects.trySend(
+                                        UiEffect.ShowSnackbar(pairedMessage(r.spoolId, written = false)),
                                     )
                                 }
-                                _effects.trySend(
-                                    UiEffect.ShowSnackbar(pairedMessage(r.spoolId, written = false)),
-                                )
+                                else -> applyVendorUidOnlyPairResult(r)
                             }
-                            else -> applyVendorUidOnlyPairResult(r)
                         }
                     }
                 }
@@ -1450,11 +1693,18 @@ class MainViewModel @Inject constructor(
             }
             is TwoTagResult.Cancelled -> {
                 _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
+                // Clean flow end — mirror the create-and-pair Cancel branch.
+                viewModelScope.launch { nfc.disarm() }
                 // Suppress on explicit user decline (RepairConfirmSheet
                 // Cancel). Emit only for genuine timeouts / unknown reasons.
                 if (!result.reason.startsWith("repair declined", ignoreCase = true)) {
+                    // Lift hint: Android never re-dispatches a tag that stays
+                    // in the RF field — the user must physically break the
+                    // field before a retry tap can be delivered.
                     _effects.trySend(
-                        UiEffect.ShowSnackbar("No second tag tapped. Tap Write to retry."),
+                        UiEffect.ShowSnackbar(
+                            "No second tag tapped. Tap Write to retry. Lift the tag off the phone first, then tap it again.",
+                        ),
                     )
                 }
             }
@@ -1470,6 +1720,9 @@ class MainViewModel @Inject constructor(
                         activeFlow = ActiveFlow.Idle,
                     )
                 }
+                // Clean flow end — disarm so the spent write session can't
+                // leak a terminal Success state into the next flow.
+                viewModelScope.launch { nfc.disarm() }
                 _effects.trySend(UiEffect.ShowSnackbar("Tag written"))
             }
             is RawWriteResult.VendorTagRejected -> {
@@ -1487,7 +1740,13 @@ class MainViewModel @Inject constructor(
             is RawWriteResult.Cancelled -> {
                 _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
                 viewModelScope.launch { nfc.disarm() }
-                _effects.trySend(UiEffect.ShowSnackbar("No tag tapped. Try again."))
+                // Lift hint: Android never re-dispatches a tag that stays in
+                // the RF field (see applyTwoTagResult.Cancelled).
+                _effects.trySend(
+                    UiEffect.ShowSnackbar(
+                        "No tag tapped. Try again. Lift the tag off the phone first, then tap it again.",
+                    ),
+                )
             }
         }
     }
@@ -1517,6 +1776,9 @@ class MainViewModel @Inject constructor(
                         ),
                     )
                 }
+                // Clean flow end — drop any residual NFC session. Safe here:
+                // the next arm only happens after "Pair another" is tapped.
+                viewModelScope.launch { nfc.disarm() }
             }
             is VendorUidOnlyPairResult.SpoolmanFailed -> {
                 _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
@@ -1615,6 +1877,21 @@ class MainViewModel @Inject constructor(
         const val READ_TIMEOUT_MS_DEFAULT: Long = 10_000L
         const val WRITE_TIMEOUT_MS_DEFAULT: Long = 15_000L
         const val AMBIENT_HINT_COOLDOWN_MS: Long = 15_000L
+        const val EXTERNAL_SEARCH_DEBOUNCE_MS: Long = 300L
+
+        /**
+         * Dead-man cap for the NFC flows. The real "how long do we wait for
+         * a tap" UX budget now lives INSIDE the use cases via
+         * NfcRepository.awaitTerminal (phase-aware: short tap wait, then a
+         * generous I/O grace so a mid-write timeout can never cancel the
+         * use case while the physical NDEF write is still in flight — the
+         * old 10s/15s outer timeouts did exactly that and manufactured
+         * "tag written but Spoolman never patched" + spurious "No tag
+         * tapped" dead zones). This 60s wrapper only catches pathological
+         * hangs (e.g. a wedged HTTP call inside a use case); it must never
+         * fire in normal operation.
+         */
+        const val SAFETY_TIMEOUT_MS: Long = 60_000L
     }
 }
 

@@ -5,6 +5,7 @@ import android.nfc.tech.MifareClassic
 import android.util.Log
 import com.spoolpainter.app.hardware.nfc.vendor.VendorAuth
 import com.spoolpainter.app.hardware.nfc.vendor.VendorId
+import kotlinx.coroutines.CoroutineDispatcher
 
 private const val TAG = "MifareClassicReader"
 
@@ -23,15 +24,45 @@ object MifareClassicReader {
      *
      * `vendorAuths` is iterated in insertion order — callers control vendor
      * priority by ordering the map (LinkedHashMap / `mapOf`).
+     *
+     * Blocking, UNBOUNDED entry point (kept for JVM tests). Production
+     * callers must use [tryReadRawCountedMultiBounded] so a connect hung
+     * on marginal RF contact is force-closed instead of wedging the OS
+     * NFC stack for the rest of the process lifetime.
      */
     fun tryReadRawCountedMulti(
         tag: Tag,
         vendorAuths: Map<VendorId, VendorAuth>,
+    ): Pair<ByteArray?, Map<VendorId, Int>> = readSession(tag, vendorAuths, closer = null)
+
+    /**
+     * Watchdog-bounded production entry point: the full connect/auth/read
+     * session gets [timeoutMs] (default [VENDOR_TECH_IO_TIMEOUT_MS] —
+     * full-sector dumps legitimately take seconds) before the tech is
+     * force-closed and [TagIoWatchdogTimeoutException] is thrown.
+     */
+    suspend fun tryReadRawCountedMultiBounded(
+        tag: Tag,
+        vendorAuths: Map<VendorId, VendorAuth>,
+        dispatcher: CoroutineDispatcher,
+        timeoutMs: Long = VENDOR_TECH_IO_TIMEOUT_MS,
+    ): Pair<ByteArray?, Map<VendorId, Int>> =
+        withTechWatchdog(dispatcher, timeoutMs) { closer ->
+            readSession(tag, vendorAuths, closer)
+        }
+
+    internal fun readSession(
+        tag: Tag,
+        vendorAuths: Map<VendorId, VendorAuth>,
+        closer: TagTechCloser?,
     ): Pair<ByteArray?, Map<VendorId, Int>> {
         val mc = MifareClassic.get(tag) ?: run {
             Log.w(TAG, "tryReadRawCountedMulti: not a MifareClassic tag")
             return null to vendorAuths.keys.associateWith { 0 }
         }
+        // Register the tech BEFORE connect() so the watchdog can
+        // force-close it if the binder call hangs on marginal RF contact.
+        closer?.register(mc)
         Log.d(TAG, "tryReadRawCountedMulti: sectors=${mc.sectorCount} vendors=${vendorAuths.keys}")
         return try {
             mc.connect()
