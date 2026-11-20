@@ -1,5 +1,6 @@
 package com.spoolpainter.app.domain.models
 
+import com.google.gson.Gson
 import com.google.gson.annotations.SerializedName
 
 data class SpoolmanSpool(
@@ -24,6 +25,10 @@ data class SpoolmanSpool(
     // ISO-8601 string from Spoolman; null on freshly-created spools that
     // haven't had filament consumed yet. Used by SortKey.LastUsed.
     val last_used: String? = null,
+    // Native tags (server ≥ 0.27.0): the UIDs linked to this spool in
+    // GET /spool payloads. Absent on older servers; readers treat a
+    // missing list as empty rather than trusting the reflective binding.
+    val tags: List<SpoolmanTag> = emptyList(),
 )
 
 data class SpoolmanFilament(
@@ -67,6 +72,98 @@ data class SpoolmanInfo(
     // database (e.g. "SpoolmanDB"); null on older servers / when unset.
     val external_db_name: String? = null,
 )
+
+/** A native NFC tag as returned by `POST /api/v1/spool/{id}/tag`
+ *  (server ≥ 0.27.0). The server omits null fields; `added` is an
+ *  ISO-8601 datetime string. */
+data class SpoolmanTag(
+    val uid: String,
+    val format: String? = null,
+    val added: String? = null,
+)
+
+/** Body of the 409 the tag endpoints return when the UID is already linked
+ *  to another spool or filament: the holder ids identify the conflict. */
+data class TagConflictBody(
+    val message: String,
+    val spool_id: Int? = null,
+    val filament_id: Int? = null,
+)
+
+/** Outcome of one automatic legacy→native tag mirror run: plain counts,
+ *  no timestamps — each completed run overwrites the previous state. */
+sealed interface TagSyncState {
+    data object Idle : TagSyncState
+    data class Finished(
+        val mirrored: Int,
+        val conflicts: List<TagSyncConflict>,
+        val failed: Int,
+    ) : TagSyncState
+}
+
+/** One UID the mirror could not link natively because the server holds
+ *  it elsewhere (409). The mirror never steals tags, so the holder keeps
+ *  the UID; `holderSpoolId` is null when the conflict body names no spool
+ *  (e.g. a filament holds the UID). */
+data class TagSyncConflict(
+    val uid: String,
+    val targetSpoolId: Int,
+    val holderSpoolId: Int? = null,
+)
+
+private val GSON = Gson()
+
+/** Null-safe parser for the 409 conflict body; null on malformed JSON or a
+ *  body without the contractually required `message`. */
+fun parseTagConflict(json: String): TagConflictBody? = runCatching {
+    GSON.fromJson(json, TagConflictBody::class.java)
+}.getOrNull()?.takeIf { body ->
+    // Gson bypasses the Kotlin constructor, so a payload missing
+    // "message" leaves the non-null typed field null at runtime.
+    @Suppress("SENSELESS_COMPARISON")
+    body.message != null
+}
+
+/**
+ * Native tag API (`POST /api/v1/spool/{id}/tag` etc.) shipped in Spoolman
+ * 0.27.0. Tolerant gate, unlike the strict external-DB-search triple check:
+ * pre-release suffixes like "0.27.0-beta" or "0.27.0rc1" compare by their
+ * numeric prefix, so a 0.27.0 pre-release counts as supported. A null
+ * receiver, null/blank version, or no leading dotted-integer prefix at all
+ * fails closed → false.
+ */
+fun SpoolmanInfo?.supportsNativeTags(): Boolean {
+    if (this == null) return false
+    val numbers = parseLeadingDottedInts(version) ?: return false
+    return isAtLeastVersion(numbers, major = 0, minor = 27, patch = 0)
+}
+
+/** "0.27.1" → [0, 27, 1]; "0.27.0-rc1" → [0, 27, 0]; "1" → [1]. Stops at
+ *  the first non-numeric segment; null when no numeric prefix exists. */
+internal fun parseLeadingDottedInts(version: String?): List<Int>? {
+    val trimmed = version?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+    val numbers = mutableListOf<Int>()
+    for (segment in trimmed.split('.')) {
+        val digits = segment.takeWhile { it.isDigit() }
+        if (digits.isEmpty()) break
+        // Out-of-int-range segments (absurdly long digit runs) stop the
+        // parse → caller fails closed rather than throwing.
+        numbers += digits.toIntOrNull() ?: break
+        if (digits.length < segment.length) break
+    }
+    return numbers.takeIf { it.isNotEmpty() }
+}
+
+/** Compares the first three components (missing ones count as 0) against a
+ *  minimum version. */
+private fun isAtLeastVersion(parsed: List<Int>, major: Int, minor: Int, patch: Int): Boolean {
+    val actual = List(3) { parsed.getOrNull(it) ?: 0 }
+    return when {
+        actual[0] != major -> actual[0] > major
+        actual[1] != minor -> actual[1] > minor
+        else -> actual[2] >= patch
+    }
+}
 
 /**
  * One entry of Spoolman's external filament database ("SpoolmanDB"),
