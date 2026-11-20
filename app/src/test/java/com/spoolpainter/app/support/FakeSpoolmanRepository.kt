@@ -9,9 +9,12 @@ import com.spoolpainter.app.data.remote.spoolman.SpoolmanApi
 import com.spoolpainter.app.data.remote.spoolman.SpoolmanApiFactory
 import com.spoolpainter.app.data.remote.spoolman.SpoolmanOutcome
 import com.spoolpainter.app.data.remote.spoolman.SpoolmanRepository
+import com.spoolpainter.app.domain.models.ExternalFilamentPage
 import com.spoolpainter.app.domain.models.SpoolmanFilament
+import com.spoolpainter.app.domain.models.SpoolmanInfo
 import com.spoolpainter.app.domain.models.SpoolmanSpool
 import com.spoolpainter.app.domain.models.SpoolmanVendor
+import com.spoolpainter.app.domain.models.TagSyncState
 import com.spoolpainter.app.domain.primitives.CardUid
 import com.spoolpainter.app.domain.usecases.NewFilamentRequest
 import kotlinx.coroutines.CoroutineScope
@@ -42,8 +45,48 @@ class FakeSpoolmanRepository(
     private val _connectivity = MutableStateFlow<ConnectivityState>(ConnectivityState.Unknown)
     override val connectivity: StateFlow<ConnectivityState> = _connectivity.asStateFlow()
 
+    private val _serverInfo = MutableStateFlow<SpoolmanInfo?>(null)
+    override val serverInfo: StateFlow<SpoolmanInfo?> = _serverInfo.asStateFlow()
+
+    private val _tagSyncState = MutableStateFlow<TagSyncState>(TagSyncState.Idle)
+    override val tagSyncState: StateFlow<TagSyncState> = _tagSyncState.asStateFlow()
+
     fun setConnectivity(state: ConnectivityState) {
         _connectivity.value = state
+    }
+
+    fun setServerInfo(info: SpoolmanInfo?) {
+        _serverInfo.value = info
+    }
+
+    fun setTagSyncState(state: TagSyncState) {
+        _tagSyncState.value = state
+    }
+
+    // Issue #19 Phase 4 — call counter for the Settings-mode-switch hook.
+    var requestTagSyncCalls: Int = 0
+        private set
+
+    override fun requestTagSync() {
+        requestTagSyncCalls++
+    }
+
+    // SpoolmanDB search stub — queueable result for ViewModel-style tests.
+    var searchExternalFilamentsCalls: Int = 0
+        private set
+    var lastSearchExternalFilaments: Triple<String, Int, Int>? = null
+        private set
+    var nextSearchExternalFilamentsResult: SpoolmanOutcome<ExternalFilamentPage>? = null
+
+    override suspend fun searchExternalFilaments(
+        query: String,
+        limit: Int,
+        offset: Int,
+    ): SpoolmanOutcome<ExternalFilamentPage> {
+        searchExternalFilamentsCalls++
+        lastSearchExternalFilaments = Triple(query, limit, offset)
+        return nextSearchExternalFilamentsResult
+            ?: SpoolmanOutcome.Success(ExternalFilamentPage(items = emptyList(), totalCount = 0))
     }
 
     var nextFindSpoolsByCardUidResult: SpoolmanOutcome<List<SpoolmanSpool>> =

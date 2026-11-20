@@ -10,6 +10,7 @@ import com.spoolpainter.app.hardware.nfc.vendor.VendorAuth
 import com.spoolpainter.app.hardware.nfc.vendor.VendorId
 import com.spoolpainter.app.hardware.nfc.vendor.VendorTagRegistry
 import com.spoolpainter.app.hardware.nfc.vendor.VendorSettings
+import kotlinx.coroutines.CoroutineDispatcher
 
 /**
  * Vendor-tag parser dispatcher. Only invoked from `NfcRepository.handleTag`
@@ -42,17 +43,41 @@ object TagFormatParser {
     // path in NfcRepository probes). Gate the retry on MifareClassic presence.
     private const val MAX_READ_ATTEMPTS = 3
 
-    fun parseVendor(tag: Tag, settings: VendorSettings): OpenSpoolPayload? {
+    /**
+     * Suspend + watchdog-bounded: the vendor reader sessions run under
+     * [withTechWatchdog] on [dispatcher] so a connect hung on marginal RF
+     * contact is force-closed instead of wedging the OS NFC stack (this
+     * runs on passive/idle taps too, where no awaitTerminal I/O-grace is
+     * watching — the watchdog is the only bound there).
+     */
+    suspend fun parseVendor(
+        tag: Tag,
+        settings: VendorSettings,
+        dispatcher: CoroutineDispatcher,
+    ): OpenSpoolPayload? {
         val techList = tag.techList?.toList().orEmpty()
         val attempts = if (techList.contains(MifareClassic::class.java.name)) MAX_READ_ATTEMPTS else 1
         repeat(attempts) {
-            val parsed = parseVendorOnce(tag, settings)
+            val parsed = try {
+                parseVendorOnce(tag, settings, dispatcher)
+            } catch (e: TagIoWatchdogTimeoutException) {
+                // Hung tech connection was force-closed by the watchdog.
+                // Retrying a wedged tag handle is pointless (the retry loop
+                // exists for marginal-tap auth GAPS, not hard I/O hangs),
+                // and rethrowing would crash the out-of-band handleTag
+                // launch. Treat as "no prefill".
+                return null
+            }
             if (parsed != null) return parsed
         }
         return null
     }
 
-    private fun parseVendorOnce(tag: Tag, settings: VendorSettings): OpenSpoolPayload? {
+    private suspend fun parseVendorOnce(
+        tag: Tag,
+        settings: VendorSettings,
+        dispatcher: CoroutineDispatcher,
+    ): OpenSpoolPayload? {
         val techList = tag.techList?.toList().orEmpty()
         val candidates = VendorTagRegistry.processors.filter {
             it.isEnabled(settings) && it.matchesChipType(techList)
@@ -76,7 +101,7 @@ object TagFormatParser {
             }
         } else emptyList()
         if (ultralightCandidates.isNotEmpty()) {
-            val raw = MifareUltralightReader.tryReadPages(tag) ?: return null
+            val raw = MifareUltralightReader.tryReadPagesBounded(tag, dispatcher = dispatcher) ?: return null
             for (proc in ultralightCandidates) {
                 val parsed = proc.parse(uid, raw, auth = null, settings = settings)
                 if (parsed != null) return parsed
@@ -99,7 +124,7 @@ object TagFormatParser {
         }
         if (authMap.isEmpty()) return null
 
-        val (raw, counts) = MifareClassicReader.tryReadRawCountedMulti(tag, authMap)
+        val (raw, counts) = MifareClassicReader.tryReadRawCountedMultiBounded(tag, authMap, dispatcher)
         if (raw == null) return null
 
         // Only let a vendor parse the chip if its OWN keys authenticated at

@@ -6,10 +6,15 @@ import io.mockk.every
 import io.mockk.mockk
 import io.mockk.mockkStatic
 import io.mockk.unmockkStatic
+import io.mockk.verify
+import java.util.concurrent.CountDownLatch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
@@ -70,5 +75,34 @@ class MifareUltralightReaderTest {
         every { MifareUltralight.get(tag) } returns mu
         every { mu.connect() } throws java.io.IOException("not connected")
         assertNull(MifareUltralightReader.tryReadPages(tag))
+    }
+
+    // runBlocking + a real 500ms timeout: deterministically after worker
+    // start + register(), before the (hung) session could ever finish.
+    @Test fun `bounded read force-closes a hung connect`() = runBlocking {
+        // Marginal RF contact: connect() blocks like a stuck binder call
+        // and only close() aborts it. The watchdog must trip, close the
+        // tech, and surface a plain IOException.
+        val tag = mockk<Tag>(relaxed = true)
+        val mu = mockk<MifareUltralight>(relaxed = true)
+        every { MifareUltralight.get(tag) } returns mu
+        val unblock = CountDownLatch(1)
+        every { mu.connect() } answers { unblock.await() }
+        every { mu.close() } answers { unblock.countDown() }
+
+        val thrown = runCatching {
+            MifareUltralightReader.tryReadPagesBounded(
+                tag,
+                dispatcher = Dispatchers.Default,
+                timeoutMs = 500L,
+            )
+        }.exceptionOrNull()
+
+        assertNotNull("watchdog must throw on a hung session", thrown)
+        assertTrue(
+            "expected watchdog IOException, got $thrown",
+            thrown is java.io.IOException && thrown.message!!.contains("watchdog"),
+        )
+        verify { mu.close() } // watchdog force-closed the hung tech
     }
 }

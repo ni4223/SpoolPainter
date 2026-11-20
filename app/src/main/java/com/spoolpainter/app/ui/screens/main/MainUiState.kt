@@ -88,6 +88,14 @@ data class FormState(
     // is set, the ViewModel commits remaining = measuredEntry − emptySpool.
     val weightMethod: WeightMethod = WeightMethod.Measured,
     val measuredEntry: Float? = null,
+
+    // SpoolmanDB import — the external filament this form was seeded from.
+    // No UI field; rides SaveToSpoolmanInput so the save chain stamps
+    // filament+vendor with the external_id (Spoolman highlights the DB
+    // origin) and carries the DB diameter. Cleared when a filament/spool
+    // selection takes over the save path; kept on manual field edits.
+    val externalFilamentId: String? = null,
+    val externalDiameterMm: Double? = null,
 )
 
 /**

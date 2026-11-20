@@ -7,6 +7,7 @@ import com.spoolpainter.app.domain.models.Brand
 import com.spoolpainter.app.domain.models.Material
 import com.spoolpainter.app.domain.models.SpoolmanFilament
 import com.spoolpainter.app.domain.models.SpoolmanSpool
+import com.spoolpainter.app.domain.models.SpoolmanTag
 import com.spoolpainter.app.domain.models.SpoolmanVendor
 import com.spoolpainter.app.domain.models.TempRanges
 import com.spoolpainter.app.domain.primitives.CardUid
@@ -285,6 +286,64 @@ class MainViewModelTwoTagTest {
     }
 
     @Test
+    fun `UI-44 tags-only spool counts native tags`() = runTest {
+        // NATIVE_ONLY reality: no extra.card_uids mirror, the paired UIDs
+        // live exclusively in the native spool.tags list (server >= 0.27).
+        val vm = newVm()
+        val nativeOnly = sampleSpool.copy(
+            tags = listOf(
+                SpoolmanTag(uid = "AABBCCDD", added = "2026-01-01T00:00:00Z"),
+                SpoolmanTag(uid = "11223344", added = "2026-01-02T00:00:00Z"),
+            ),
+        )
+        primeFormForWrite(vm)
+        spoolman.setSpools(listOf(nativeOnly))
+        vm.onSpoolSelected(nativeOnly)
+        createAndPair.nextResult = CreateAndPairResult.Success.WrittenAndPaired(
+            spoolId = 42, uid = sampleUid, isNewSpool = false,
+        )
+        vm.onWriteTapped()
+
+        vm.effects.test {
+            vm.onPairAnotherTagDismissed()
+            val emission = awaitNonAmbientSnackbar()
+            assertEquals(
+                "Tag written and paired. This spool now has 2 tags.",
+                emission.message,
+            )
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `UI-44 overlapping card_uids and tags counts deduped union`() = runTest {
+        // BOTH mode with one UID present in both sources: the count is the
+        // deduped union (2 legacy + 1 native-only = 3), not the naive sum.
+        val vm = newVm()
+        val bothSources = sampleSpool.copy(
+            extra = mapOf("card_uids" to "\"AABBCCDD,11223344\""),
+            tags = listOf(SpoolmanTag(uid = "AABBCCDD"), SpoolmanTag(uid = "CAFEBABE")),
+        )
+        primeFormForWrite(vm)
+        spoolman.setSpools(listOf(bothSources))
+        vm.onSpoolSelected(bothSources)
+        createAndPair.nextResult = CreateAndPairResult.Success.WrittenAndPaired(
+            spoolId = 42, uid = sampleUid, isNewSpool = false,
+        )
+        vm.onWriteTapped()
+
+        vm.effects.test {
+            vm.onPairAnotherTagDismissed()
+            val emission = awaitNonAmbientSnackbar()
+            assertEquals(
+                "Tag written and paired. This spool now has 3 tags.",
+                emission.message,
+            )
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
     fun `applyTwoTagResult VendorTagRejected reroutes to vendor pair flow`() = runTest {
         // Per U7: when the second tag is vendor-classified, instead of
         // surfacing a snackbar we re-route through the vendor UID-only pair
@@ -303,6 +362,47 @@ class MainViewModelTwoTagTest {
         assertNotNull(vm.state.value.form.material)
         // Vendor use-case was invoked once.
         assertEquals(1, vendorUidOnlyPair.invokeCalls)
+    }
+
+    @Test
+    fun `re-routed vendor pair is cancellable via the Write toggle`() = runTest {
+        // The re-route launch is stored in writeJob (superseding the
+        // completing two-tag job) so the PairingVendorUidOnly escape hatch
+        // actually reaches it — without this, the second-tag flow wedged with
+        // no user-facing Cancel.
+        val vm = newVm()
+        stagePromptingPairAnother(vm)
+        twoTag.nextResult = TwoTagResult.VendorTagRejected(CardUid("11223344"))
+        vendorUidOnlyPair.nextResult = com.spoolpainter.app.domain.usecases.VendorUidOnlyPairResult.Cancelled("delay-stub")
+        vendorUidOnlyPair.nextDelayMs = 50L
+
+        vm.onPairAnotherTagAccepted()
+        assertEquals(ActiveFlow.PairingVendorUidOnly, vm.state.value.activeFlow)
+        assertTrue(vm.isWriteCancellable.value)
+
+        vm.onWriteTapped() // Cancel toggle
+        assertEquals(ActiveFlow.Idle, vm.state.value.activeFlow)
+    }
+
+    @Test
+    fun `re-routed vendor pair throwing returns activeFlow to Idle instead of wedging`() = runTest {
+        // Wedge regression for the re-route site: the old MoveOnBindConfirmer
+        // check() throw (vendor tag already bound to another spool →
+        // move-on-bind) killed this coroutine with activeFlow stranded in
+        // PairingVendorUidOnly — both buttons dead until restart.
+        val vm = newVm()
+        stagePromptingPairAnother(vm)
+        twoTag.nextResult = TwoTagResult.VendorTagRejected(CardUid("11223344"))
+        vendorUidOnlyPair.nextThrowable = IllegalStateException("another request is already pending")
+
+        vm.effects.test {
+            vm.onPairAnotherTagAccepted()
+            val emission = awaitNonAmbientSnackbar()
+            assertEquals("Something went wrong. Please try again.", emission.message)
+            cancelAndIgnoreRemainingEvents()
+        }
+        assertEquals(ActiveFlow.Idle, vm.state.value.activeFlow)
+        assertTrue("canWrite should re-enable after the catch", vm.canWrite.value)
     }
 
     @Test

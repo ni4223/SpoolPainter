@@ -128,4 +128,39 @@ class SettingsRepositoryTest {
             cancelAndIgnoreRemainingEvents()
         }
     }
+
+    @Test
+    fun `legacy settings json without tagStorageMode decodes to BOTH`() = runTest {
+        // Payload shape from before the native-tag feature: no
+        // tagStorageMode key at all.
+        val legacy = """
+            {"url": "http://nas.local:7912", "themeOverride": "Light"}
+        """.trimIndent()
+        val settings = SettingsSerializer.readFrom(legacy.byteInputStream())
+        assertEquals(TagStorageMode.BOTH, settings.tagStorageMode)
+        assertEquals("http://nas.local:7912", settings.url)
+    }
+
+    @Test
+    fun `default settings carry tagStorageMode BOTH`() = runTest {
+        repository.settings.test {
+            assertEquals(TagStorageMode.BOTH, awaitItem().tagStorageMode)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `setTagStorageMode updates settings flow and persists`() = runTest {
+        repository.settings.test {
+            assertEquals(TagStorageMode.BOTH, awaitItem().tagStorageMode)
+            repository.setTagStorageMode(TagStorageMode.NATIVE_ONLY)
+            assertEquals(TagStorageMode.NATIVE_ONLY, awaitItem().tagStorageMode)
+            repository.setTagStorageMode(TagStorageMode.LEGACY_ONLY)
+            assertEquals(TagStorageMode.LEGACY_ONLY, awaitItem().tagStorageMode)
+            cancelAndIgnoreRemainingEvents()
+        }
+        // awaitSettings reads the raw DataStore flow, i.e. the disk-backed
+        // value, proving the write persisted rather than staying in-memory.
+        assertEquals(TagStorageMode.LEGACY_ONLY, repository.awaitSettings().tagStorageMode)
+    }
 }

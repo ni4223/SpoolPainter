@@ -1,8 +1,10 @@
 package com.spoolpainter.app.data.remote.spoolman
 
+import com.spoolpainter.app.domain.models.ExternalFilament
 import com.spoolpainter.app.domain.models.SpoolmanFilament
 import com.spoolpainter.app.domain.models.SpoolmanInfo
 import com.spoolpainter.app.domain.models.SpoolmanSpool
+import com.spoolpainter.app.domain.models.SpoolmanTag
 import com.spoolpainter.app.domain.models.SpoolmanVendor
 import retrofit2.Response
 import retrofit2.http.Body
@@ -18,11 +20,21 @@ interface SpoolmanApi {
     @GET("api/v1/info")
     suspend fun getInfo(): Response<SpoolmanInfo>
 
+    /** SpoolmanDB search (server ≥ 0.26.0; offset paging ≥ 0.27.0). Raw
+     *  [Response] so callers can read the `x-total-count` header. */
+    @GET("api/v1/external/filament/search")
+    suspend fun searchExternalFilaments(
+        @Query("query") query: String,
+        @Query("limit") limit: Int,
+        @Query("offset") offset: Int,
+    ): Response<List<ExternalFilament>>
+
     @GET("api/v1/spool")
     suspend fun listSpools(
         @Query("limit") limit: Int? = null,
         @Query("offset") offset: Int? = null,
         @Query("allow_archived") allowArchived: Boolean? = null,
+        @Query("tag") tag: String? = null,
     ): Response<List<SpoolmanSpool>>
 
     @GET("api/v1/spool/{id}")
@@ -66,6 +78,25 @@ interface SpoolmanApi {
 
     @DELETE("api/v1/spool/{id}")
     suspend fun deleteSpool(@Path("id") spoolId: Int): Response<Unit>
+
+    /** Native tags (server ≥ 0.27.0). Linking a UID the same spool already
+     *  holds is idempotent (201 again); a UID linked to ANOTHER spool or a
+     *  filament yields 409 with a JSON conflict body (message + spool_id/
+     *  filament_id of the holder). UIDs are globally unique across spools. */
+    @POST("api/v1/spool/{id}/tag")
+    suspend fun linkTag(
+        @Path("id") spoolId: Int,
+        @Body body: TagLinkBody,
+    ): Response<SpoolmanTag>
+
+    /** Native tags (server ≥ 0.27.0). 404 when the spool is unknown or does
+     *  not hold this UID. The server normalizes the UID path segment (case,
+     *  separators, 0x prefix), so callers may pass any spelling. */
+    @DELETE("api/v1/spool/{id}/tag/{uid}")
+    suspend fun unlinkTag(
+        @Path("id") spoolId: Int,
+        @Path("uid") uid: String,
+    ): Response<Unit>
 
     @GET("api/v1/field/{entityType}")
     suspend fun listFields(@Path("entityType") entityType: String): Response<List<ExtraFieldDef>>

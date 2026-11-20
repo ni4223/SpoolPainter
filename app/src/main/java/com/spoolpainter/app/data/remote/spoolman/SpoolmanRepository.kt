@@ -4,12 +4,19 @@ import com.google.gson.Gson
 import com.google.gson.JsonParseException
 import com.google.gson.JsonSyntaxException
 import com.spoolpainter.app.data.local.SettingsRepository
+import com.spoolpainter.app.data.local.TagStorageMode
 import com.spoolpainter.app.data.local.presets.MaterialPresetSource
 import com.spoolpainter.app.di.AppScope
 import com.spoolpainter.app.di.IoDispatcher
+import com.spoolpainter.app.domain.models.ExternalFilamentPage
 import com.spoolpainter.app.domain.models.SpoolmanFilament
+import com.spoolpainter.app.domain.models.SpoolmanInfo
 import com.spoolpainter.app.domain.models.SpoolmanSpool
 import com.spoolpainter.app.domain.models.SpoolmanVendor
+import com.spoolpainter.app.domain.models.TagSyncConflict
+import com.spoolpainter.app.domain.models.TagSyncState
+import com.spoolpainter.app.domain.models.parseTagConflict
+import com.spoolpainter.app.domain.models.supportsNativeTags
 import com.spoolpainter.app.domain.primitives.CardUid
 import com.spoolpainter.app.domain.primitives.ColorHexCodec
 import com.spoolpainter.app.domain.primitives.ExtraCardUidsCodec
@@ -55,6 +62,15 @@ open class SpoolmanRepository @Inject constructor(
     private val _spools = MutableStateFlow<List<SpoolmanSpool>>(emptyList())
     open val spools: StateFlow<List<SpoolmanSpool>> = _spools.asStateFlow()
 
+    // Latest GET api/v1/info payload (refreshed by testConnection — the only
+    // place info is probed today). Drives supportsExternalDbSearch() gating.
+    private val _serverInfo = MutableStateFlow<SpoolmanInfo?>(null)
+    open val serverInfo: StateFlow<SpoolmanInfo?> = _serverInfo.asStateFlow()
+
+    // Issue #19 Phase 4 — latest completed legacy→native mirror run.
+    private val _tagSyncState = MutableStateFlow<TagSyncState>(TagSyncState.Idle)
+    open val tagSyncState: StateFlow<TagSyncState> = _tagSyncState.asStateFlow()
+
     @Volatile
     private var cachedApi: SpoolmanApi? = null
 
@@ -71,6 +87,7 @@ open class SpoolmanRepository @Inject constructor(
                 _vendors.value = emptyList()
                 _filaments.value = emptyList()
                 _spools.value = emptyList()
+                _serverInfo.value = null
                 _connectivity.value = ConnectivityState.Unknown
                 // Auto-register extra-field schemas + populate caches on every
                 // URL bind. The user shouldn't have to tap Test Connection or
@@ -86,21 +103,82 @@ open class SpoolmanRepository @Inject constructor(
     open suspend fun testConnection(): SpoolmanOutcome<String> {
         val api = cachedApi ?: return urlNotConfigured()
         return performHttp("getInfo") { api.getInfo() }.map { info ->
+            _serverInfo.value = info
+            // The version gate just became evaluable — kick the one-shot
+            // legacy→native mirror in the background (collapses when a
+            // run is already in flight).
+            scope.launch { runCatching { syncLegacyTagsToNative() } }
             info.version ?: "unknown"
+        }
+    }
+
+    /**
+     * SpoolmanDB search — `GET /api/v1/external/filament/search` (server
+     * ≥ 0.26.0, gate via [supportsExternalDbSearch]). Returns the page plus
+     * the total match count from the `x-total-count` response header; when
+     * the header is absent (older servers — gated anyway) it falls back to
+     * the page size.
+     */
+    open suspend fun searchExternalFilaments(
+        query: String,
+        limit: Int = 20,
+        offset: Int = 0,
+    ): SpoolmanOutcome<ExternalFilamentPage> {
+        val api = cachedApi ?: return urlNotConfigured()
+        return performHttpResponse("searchExternalFilaments") {
+            api.searchExternalFilaments(query, limit, offset)
+        }.map { response ->
+            val items = response.body()!!
+            // OkHttp header lookup is case-insensitive, so "x-total-count"
+            // matches however the server capitalises it.
+            val totalCount = response.headers()["x-total-count"]
+                ?.trim()
+                ?.toIntOrNull()
+                ?: items.size
+            ExternalFilamentPage(items = items, totalCount = totalCount)
         }
     }
 
     open suspend fun findSpoolsByCardUid(uid: CardUid): SpoolmanOutcome<List<SpoolmanSpool>> {
         if (uid.hex.isEmpty()) return SpoolmanOutcome.Success(emptyList())
         val api = cachedApi ?: return urlNotConfigured()
-        return performHttp("listSpools") {
+        // NATIVE_ONLY trusts the server's tag store exclusively — no bulk
+        // legacy scan (stale extra fields must not produce phantom hits).
+        if (nativeTagsEnabled() && tagStorageMode() == TagStorageMode.NATIVE_ONLY) {
+            return performHttp("listSpools") {
+                api.listSpools(limit = 1000, offset = 0, allowArchived = true, tag = uid.hex)
+            }
+        }
+        val legacy = findSpoolsByCardUidLegacy(api, uid)
+        if (!nativeTagsEnabled() || legacy !is SpoolmanOutcome.Success) return legacy
+        // BOTH: union of both stores, native hit first, deduped by spool id.
+        // The native lookup only augments the legacy scan — its failure is
+        // logged and never masks legacy hits.
+        val native = performHttp("listSpools") {
+            api.listSpools(limit = 1000, offset = 0, allowArchived = true, tag = uid.hex)
+        }
+        return if (native is SpoolmanOutcome.Success) {
+            SpoolmanOutcome.Success((native.data + legacy.data).distinctBy { it.id })
+        } else {
+            android.util.Log.d(
+                LOG_TAG,
+                "findSpoolsByCardUid: native tag lookup failed, returning legacy hits only: $native",
+            )
+            legacy
+        }
+    }
+
+    private suspend fun findSpoolsByCardUidLegacy(
+        api: SpoolmanApi,
+        uid: CardUid,
+    ): SpoolmanOutcome<List<SpoolmanSpool>> =
+        performHttp("listSpools") {
             api.listSpools(limit = 1000, offset = 0, allowArchived = true)
         }.map { all ->
             all.filter { spool ->
                 ExtraCardUidsCodec.decode(spool.extra?.get("card_uids") ?: "").contains(uid)
             }
         }
-    }
 
     open suspend fun getSpool(spoolId: Int): SpoolmanOutcome<SpoolmanSpool> {
         val api = cachedApi ?: return urlNotConfigured()
@@ -315,7 +393,76 @@ open class SpoolmanRepository @Inject constructor(
     open suspend fun appendCardUidToSpool(spoolId: Int, uid: CardUid): SpoolmanOutcome<SpoolmanSpool> {
         if (uid.hex.isEmpty()) return invalidArg("uid is empty")
         val api = cachedApi ?: return urlNotConfigured()
-        return executeWithExtraFieldsBootstrap {
+        return when {
+            // LEGACY_ONLY, or the server (as last probed) can't do native
+            // tags: exactly the pre-0.27 behavior, call for call.
+            !nativeTagsEnabled() -> appendCardUidLegacy(api, spoolId, uid)
+            tagStorageMode() == TagStorageMode.NATIVE_ONLY ->
+                appendTagNative(api, spoolId, uid, mirrorLegacyRemoval = false)
+                    .flatMap { fetchSpoolAfterTagWrite(api, spoolId) }
+            else -> {
+                // BOTH: legacy write is the source of truth for the overall
+                // result; the native link runs afterwards, best-effort.
+                val legacy = appendCardUidLegacy(api, spoolId, uid)
+                if (legacy !is SpoolmanOutcome.Success) return legacy
+                val native = appendTagNative(api, spoolId, uid, mirrorLegacyRemoval = true)
+                if (native.isBenignNativeFailure()) {
+                    android.util.Log.d(
+                        LOG_TAG,
+                        "appendCardUidToSpool: native tag write failed after legacy success " +
+                            "(spool=$spoolId uid=$uid): $native",
+                    )
+                    legacy
+                } else {
+                    native.flatMap { legacy }
+                }
+            }
+        }
+    }
+
+    open suspend fun removeCardUidFromSpool(spoolId: Int, uid: CardUid): SpoolmanOutcome<SpoolmanSpool> {
+        if (uid.hex.isEmpty()) return invalidArg("uid is empty")
+        val api = cachedApi ?: return urlNotConfigured()
+        return when {
+            !nativeTagsEnabled() -> removeCardUidLegacy(api, spoolId, uid)
+            tagStorageMode() == TagStorageMode.NATIVE_ONLY ->
+                removeTagNative(api, spoolId, uid)
+                    .flatMap { fetchSpoolAfterTagWrite(api, spoolId) }
+            else -> {
+                val legacy = removeCardUidLegacy(api, spoolId, uid)
+                if (legacy !is SpoolmanOutcome.Success) return legacy
+                val native = removeTagNative(api, spoolId, uid)
+                // Unlink-only broadening (append/link keeps the narrow
+                // benign set): once the legacy removal has succeeded, ANY
+                // native 404 is benign — whatever its flavor, the UID is
+                // not natively linked afterwards, which is the goal state.
+                if (native.isBenignNativeFailure() ||
+                    (native is SpoolmanOutcome.HttpError && native.code == 404)
+                ) {
+                    android.util.Log.d(
+                        LOG_TAG,
+                        "removeCardUidFromSpool: native tag unlink failed after legacy success " +
+                            "(spool=$spoolId uid=$uid): $native",
+                    )
+                    legacy
+                } else {
+                    native.flatMap { legacy }
+                }
+            }
+        }
+    }
+
+    /**
+     * The pre-0.27 read-modify-write on `extra.card_uids`, including the lazy
+     * extra-fields bootstrap retry. Kept verbatim so the LEGACY_ONLY /
+     * old-server paths stay call-for-call compatible with the v2.0 behavior.
+     */
+    private suspend fun appendCardUidLegacy(
+        api: SpoolmanApi,
+        spoolId: Int,
+        uid: CardUid,
+    ): SpoolmanOutcome<SpoolmanSpool> =
+        executeWithExtraFieldsBootstrap {
             performHttp("getSpool") { api.getSpool(spoolId) }.flatMap { spool ->
                 val current = ExtraCardUidsCodec.decode(spool.extra?.get("card_uids") ?: "")
                 if (uid in current) {
@@ -336,12 +483,14 @@ open class SpoolmanRepository @Inject constructor(
                 }
             }
         }
-    }
 
-    open suspend fun removeCardUidFromSpool(spoolId: Int, uid: CardUid): SpoolmanOutcome<SpoolmanSpool> {
-        if (uid.hex.isEmpty()) return invalidArg("uid is empty")
-        val api = cachedApi ?: return urlNotConfigured()
-        return executeWithExtraFieldsBootstrap {
+    /** Legacy sibling of [appendCardUidLegacy] for UID removal. */
+    private suspend fun removeCardUidLegacy(
+        api: SpoolmanApi,
+        spoolId: Int,
+        uid: CardUid,
+    ): SpoolmanOutcome<SpoolmanSpool> =
+        executeWithExtraFieldsBootstrap {
             performHttp("getSpool") { api.getSpool(spoolId) }.flatMap { spool ->
                 val current = ExtraCardUidsCodec.decode(spool.extra?.get("card_uids") ?: "")
                 if (uid !in current) {
@@ -362,7 +511,106 @@ open class SpoolmanRepository @Inject constructor(
                 }
             }
         }
+
+    /**
+     * Native `POST /api/v1/spool/{id}/tag` (server ≥ 0.27.0). A 409 whose
+     * conflict body names another spool triggers MOVE semantics: the tag is
+     * DELETEd from the holder, POSTed to the target, and — when
+     * [mirrorLegacyRemoval] is set (BOTH mode) — the removal is mirrored
+     * into the holder's legacy `extra.card_uids` so both stores stay
+     * consistent. A 409 held by a filament / any non-spool holder surfaces
+     * as a distinct 409 error. The UID is sent as-is: CardUid.hex is
+     * already uppercase hex without separators.
+     */
+    private suspend fun appendTagNative(
+        api: SpoolmanApi,
+        spoolId: Int,
+        uid: CardUid,
+        mirrorLegacyRemoval: Boolean,
+    ): SpoolmanOutcome<Unit> {
+        val link = performHttp("linkTag") { api.linkTag(spoolId, TagLinkBody(uid = uid.hex)) }
+        return when {
+            link is SpoolmanOutcome.Success -> SpoolmanOutcome.Success(Unit)
+            link is SpoolmanOutcome.HttpError && link.code == 409 ->
+                resolveTagConflict(api, link, spoolId, uid, mirrorLegacyRemoval)
+            else -> link.map { }
+        }
     }
+
+    private suspend fun resolveTagConflict(
+        api: SpoolmanApi,
+        conflictError: SpoolmanOutcome.HttpError,
+        targetSpoolId: Int,
+        uid: CardUid,
+        mirrorLegacyRemoval: Boolean,
+    ): SpoolmanOutcome<Unit> {
+        val conflict = parseTagConflict(conflictError.message)
+        return when (val holder = conflict?.spool_id) {
+            null -> SpoolmanOutcome.HttpError(
+                409,
+                "UID ${uid.hex} is held elsewhere on the server and cannot be moved automatically" +
+                    (conflict?.message?.let { ": $it" } ?: ""),
+            )
+            // Defensive: the server already counts the UID as ours.
+            targetSpoolId -> SpoolmanOutcome.Success(Unit)
+            else -> {
+                val unlink = performHttp("unlinkTag") { api.unlinkTag(holder, uid.hex) }
+                if (unlink !is SpoolmanOutcome.Success) return unlink.map { }
+                if (mirrorLegacyRemoval) {
+                    val mirror = removeCardUidLegacy(api, holder, uid)
+                    if (mirror !is SpoolmanOutcome.Success) {
+                        android.util.Log.d(
+                            LOG_TAG,
+                            "tag move: legacy mirror removal from spool $holder failed: $mirror",
+                        )
+                    }
+                }
+                performHttp("linkTag") { api.linkTag(targetSpoolId, TagLinkBody(uid = uid.hex)) }
+                    .map { }
+            }
+        }
+    }
+
+    /**
+     * Native `DELETE /api/v1/spool/{id}/tag/{uid}`. Idempotent: a 404
+     * saying the spool has no such tag counts as success — accepted
+     * phrasings are "no such tag", "tag not found", and the real Spoolman
+     * 0.27.0 wording "Spool N has no tag with UID X." ("has no tag"). A
+     * 404 for an unknown spool (or any other failure) is an error.
+     */
+    private suspend fun removeTagNative(
+        api: SpoolmanApi,
+        spoolId: Int,
+        uid: CardUid,
+    ): SpoolmanOutcome<Unit> {
+        val unlink = performHttp("unlinkTag") { api.unlinkTag(spoolId, uid.hex) }
+        return when {
+            unlink is SpoolmanOutcome.Success -> SpoolmanOutcome.Success(Unit)
+            unlink is SpoolmanOutcome.HttpError && unlink.code == 404 &&
+                (unlink.message.contains("no such tag", ignoreCase = true) ||
+                    unlink.message.contains("tag not found", ignoreCase = true) ||
+                    unlink.message.contains("has no tag", ignoreCase = true)) ->
+                SpoolmanOutcome.Success(Unit)
+            else -> unlink.map { }
+        }
+    }
+
+    /**
+     * NATIVE_ONLY tag writes don't PATCH the spool, so the returned
+     * [SpoolmanSpool] is fetched explicitly after the tag mutation — with
+     * the same cache-swap + fire-and-forget refresh the legacy path does.
+     */
+    private suspend fun fetchSpoolAfterTagWrite(
+        api: SpoolmanApi,
+        spoolId: Int,
+    ): SpoolmanOutcome<SpoolmanSpool> =
+        performHttp("getSpool") { api.getSpool(spoolId) }
+            .also { o ->
+                if (o is SpoolmanOutcome.Success) {
+                    replaceSpoolInCache(o.data)
+                    refreshAfterWrite()
+                }
+            }
 
     // F-6 (v2.0.3): throttled refresh used by app-foreground hook + Read-arm
     // path + pull-to-refresh. Mutex serialises concurrent calls so a stale
@@ -440,6 +688,88 @@ open class SpoolmanRepository @Inject constructor(
         scope.launch { runCatching { refresh() } }
     }
 
+    // ---- Issue #19 Phase 4: automatic legacy→native tag migration ----
+
+    private val tagSyncMutex = Mutex()
+    @Volatile
+    private var tagSyncInFlight = false
+
+    /**
+     * Fire-and-forget request for a legacy→native mirror run. Callers
+     * (SettingsViewModel on mode selection) don't await the result — the
+     * outcome surfaces via [tagSyncState].
+     */
+    open fun requestTagSync() {
+        scope.launch { runCatching { syncLegacyTagsToNative() } }
+    }
+
+    /**
+     * One-shot mirror of every legacy `extra.card_uids` UID that has no
+     * native tag yet: one bulk side read of all spools, then one idempotent
+     * `POST /spool/{id}/tag` per missing UID. Mirror-only — `card_uids` is
+     * never written, nothing is ever unlinked, and the caches the UI reads
+     * are left alone. A 409 (UID held by another spool or a filament) is
+     * recorded as a conflict and never resolved by stealing; failures on
+     * individual UIDs don't abort the rest of the run. Concurrent triggers
+     * collapse: while one run holds the mutex, later ones return early.
+     */
+    internal suspend fun syncLegacyTagsToNative() {
+        val api = cachedApi ?: return
+        if (tagStorageMode() == TagStorageMode.LEGACY_ONLY) return
+        if (!nativeTagsEnabled()) return
+        if (tagSyncInFlight) return
+        tagSyncMutex.withLock {
+            if (tagSyncInFlight) return
+            tagSyncInFlight = true
+            try {
+                mirrorLegacyTags(api)
+            } finally {
+                tagSyncInFlight = false
+            }
+        }
+    }
+
+    private suspend fun mirrorLegacyTags(api: SpoolmanApi) {
+        val bulk = performHttp("listSpools") {
+            api.listSpools(limit = 1000, offset = 0, allowArchived = true)
+        }
+        if (bulk !is SpoolmanOutcome.Success) {
+            android.util.Log.d(LOG_TAG, "syncLegacyTagsToNative: bulk fetch failed: $bulk")
+            return
+        }
+        var mirrored = 0
+        var failed = 0
+        val conflicts = mutableListOf<TagSyncConflict>()
+        for (spool in bulk.data) {
+            val spoolId = spool.id ?: continue
+            val legacyUids = ExtraCardUidsCodec.decode(spool.extra?.get("card_uids") ?: "")
+            if (legacyUids.isEmpty()) continue
+            val nativeUids = spool.tags.orEmpty().map { it.uid.uppercase() }.toSet()
+            for (uid in legacyUids) {
+                if (uid.hex in nativeUids) continue
+                when (val link = performHttp("linkTag") { api.linkTag(spoolId, TagLinkBody(uid = uid.hex)) }) {
+                    is SpoolmanOutcome.Success -> mirrored++
+                    is SpoolmanOutcome.HttpError -> if (link.code == 409) {
+                        val conflict = parseTagConflict(link.message)
+                        conflicts += TagSyncConflict(
+                            uid = uid.hex,
+                            targetSpoolId = spoolId,
+                            holderSpoolId = conflict?.spool_id,
+                        )
+                    } else {
+                        failed++
+                    }
+                    else -> failed++
+                }
+            }
+        }
+        _tagSyncState.value = TagSyncState.Finished(mirrored, conflicts.toList(), failed)
+        android.util.Log.d(
+            LOG_TAG,
+            "syncLegacyTagsToNative: mirrored=$mirrored conflicts=${conflicts.size} failed=$failed",
+        )
+    }
+
     open suspend fun createSpoolForNewFilament(req: NewFilamentRequest): SpoolmanOutcome<SpoolmanSpool> =
         createSpoolForNewFilamentBundle(req).map { it.spool }
 
@@ -456,9 +786,20 @@ open class SpoolmanRepository @Inject constructor(
             ?: return invalidArg("materialName is empty")
         val api = cachedApi ?: return urlNotConfigured()
 
-        return resolveOrCreateVendor(api, vendorName)
+        // SpoolmanDB import: when this create originates from an external
+        // filament pick, the vendor's external_id is the manufacturer name
+        // (Spoolman's convention for external-DB vendors).
+        val vendorExternalId = req.externalFilamentId?.let { vendorName }
+
+        return resolveOrCreateVendor(api, vendorName, externalId = vendorExternalId)
             .flatMap { resolvedVendor ->
-                resolveOrCreateFilament(api, resolvedVendor.value, materialName, req)
+                resolveOrCreateFilament(
+                    api,
+                    resolvedVendor.value,
+                    materialName,
+                    req,
+                    externalId = req.externalFilamentId,
+                )
                     .flatMap { resolvedFilament ->
                         createSpoolStep(
                             api,
@@ -496,7 +837,14 @@ open class SpoolmanRepository @Inject constructor(
      */
     open suspend fun ensureExtraFieldsRegistered(): SpoolmanOutcome<Unit> {
         val api = cachedApi ?: return urlNotConfigured()
-        val spoolResult = registerSpoolCardUids(api)
+        // NATIVE_ONLY keeps card UIDs in the server's native tag store — the
+        // spool card_uids extra field is deliberately NOT registered so the
+        // Spoolman UI doesn't grow a field this app won't maintain.
+        val spoolResult = if (tagStorageMode() == TagStorageMode.NATIVE_ONLY) {
+            SpoolmanOutcome.Success(Unit)
+        } else {
+            registerSpoolCardUids(api)
+        }
         val filamentResult = registerFilamentVariant(api)
         return when {
             spoolResult is SpoolmanOutcome.Success && filamentResult is SpoolmanOutcome.Success ->
@@ -576,13 +924,16 @@ open class SpoolmanRepository @Inject constructor(
     internal suspend fun resolveOrCreateVendor(
         api: SpoolmanApi,
         name: String,
+        externalId: String? = null,
     ): SpoolmanOutcome<Resolved<SpoolmanVendor>> {
         return performHttp("listVendors") { api.listVendors() }.flatMap { list ->
             val match = list.firstOrNull { it.name.equals(name, ignoreCase = true) && it.id != null }
             if (match != null) {
                 SpoolmanOutcome.Success(Resolved(match, wasCreatedFresh = false))
             } else {
-                performHttp("createVendor") { api.createVendor(CreateVendorRequest(name)) }
+                performHttp("createVendor") {
+                    api.createVendor(CreateVendorRequest(name, external_id = externalId))
+                }
                     .also { outcome -> if (outcome is SpoolmanOutcome.Success) prependVendor(outcome.data) }
                     .map { vendor -> Resolved(vendor, wasCreatedFresh = true) }
             }
@@ -594,13 +945,42 @@ open class SpoolmanRepository @Inject constructor(
         vendor: SpoolmanVendor,
         materialName: String,
         req: NewFilamentRequest,
+        externalId: String? = null,
     ): SpoolmanOutcome<Resolved<SpoolmanFilament>> {
         val vendorId = vendor.id ?: return SpoolmanOutcome.ParseError(
             IllegalStateException("vendor.id missing for ${vendor.name}"),
         )
+        // SpoolmanDB import: an exact external_id match wins over the fuzzy
+        // material/colour matcher — if this external filament was already
+        // imported once, reuse that record instead of POSTing a duplicate.
+        if (externalId != null) {
+            _filaments.value.firstOrNull { it.external_id == externalId }?.let { cached ->
+                android.util.Log.d(
+                    "SpoolmanRepo",
+                    "external filament match hit: id=${cached.id} externalId=$externalId",
+                )
+                return SpoolmanOutcome.Success(Resolved(cached, wasCreatedFresh = false))
+            }
+        }
         val variantNormalised = canonVariant(req.variant)
         val targetHex = ColorHexCodec.canonicalise(req.colorHex)
         return performHttp("listFilaments") { api.listFilaments() }.flatMap { list ->
+            // SpoolmanDB import: also dedup against the LIVE list — the
+            // in-memory cache above can be stale when the same external
+            // filament was imported elsewhere (e.g. via the Spoolman web UI)
+            // since our last refresh. Exact external_id beats the fuzzy
+            // matcher; backfill the cache (prependFilament is id-deduped) so
+            // subsequent calls take the early shortcut above.
+            if (externalId != null) {
+                list.firstOrNull { it.external_id == externalId }?.let { live ->
+                    android.util.Log.d(
+                        "SpoolmanRepo",
+                        "external filament live-list match hit: id=${live.id} externalId=$externalId",
+                    )
+                    prependFilament(live)
+                    return@flatMap SpoolmanOutcome.Success(Resolved(live, wasCreatedFresh = false))
+                }
+            }
             val match = list.firstOrNull { f ->
                 if (f.vendor?.id != vendorId) return@firstOrNull false
                 if (!(f.material ?: "").equals(materialName, ignoreCase = true)) return@firstOrNull false
@@ -643,13 +1023,18 @@ open class SpoolmanRepository @Inject constructor(
                                 settings_bed_temp = req.tempRanges.bedMin,
                                 density = req.expanderOverrides.density
                                     ?: MaterialPresetSource.densityFor(materialName),
+                                // diameterMm (SpoolmanDB import) behaves like an
+                                // explicit override: form overrides win, then the
+                                // external value, then the 1.75mm default.
                                 diameter = req.expanderOverrides.diameter
+                                    ?: req.diameterMm?.toFloat()
                                     ?: MaterialPresetSource.DEFAULT_DIAMETER_MM,
                                 weight = req.expanderOverrides.weight
                                     ?: MaterialPresetSource.DEFAULT_FULL_SPOOL_WEIGHT_G,
                                 spool_weight = req.expanderOverrides.spoolWeight,
                                 price = req.expanderOverrides.price,
                                 extra = extras,
+                                external_id = externalId,
                             ),
                         )
                     }.also { outcome -> if (outcome is SpoolmanOutcome.Success) prependFilament(outcome.data) }
@@ -680,7 +1065,18 @@ open class SpoolmanRepository @Inject constructor(
     private suspend inline fun <T> performHttp(
         label: String,
         crossinline block: suspend () -> Response<T>,
-    ): SpoolmanOutcome<T> = withContext(ioDispatcher) {
+    ): SpoolmanOutcome<T> = performHttpResponse<T>(label, block).map { it.body()!! }
+
+    /**
+     * [performHttp]'s header-aware sibling: returns the raw retrofit
+     * [Response] so callers can read response headers (e.g. the
+     * `x-total-count` total-count header of the external filament search).
+     * Body-null / error semantics are identical to [performHttp].
+     */
+    private suspend inline fun <T> performHttpResponse(
+        label: String,
+        crossinline block: suspend () -> Response<T>,
+    ): SpoolmanOutcome<Response<T>> = withContext(ioDispatcher) {
         try {
             val response = block()
             when {
@@ -695,7 +1091,7 @@ open class SpoolmanRepository @Inject constructor(
                     SpoolmanOutcome.ParseError(IllegalStateException("empty body for $label"))
                 else -> {
                     _connectivity.value = ConnectivityState.Reachable
-                    SpoolmanOutcome.Success(response.body()!!)
+                    SpoolmanOutcome.Success(response)
                 }
             }
         } catch (e: CancellationException) {
@@ -717,6 +1113,31 @@ open class SpoolmanRepository @Inject constructor(
     private fun httpError(code: Int, message: String): SpoolmanOutcome<Nothing> {
         _connectivity.value = ConnectivityState.Reachable
         return SpoolmanOutcome.HttpError(code, message)
+    }
+
+    /**
+     * Tag storage mode, read synchronously at call time. [SettingsRepository.settings]
+     * is an eagerly-started `stateIn`, so `.value` carries the freshest
+     * emitted mode without suspending.
+     */
+    private fun tagStorageMode(): TagStorageMode = settings.settings.value.tagStorageMode
+
+    /**
+     * The native tag store participates only when the mode allows it AND the
+     * last-probed server version is ≥ 0.27.0. Unprobed (null) or unparsable
+     * versions fail closed → legacy-only behavior.
+     */
+    private fun nativeTagsEnabled(): Boolean =
+        tagStorageMode() != TagStorageMode.LEGACY_ONLY && _serverInfo.value.supportsNativeTags()
+
+    /**
+     * Native-op failures that must not fail a BOTH-mode call whose legacy
+     * write already succeeded: transport errors and server-side 5xx.
+     */
+    private fun SpoolmanOutcome<*>.isBenignNativeFailure(): Boolean = when (this) {
+        is SpoolmanOutcome.NetworkError -> true
+        is SpoolmanOutcome.HttpError -> code >= 500
+        else -> false
     }
 
     private fun urlNotConfigured(): SpoolmanOutcome<Nothing> {
@@ -776,7 +1197,29 @@ open class SpoolmanRepository @Inject constructor(
 
     private companion object {
         val GSON = Gson()
+        const val LOG_TAG = "SpoolmanRepo"
     }
 }
 
 class UrlNotConfiguredException : IOException("Spoolman URL not configured")
+
+/**
+ * `/api/v1/external/filament/search` shipped in Spoolman 0.26.0 (offset
+ * paging in 0.27.0). Gate: parsed (major, minor, patch) ≥ (0, 26, 0).
+ * A null receiver, a null/blank version, or anything that doesn't parse as
+ * a clean dotted numeric triple (pre-releases like "0.26.0-beta" included)
+ * fails closed → false.
+ */
+fun SpoolmanInfo?.supportsExternalDbSearch(): Boolean {
+    if (this == null) return false
+    val parts = version?.trim()?.split('.') ?: return false
+    if (parts.size != 3) return false
+    val major = parts[0].toIntOrNull() ?: return false
+    val minor = parts[1].toIntOrNull() ?: return false
+    if (parts[2].toIntOrNull() == null) return false
+    return when {
+        major != 0 -> major > 0
+        minor != 26 -> minor > 26
+        else -> true
+    }
+}

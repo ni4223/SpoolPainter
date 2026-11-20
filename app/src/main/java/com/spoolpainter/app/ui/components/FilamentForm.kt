@@ -20,9 +20,11 @@ import androidx.compose.ui.unit.dp
 import com.spoolpainter.app.data.local.FilamentSortKey
 import com.spoolpainter.app.data.local.SortDirection
 import com.spoolpainter.app.domain.models.Brand
+import com.spoolpainter.app.domain.models.ExternalFilament
 import com.spoolpainter.app.domain.models.Material
 import com.spoolpainter.app.domain.models.SpoolmanFilament
 import com.spoolpainter.app.domain.models.TempRanges
+import com.spoolpainter.app.ui.screens.main.ExternalSearchUiState
 import com.spoolpainter.app.ui.screens.main.FormState
 import com.spoolpainter.app.ui.screens.main.WeightMethod
 
@@ -55,6 +57,11 @@ sealed interface FormChange {
     // method input field; the inactive method's input is hidden.
     data class WeightMethodPicked(val value: WeightMethod) : FormChange
     data class ActiveWeightChanged(val value: String) : FormChange
+
+    // SpoolmanDB (external filament database) picks from the picker's
+    // database section; dismissing the origin chip clears the linkage.
+    data class ExternalFilamentPicked(val external: ExternalFilament) : FormChange
+    data object ExternalSelectionCleared : FormChange
 }
 
 /**
@@ -88,6 +95,11 @@ fun FilamentForm(
     onChange: (FormChange) -> Unit,
     modifier: Modifier = Modifier,
     scanSuggestedFilamentIds: List<Int> = emptyList(),
+    // SpoolmanDB — forwarded to the Filament picker's external search section.
+    externalDbLabel: String = "SpoolmanDB",
+    externalSearchState: ExternalSearchUiState = ExternalSearchUiState.Idle,
+    onExternalFilamentQueryChanged: (String) -> Unit = {},
+    onExternalFilamentLoadMore: () -> Unit = {},
 ) {
     val identityEnabled = enabled && !identityLocked
     Column(
@@ -106,6 +118,13 @@ fun FilamentForm(
                 sortDirection = filamentSortDirection,
                 onSelect = { onChange(FormChange.FilamentSelected(it)) },
                 scanSuggestedFilamentIds = scanSuggestedFilamentIds,
+                externalFilamentId = state.externalFilamentId,
+                externalDbLabel = externalDbLabel,
+                externalSearchState = externalSearchState,
+                onExternalFilamentQueryChanged = onExternalFilamentQueryChanged,
+                onExternalFilamentLoadMore = onExternalFilamentLoadMore,
+                onExternalFilamentPicked = { onChange(FormChange.ExternalFilamentPicked(it)) },
+                onExternalSelectionCleared = { onChange(FormChange.ExternalSelectionCleared) },
             )
         }
 

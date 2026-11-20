@@ -1,11 +1,18 @@
 package com.spoolpainter.app.data.remote.spoolman
 
+import com.google.gson.Gson
+import com.spoolpainter.app.domain.models.ExternalFilament
 import com.spoolpainter.app.domain.models.SpoolmanFilament
 import com.spoolpainter.app.domain.models.SpoolmanInfo
 import com.spoolpainter.app.domain.models.SpoolmanSpool
+import com.spoolpainter.app.domain.models.SpoolmanTag
 import com.spoolpainter.app.domain.models.SpoolmanVendor
+import com.spoolpainter.app.domain.models.TagConflictBody
+import okhttp3.Headers
 import okhttp3.ResponseBody.Companion.toResponseBody
 import retrofit2.Response
+
+private val GSON = Gson()
 
 class FakeSpoolmanApi : SpoolmanApi {
 
@@ -16,6 +23,21 @@ class FakeSpoolmanApi : SpoolmanApi {
     var nextVendorId: Int = 1
     var nextFilamentId: Int = 1
     var nextSpoolId: Int = 1
+
+    // SpoolmanDB search stub: naive contains-match over manufacturer/name/
+    // material. totalCount != null also emits the x-total-count header;
+    // null omits it (older-server fallback path).
+    var externalFilamentResults: List<ExternalFilament> = emptyList()
+    var externalFilamentSearchTotalCount: Int? = null
+    var failSearchExternalFilaments: Failure? = null
+    var lastExternalFilamentSearch: Triple<String, Int, Int>? = null
+        private set
+
+    // Captured POST bodies for create-chain assertions.
+    var lastCreateVendorBody: CreateVendorRequest? = null
+        private set
+    var lastCreateFilamentBody: CreateFilamentRequest? = null
+        private set
 
     val spoolExtraFields: MutableSet<String> = mutableSetOf()
     val filamentExtraFields: MutableSet<String> = mutableSetOf()
@@ -40,6 +62,20 @@ class FakeSpoolmanApi : SpoolmanApi {
     var nextSpoolCreateHttpError: Failure.Http? = null
     var failPatchFilament: Failure? = null
 
+    // Native tag store (server ≥ 0.27.0): normalized UID → holding spool id,
+    // globally unique across spools. Mirrors the server's UID normalization
+    // (uppercase hex, separators [ :_.-] and 0x prefix stripped).
+    val spoolTags: MutableMap<String, Int> = mutableMapOf()
+    var lastLinkTagBody: TagLinkBody? = null
+        private set
+    var failLinkTag: Failure? = null
+    var failUnlinkTag: Failure? = null
+
+    // One-shot linkTag failure (consumed on first call), mirroring the
+    // staged-error pattern of nextSpoolPatchHttpError — used to fail a
+    // single UID while later calls succeed.
+    var nextLinkTagFailure: Failure? = null
+
     val callLog: MutableList<String> = mutableListOf()
 
     override suspend fun getInfo(): Response<SpoolmanInfo> {
@@ -48,19 +84,52 @@ class FakeSpoolmanApi : SpoolmanApi {
         return Response.success(info)
     }
 
+    override suspend fun searchExternalFilaments(
+        query: String,
+        limit: Int,
+        offset: Int,
+    ): Response<List<ExternalFilament>> {
+        callLog += "searchExternalFilaments(query=$query,limit=$limit,offset=$offset)"
+        failSearchExternalFilaments?.let { return it.toResponse() }
+        lastExternalFilamentSearch = Triple(query, limit, offset)
+        val matched = if (query.isBlank()) {
+            externalFilamentResults
+        } else {
+            externalFilamentResults.filter {
+                it.manufacturer.contains(query, ignoreCase = true) ||
+                    it.name.contains(query, ignoreCase = true) ||
+                    it.material.contains(query, ignoreCase = true)
+            }
+        }
+        return externalFilamentSearchTotalCount
+            ?.let { total -> Response.success(matched, Headers.headersOf("x-total-count", total.toString())) }
+            ?: Response.success(matched)
+    }
+
     override suspend fun listSpools(
         limit: Int?,
         offset: Int?,
         allowArchived: Boolean?,
+        tag: String?,
     ): Response<List<SpoolmanSpool>> {
-        callLog += "listSpools(limit=$limit,offset=$offset,allowArchived=$allowArchived)"
+        // tag kept out of the legacy log spelling so historical callLog
+        // assertions on the three-arg form stay stable.
+        val tagSuffix = tag?.let { ",tag=$it" } ?: ""
+        callLog += "listSpools(limit=$limit,offset=$offset,allowArchived=$allowArchived$tagSuffix)"
         failListSpools?.let { return it.toResponse() }
         val filtered = if (allowArchived == false) {
             spoolList.filterNot { it.archived }
         } else {
             spoolList.toList()
+        }.let { unarchived ->
+            if (tag == null) {
+                unarchived
+            } else {
+                val holder = spoolTags[normaliseTagUid(tag)]
+                unarchived.filter { it.id == holder }
+            }
         }
-        return Response.success(filtered)
+        return Response.success(filtered.map { it.withNativeTags() })
     }
 
     override suspend fun getSpool(spoolId: Int): Response<SpoolmanSpool> {
@@ -68,7 +137,7 @@ class FakeSpoolmanApi : SpoolmanApi {
         failGetSpool?.let { return it.toResponse() }
         val spool = spoolList.firstOrNull { it.id == spoolId }
             ?: return Response.error(404, "not found".toResponseBody(null))
-        return Response.success(spool)
+        return Response.success(spool.withNativeTags())
     }
 
     override suspend fun listFilaments(): Response<List<SpoolmanFilament>> {
@@ -92,9 +161,10 @@ class FakeSpoolmanApi : SpoolmanApi {
     }
 
     override suspend fun createVendor(body: CreateVendorRequest): Response<SpoolmanVendor> {
-        callLog += "createVendor(${body.name})"
+        callLog += "createVendor(${body.name},external_id=${body.external_id})"
         failCreateVendor?.let { return it.toResponse() }
-        val vendor = SpoolmanVendor(id = nextVendorId++, name = body.name)
+        lastCreateVendorBody = body
+        val vendor = SpoolmanVendor(id = nextVendorId++, name = body.name, external_id = body.external_id)
         vendorList += vendor
         return Response.success(vendor)
     }
@@ -106,6 +176,7 @@ class FakeSpoolmanApi : SpoolmanApi {
             return staged.toResponse()
         }
         failCreateFilament?.let { return it.toResponse() }
+        lastCreateFilamentBody = body
         body.extra?.keys?.forEach { key ->
             if (key !in filamentExtraFields) {
                 return Response.error(400, "Unknown extra field: $key".toResponseBody(null))
@@ -120,6 +191,12 @@ class FakeSpoolmanApi : SpoolmanApi {
             color_hex = body.color_hex,
             settings_extruder_temp = body.settings_extruder_temp,
             settings_bed_temp = body.settings_bed_temp,
+            density = body.density,
+            diameter = body.diameter,
+            weight = body.weight,
+            spool_weight = body.spool_weight,
+            price = body.price,
+            external_id = body.external_id,
             extra = body.extra,
         )
         filamentList += filament
@@ -153,9 +230,61 @@ class FakeSpoolmanApi : SpoolmanApi {
         val removed = spoolList.firstOrNull { it.id == spoolId }
         return if (removed != null) {
             spoolList.remove(removed)
+            spoolTags.entries.removeAll { it.value == spoolId }
             Response.success(Unit)
         } else {
             Response.error(404, "no such spool".toResponseBody(null))
+        }
+    }
+
+    override suspend fun linkTag(spoolId: Int, body: TagLinkBody): Response<SpoolmanTag> {
+        callLog += "linkTag($spoolId,uid=${body.uid})"
+        nextLinkTagFailure?.let { staged ->
+            nextLinkTagFailure = null
+            return staged.toResponse()
+        }
+        failLinkTag?.let { return it.toResponse() }
+        lastLinkTagBody = body
+        if (spoolList.none { it.id == spoolId }) {
+            return Response.error(404, "no such spool".toResponseBody(null))
+        }
+        val key = normaliseTagUid(body.uid)
+        val holder = spoolTags[key]
+        val tag = SpoolmanTag(
+            uid = body.uid,
+            format = body.format,
+            added = "2026-01-01T00:00:00Z",
+        )
+        return when (holder) {
+            null -> {
+                spoolTags[key] = spoolId
+                Response.success(tag)
+            }
+            spoolId -> Response.success(tag)
+            else -> {
+                val conflict = TagConflictBody(
+                    message = "Tag ${body.uid} is already used by spool $holder",
+                    spool_id = holder,
+                )
+                Response.error(409, GSON.toJson(conflict).toResponseBody(null))
+            }
+        }
+    }
+
+    override suspend fun unlinkTag(spoolId: Int, uid: String): Response<Unit> {
+        callLog += "unlinkTag($spoolId,uid=$uid)"
+        failUnlinkTag?.let { return it.toResponse() }
+        if (spoolList.none { it.id == spoolId }) {
+            return Response.error(404, "no such spool".toResponseBody(null))
+        }
+        val key = normaliseTagUid(uid)
+        val holder = spoolTags[key]
+        return if (holder == spoolId) {
+            spoolTags.remove(key)
+            Response.success(Unit)
+        } else {
+            // Real Spoolman 0.27.0 wording for a not-held tag.
+            Response.error(404, "Spool $spoolId has no tag with UID $uid.".toResponseBody(null))
         }
     }
 
@@ -271,6 +400,20 @@ class FakeSpoolmanApi : SpoolmanApi {
     sealed class Failure {
         data class Http(val code: Int, val message: String = "error") : Failure()
         data class Throws(val cause: Throwable) : Failure()
+    }
+
+    private fun normaliseTagUid(uid: String): String =
+        uid.replace(Regex("[:_.\\-]"), "").removePrefix("0x").uppercase()
+
+    /** GET /spool payload shape on ≥ 0.27.0: each spool carries the tags
+     *  the native store holds for it. Spools built directly in fixtures
+     *  keep their own (default empty) list. */
+    private fun SpoolmanSpool.withNativeTags(): SpoolmanSpool {
+        val id = id ?: return this
+        val tags = spoolTags.entries
+            .filter { it.value == id }
+            .map { SpoolmanTag(uid = it.key, added = "2026-01-01T00:00:00Z") }
+        return if (tags.isEmpty()) this else copy(tags = tags)
     }
 
     private fun <T> Failure.toResponse(): Response<T> = when (this) {

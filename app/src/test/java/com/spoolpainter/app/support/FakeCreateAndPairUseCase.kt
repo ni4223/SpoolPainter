@@ -20,12 +20,17 @@ class FakeCreateAndPairUseCase(
 
     var nextDelayMs: Long = 0L
 
+    /** When non-null, invoke() throws this instead of returning [nextResult] —
+     *  drives the runNfcFlowSafely wedge-regression tests. */
+    var nextThrowable: Throwable? = null
+
     override suspend fun invoke(snapshot: CreateAndPairInput): CreateAndPairResult {
         invokeCalls++
         lastInput = snapshot
         if (nextDelayMs > 0L) {
             kotlinx.coroutines.delay(nextDelayMs)
         }
+        nextThrowable?.let { throw it }
         return nextResult
     }
 }

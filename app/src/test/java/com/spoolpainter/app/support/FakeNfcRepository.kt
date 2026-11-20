@@ -11,6 +11,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.datetime.Clock
 
 class FakeNfcRepository : NfcRepository(
@@ -87,6 +89,22 @@ class FakeNfcRepository : NfcRepository(
     override suspend fun disarm() {
         disarmCalls++
         _state.value = NfcResult.Idle
+    }
+
+    /**
+     * Fake emulation of the phase-aware wait. The fake collapses tap+I/O
+     * into direct state pushes (setNextRead / queueArmResults / pushState
+     * make the state terminal at or after arm-time), so: already-terminal
+     * state returns immediately; otherwise we wait up to [tapWaitMs] for a
+     * terminal state to be pushed and return null when none arrives (the
+     * use case maps that to its Cancelled/timeout outcome).
+     */
+    override suspend fun awaitTerminal(tapWaitMs: Long, ioGraceMs: Long): NfcResult? {
+        val current = _state.value
+        if (current is NfcResult.Success || current is NfcResult.Error) return current
+        return withTimeoutOrNull(tapWaitMs) {
+            _state.first { it is NfcResult.Success || it is NfcResult.Error }
+        }
     }
 
     fun pushState(result: NfcResult) {

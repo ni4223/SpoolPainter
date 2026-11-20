@@ -6,7 +6,6 @@ import com.spoolpainter.app.domain.primitives.NfcIntent
 import com.spoolpainter.app.domain.primitives.NfcResult
 import com.spoolpainter.app.hardware.nfc.NfcRepository
 import com.spoolpainter.app.ui.screens.main.FormState
-import kotlinx.coroutines.flow.first
 import javax.inject.Inject
 
 data class RawWriteInput(
@@ -41,7 +40,14 @@ open class RawWriteUseCase @Inject constructor(
     open suspend operator fun invoke(input: RawWriteInput): RawWriteResult {
         val payload = makePayload(input)
         nfc.arm(NfcIntent.Write(payload, expectedUid = null))
-        return when (val outcome = awaitTerminalNfc()) {
+        val outcome = awaitTerminalNfc()
+        if (outcome == null) {
+            // No tap landed within the wait window — disarm so the stale
+            // arm can't consume a late tap into the void.
+            nfc.disarm()
+            return RawWriteResult.Cancelled("timeout")
+        }
+        return when (outcome) {
             is NfcResult.Success ->
                 if (outcome.uid.hex.isEmpty()) {
                     RawWriteResult.NfcFailed(null, "zero-length UID, non-NFC-A tag?")
@@ -85,6 +91,21 @@ open class RawWriteUseCase @Inject constructor(
         )
     }
 
-    private suspend fun awaitTerminalNfc(): NfcResult =
-        nfc.state.first { it is NfcResult.Success || it is NfcResult.Error }
+    private suspend fun awaitTerminalNfc(): NfcResult? =
+        // Phase-aware wait: only the tap-wait is UX-bounded; the blocking
+        // write I/O after the tap is covered by awaitTerminal's internal
+        // grace budget so this coroutine never cancels a live write.
+        nfc.awaitTerminal(WRITE_TAP_WAIT_MS)
+
+    private companion object {
+        /**
+         * How long we wait for the user to physically tap a tag after Write
+         * is armed. Preserves the old MainViewModel WRITE_TIMEOUT_MS_DEFAULT
+         * (15s) UX budget. Once a tap is consumed, terminal I/O gets a
+         * separate generous grace inside [NfcRepository.awaitTerminal] — the
+         * old design wrapped everything in one 15s timeout and cancelled the
+         * use case while the physical NDEF write was still in flight.
+         */
+        const val WRITE_TAP_WAIT_MS: Long = 15_000L
+    }
 }
