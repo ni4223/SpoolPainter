@@ -6,6 +6,7 @@ import com.spoolpainter.app.data.local.Settings
 import com.spoolpainter.app.data.local.SettingsRepository
 import com.spoolpainter.app.data.local.SortDirection
 import com.spoolpainter.app.data.local.SpoolSortKey
+import com.spoolpainter.app.data.local.TagStorageMode
 import com.spoolpainter.app.data.local.ThemeOverride
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -61,6 +62,10 @@ class FakeSettingsRepository(initial: Settings = Settings()) : SettingsRepositor
 
     override suspend fun setLastSeenWhatsNewVersion(version: Int) {
         _settings.update { it.copy(lastSeenWhatsNewVersion = version) }
+    }
+
+    override suspend fun setTagStorageMode(mode: TagStorageMode) {
+        _settings.update { it.copy(tagStorageMode = mode) }
     }
 
     fun pushSettings(value: Settings) {

@@ -93,3 +93,11 @@ data class ExtraFieldDef(
     val order: Int,
     val default_value: String,
 )
+
+/** Body of `POST /api/v1/spool/{id}/tag` (server ≥ 0.27.0). `uid` is
+ *  1-128 chars, server-normalized to uppercase hex without separators;
+ *  the app's CardUid.hex already matches that shape and is sent as-is. */
+data class TagLinkBody(
+    val uid: String,
+    val format: String? = null,
+)

@@ -7,6 +7,7 @@ import com.spoolpainter.app.domain.models.Brand
 import com.spoolpainter.app.domain.models.Material
 import com.spoolpainter.app.domain.models.SpoolmanFilament
 import com.spoolpainter.app.domain.models.SpoolmanSpool
+import com.spoolpainter.app.domain.models.SpoolmanTag
 import com.spoolpainter.app.domain.models.SpoolmanVendor
 import com.spoolpainter.app.domain.models.TempRanges
 import com.spoolpainter.app.domain.primitives.CardUid
@@ -280,6 +281,64 @@ class MainViewModelTwoTagTest {
             vm.onPairAnotherTagAccepted()
             val emission = awaitNonAmbientSnackbar()
             assertEquals("Tag written and paired. This spool now has 2 tags.", emission.message)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `UI-44 tags-only spool counts native tags`() = runTest {
+        // NATIVE_ONLY reality: no extra.card_uids mirror, the paired UIDs
+        // live exclusively in the native spool.tags list (server >= 0.27).
+        val vm = newVm()
+        val nativeOnly = sampleSpool.copy(
+            tags = listOf(
+                SpoolmanTag(uid = "AABBCCDD", added = "2026-01-01T00:00:00Z"),
+                SpoolmanTag(uid = "11223344", added = "2026-01-02T00:00:00Z"),
+            ),
+        )
+        primeFormForWrite(vm)
+        spoolman.setSpools(listOf(nativeOnly))
+        vm.onSpoolSelected(nativeOnly)
+        createAndPair.nextResult = CreateAndPairResult.Success.WrittenAndPaired(
+            spoolId = 42, uid = sampleUid, isNewSpool = false,
+        )
+        vm.onWriteTapped()
+
+        vm.effects.test {
+            vm.onPairAnotherTagDismissed()
+            val emission = awaitNonAmbientSnackbar()
+            assertEquals(
+                "Tag written and paired. This spool now has 2 tags.",
+                emission.message,
+            )
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `UI-44 overlapping card_uids and tags counts deduped union`() = runTest {
+        // BOTH mode with one UID present in both sources: the count is the
+        // deduped union (2 legacy + 1 native-only = 3), not the naive sum.
+        val vm = newVm()
+        val bothSources = sampleSpool.copy(
+            extra = mapOf("card_uids" to "\"AABBCCDD,11223344\""),
+            tags = listOf(SpoolmanTag(uid = "AABBCCDD"), SpoolmanTag(uid = "CAFEBABE")),
+        )
+        primeFormForWrite(vm)
+        spoolman.setSpools(listOf(bothSources))
+        vm.onSpoolSelected(bothSources)
+        createAndPair.nextResult = CreateAndPairResult.Success.WrittenAndPaired(
+            spoolId = 42, uid = sampleUid, isNewSpool = false,
+        )
+        vm.onWriteTapped()
+
+        vm.effects.test {
+            vm.onPairAnotherTagDismissed()
+            val emission = awaitNonAmbientSnackbar()
+            assertEquals(
+                "Tag written and paired. This spool now has 3 tags.",
+                emission.message,
+            )
             cancelAndIgnoreRemainingEvents()
         }
     }

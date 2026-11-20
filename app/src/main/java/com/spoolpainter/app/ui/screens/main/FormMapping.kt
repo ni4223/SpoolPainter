@@ -10,7 +10,7 @@ import com.spoolpainter.app.domain.models.SpoolmanSpool
 import com.spoolpainter.app.domain.models.TempRanges
 import com.spoolpainter.app.domain.primitives.CardUid
 import com.spoolpainter.app.domain.primitives.ColorHexCodec
-import com.spoolpainter.app.domain.primitives.ExtraCardUidsCodec
+import com.spoolpainter.app.domain.primitives.PairedTagUids
 
 internal object FormMapping {
 
@@ -30,8 +30,11 @@ internal object FormMapping {
         val tempRanges = deriveSpoolmanTemps(materialData, spool)
         val resolvedUid = when (uidSource) {
             SpoolmanUidSource.PreserveCurrent -> currentUid
-            SpoolmanUidSource.FromCardUidsOrClear ->
-                ExtraCardUidsCodec.decode(spool.extra?.get("card_uids") ?: "").firstOrNull()
+            // Union of legacy extra.card_uids + native spool.tags (see
+            // PairedTagUids): legacy-first so the prefill is unchanged when
+            // both sources agree, and a tags-only spool (NATIVE_ONLY mode)
+            // still prefills its native UID instead of clearing the field.
+            SpoolmanUidSource.FromCardUidsOrClear -> PairedTagUids.of(spool).firstOrNull()
         }
         // Decision M: spool's own price preferred; filament price is
         // fallback for legacy data without per-spool prices, and matches
@@ -101,7 +104,8 @@ internal object FormMapping {
         /** Read flow + auto-pair after read: keep the UID we just tapped. */
         PreserveCurrent,
 
-        /** Manual dropdown selection: derive the UID from the spool's extra.card_uids (or null). */
+        /** Manual dropdown selection: derive the UID from the spool's paired
+         *  UIDs (legacy extra.card_uids first, then native spool.tags) or null. */
         FromCardUidsOrClear,
     }
 

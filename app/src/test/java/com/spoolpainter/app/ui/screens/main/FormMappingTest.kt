@@ -3,6 +3,7 @@ package com.spoolpainter.app.ui.screens.main
 import com.spoolpainter.app.domain.models.OpenSpoolPayload
 import com.spoolpainter.app.domain.models.SpoolmanFilament
 import com.spoolpainter.app.domain.models.SpoolmanSpool
+import com.spoolpainter.app.domain.models.SpoolmanTag
 import com.spoolpainter.app.domain.models.SpoolmanVendor
 import com.spoolpainter.app.domain.primitives.CardUid
 import com.spoolpainter.app.domain.primitives.ExtraCardUidsCodec
@@ -285,6 +286,49 @@ class FormMappingTest {
                     listOf(CardUid("AABBCCDD"), CardUid("11223344"), CardUid("DEADBEEF")),
                 ),
             ),
+        )
+        val form = FormMapping.fromSpoolman(
+            spool = spool,
+            currentUid = null,
+            rawWriteMode = false,
+            uidSource = FormMapping.SpoolmanUidSource.FromCardUidsOrClear,
+        )
+        assertEquals(CardUid("AABBCCDD"), form.cardUid)
+    }
+
+    @Test
+    fun `fromSpoolman with tags only prefills native UID`() {
+        // NATIVE_ONLY reality: no extra.card_uids are written, the UIDs live
+        // exclusively in the native spool.tags list (server >= 0.27).
+        val spool = SpoolmanSpool(
+            id = 1,
+            filament = SpoolmanFilament(id = 10, material = "PLA"),
+            tags = listOf(
+                SpoolmanTag(uid = "AABBCCDD", format = "ISO14443-3A", added = "2026-01-01T00:00:00Z"),
+            ),
+        )
+        val form = FormMapping.fromSpoolman(
+            spool = spool,
+            currentUid = null,
+            rawWriteMode = false,
+            uidSource = FormMapping.SpoolmanUidSource.FromCardUidsOrClear,
+        )
+        assertEquals(CardUid("AABBCCDD"), form.cardUid)
+    }
+
+    @Test
+    fun `fromSpoolman with card_uids and tags prefers legacy first UID`() {
+        // BOTH mode with overlapping sources: the legacy decode order wins
+        // the prefill (bit-identical to the legacy-only read), so the user
+        // never sees the form flip to a native UID it would not have shown
+        // before native tags existed.
+        val spool = SpoolmanSpool(
+            id = 1,
+            filament = SpoolmanFilament(id = 10, material = "PLA"),
+            extra = mapOf(
+                "card_uids" to ExtraCardUidsCodec.encode(listOf(CardUid("AABBCCDD"))),
+            ),
+            tags = listOf(SpoolmanTag(uid = "11223344")),
         )
         val form = FormMapping.fromSpoolman(
             spool = spool,

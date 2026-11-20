@@ -16,7 +16,7 @@ import com.spoolpainter.app.domain.models.SpoolmanFilament
 import com.spoolpainter.app.domain.models.SpoolmanSpool
 import com.spoolpainter.app.domain.models.TempRanges
 import com.spoolpainter.app.domain.models.OpenSpoolPayload
-import com.spoolpainter.app.domain.primitives.ExtraCardUidsCodec
+import com.spoolpainter.app.domain.primitives.PairedTagUids
 import com.spoolpainter.app.domain.primitives.SpoolMatchScorer
 import com.spoolpainter.app.domain.primitives.TagClassification
 import com.spoolpainter.app.domain.usecases.CreateAndPairInput
@@ -1809,14 +1809,17 @@ class MainViewModel @Inject constructor(
 
     /**
      * UI-44 — how many tags are paired with [spoolId], read from Spoolman's
-     * `extra.card_uids`. Sourced from the repo StateFlow (`spoolman.spools`),
-     * which [SpoolmanRepository.appendCardUidToSpool] updates synchronously via
-     * `replaceSpoolInCache` right after the PATCH — so it reflects the UID we
-     * just appended, unlike the async VM state mirror. Returns 0 if unknown.
+     * legacy `extra.card_uids` UNION the native `spool.tags` list (server
+     * >= 0.27; empty on old servers, where this is bit-identical to a pure
+     * legacy read). See [PairedTagUids]. Sourced from the repo StateFlow
+     * (`spoolman.spools`), which [SpoolmanRepository.appendCardUidToSpool]
+     * updates synchronously via `replaceSpoolInCache` right after the PATCH —
+     * so it reflects the UID we just appended, unlike the async VM state
+     * mirror. Returns 0 if unknown.
      */
     private fun pairedTagCount(spoolId: Int): Int {
         val spool = spoolman.spools.value.firstOrNull { it.id == spoolId } ?: return 0
-        return ExtraCardUidsCodec.decode(spool.extra?.get("card_uids") ?: "").size
+        return PairedTagUids.of(spool).size
     }
 
     /** End-of-pairing snackbar: confirmation + the true total tag count for
