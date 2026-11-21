@@ -1,0 +1,52 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="SpoolPainter Debug" type="AndroidRunConfigurationType" factoryName="Android App">
+    <option name="GRADLE_PROJECT_PATH" value=":app" />
+    <option name="DEPLOY" value="true" />
+    <option name="DEPLOY_APK_FROM_BUNDLE" value="false" />
+    <option name="DEPLOY_AS_INSTANT" value="false" />
+    <option name="ARTIFACT_NAME" value="" />
+    <option name="PM_INSTALL_OPTIONS" value="" />
+    <option name="ALL_USERS" value="false" />
+    <option name="ALWAYS_INSTALL_WITH_PM" value="false" />
+    <option name="CLEAR_APP_STORAGE" value="false" />
+    <option name="ACTIVITY_EXTRA_FLAGS" value="" />
+    <!-- Installs the variant currently selected in Build Variants; pick
+         "debug" there to run alongside prod as com.spoolpainter.app.debug. -->
+    <option name="MODE" value="default_activity" />
+    <option name="TARGET_SELECTION_MODE" value="DEVICE_AND_SNAPSHOT_FEED" />
+    <option name="FETCH_LOGCAT" value="true" />
+    <option name="FILTER_LOGCAT" value="true" />
+    <option name="CLEAR_LOGCAT" value="false" />
+    <option name="SHOW_LOGCAT_AUTOMATICALLY" value="true" />
+    <option name="SKIP_NO_OP_APK" value="true" />
+    <option name="DEBUGGER_TYPE" value="Auto" />
+    <Auto>
+      <option name="USE_JAVA_AWARE_DEBUGGER" value="true" />
+      <option name="SHOW_STATIC_VARS" value="true" />
+      <option name="WORKING_DIR" value="" />
+      <option name="TARGET_LOGGING_CHANNELS" value="lldb process:gdb-remote packets" />
+    </Auto>
+    <Hybrid>
+      <option name="USE_JAVA_AWARE_DEBUGGER" value="false" />
+      <option name="SHOW_STATIC_VARS" value="true" />
+      <option name="WORKING_DIR" value="" />
+      <option name="TARGET_LOGGING_CHANNELS" value="lldb process:gdb-remote packets" />
+    </Hybrid>
+    <Java />
+    <Native>
+      <option name="USE_JAVA_AWARE_DEBUGGER" value="false" />
+      <option name="SHOW_STATIC_VARS" value="true" />
+      <option name="WORKING_DIR" value="" />
+      <option name="TARGET_LOGGING_CHANNELS" value="lldb process:gdb-remote packets" />
+    </Native>
+    <Profilers>
+      <option name="ADVANCED_PROFILING_ENABLED" value="false" />
+    </Profilers>
+    <option name="SELECTED_CLOUD_MATRIX_CONFIGURATION_ID" value="-1" />
+    <option name="SELECTED_CLOUD_MATRIX_PROJECT_ID" value="" />
+    <option name="DEFAULT_ATTRS" value="false" />
+    <method v="2">
+      <option name="Android.Gradle.BeforeRunTask" enabled="true" />
+    </method>
+  </configuration>
+</component>
