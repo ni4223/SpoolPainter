@@ -27,14 +27,19 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -87,6 +92,8 @@ fun FilamentPicker(
     val sorted = remember(filaments, sortKey, sortDirection) {
         filaments.sortedWith(filamentComparator(sortKey, sortDirection))
     }
+    val focusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
     // Cache the per-row display tuple (built once per sorted change) so a
     // recompose / keystroke doesn't re-run the string formatters per entry.
     val sortedRows = remember(sorted) {
@@ -133,6 +140,21 @@ fun FilamentPicker(
     fun closeAndResetQuery() {
         query = ""
         onExternalFilamentQueryChanged("")
+    }
+
+    // Focus the search field the moment the dropdown opens so typing can
+    // start immediately. The popup content may not be attached to the focus
+    // hierarchy on the first frame — a failed request is retried once after
+    // a frame instead of crashing. Closing hides the keyboard so it never
+    // lingers over the form.
+    LaunchedEffect(expanded) {
+        if (expanded) {
+            runCatching { focusRequester.requestFocus() }
+                .onFailure { withFrameNanos { }; runCatching { focusRequester.requestFocus() } }
+            keyboardController?.show()
+        } else {
+            keyboardController?.hide()
+        }
     }
 
     ExposedDropdownMenuBox(
@@ -228,6 +250,7 @@ fun FilamentPicker(
                         },
                         placeholder = "Search filaments",
                         testTag = "filament-picker-search",
+                        focusRequester = focusRequester,
                     )
                 },
                 footerItems = if (showExternalSection) {
