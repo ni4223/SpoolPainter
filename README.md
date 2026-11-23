@@ -198,8 +198,6 @@ referral link below helps support the project:
 [![Snapmaker EU](https://img.shields.io/badge/Snapmaker%20EU-00B2E3?logo=shopify&logoColor=white)](https://snapmaker-eu.myshopify.com?ref=ni42)
 [![Snapmaker Global](https://img.shields.io/badge/Snapmaker%20Global-00B2E3?logo=shopify&logoColor=white)](https://test-snapmaker.myshopify.com?ref=ni42)
 
-Snapmaker coupon code: `ni42`
-
 ## License
 
 GPL-3.0 — see [LICENSE](LICENSE) for the full text and [NOTICE](NOTICE)

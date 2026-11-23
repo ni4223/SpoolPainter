@@ -30,3 +30,9 @@ counts and track split are written at upload time, following
   and type codes, including Starlight and Aero (sub types 9-16 contributed by
   studiofuga, PR #13). A tag with a code the app doesn't know yet still reads;
   for an unknown material it asks you to pick one.
+
+## Changes
+
+- **Settings → Support the project**: the Snapmaker coupon code is removed
+  (maintainer, 2026-11-22). The Polymaker and Snapmaker shop links stay. Also
+  removed from the README.

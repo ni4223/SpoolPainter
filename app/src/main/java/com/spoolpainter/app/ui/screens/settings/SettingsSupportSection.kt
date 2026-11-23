@@ -9,50 +9,34 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import com.spoolpainter.app.R
-import kotlinx.coroutines.delay
 
 /**
  * A shop this project links out to.
  *
- * [code] is a checkout coupon code the vendor issues, set only where one exists;
- * null means the link is the only mechanism. [accent] is the vendor's brand
- * colour, used for the button outline. [label] is required even when artwork is
+ * [accent] is the vendor's brand colour, used for the button outline. [label] is required even when artwork is
  * shown, because it is the button's accessibility name.
  */
 internal data class ReferralTarget(
     val label: String,
     val url: String,
-    val code: String? = null,
     val accent: Color,
 )
 
@@ -60,8 +44,8 @@ internal data class ReferralTarget(
 private val PolymakerTeal = Color(0xFF108474)
 private val SnapmakerBlue = Color(0xFF00B2E3)
 
-// Mirrors the README's Support section. Polymaker is a link only (no code);
-// Snapmaker issues coupon code ni42 alongside its three regional storefronts.
+// Mirrors the README's Support section: links only, no coupon code (removed
+// 2026-11-22 at the maintainer's request). Snapmaker has three regional storefronts.
 //
 // The myshopify.com hosts are the entry points Snapmaker issues, and each 301s
 // to the canonical store while preserving ?ref: us -> us.snapmaker.com,
@@ -76,16 +60,13 @@ internal val POLYMAKER_TARGET = ReferralTarget(
 )
 
 internal val SNAPMAKER_TARGETS: List<ReferralTarget> = listOf(
-    ReferralTarget("US", "https://snapmaker-us.myshopify.com?ref=ni42", "ni42", SnapmakerBlue),
-    ReferralTarget("EU", "https://snapmaker-eu.myshopify.com?ref=ni42", "ni42", SnapmakerBlue),
-    ReferralTarget("Global", "https://test-snapmaker.myshopify.com?ref=ni42", "ni42", SnapmakerBlue),
+    ReferralTarget("US", "https://snapmaker-us.myshopify.com?ref=ni42", SnapmakerBlue),
+    ReferralTarget("EU", "https://snapmaker-eu.myshopify.com?ref=ni42", SnapmakerBlue),
+    ReferralTarget("Global", "https://test-snapmaker.myshopify.com?ref=ni42", SnapmakerBlue),
 )
 
 internal val REFERRAL_TARGETS: List<ReferralTarget> =
     listOf(POLYMAKER_TARGET) + SNAPMAKER_TARGETS
-
-/** How long the copy button holds its confirmed state before reverting. */
-private const val COPIED_FEEDBACK_MS = 2_000L
 
 /**
  * "Support the project" card at the bottom of Settings.
@@ -170,61 +151,6 @@ internal fun SettingsSupportSection(
                     }
                 }
             }
-            snapmaker.firstNotNullOfOrNull { it.code }?.let { code ->
-                CouponCodeRow(code = code, testTag = "$testTag-coupon")
-            }
-        }
-    }
-}
-
-/**
- * The coupon code, as a button that copies it. A code you have to select by hand
- * off a screen is a code you mistype at checkout, so copying is the primary
- * action rather than an afterthought.
- *
- * Android 13+ shows its own copy confirmation, but minSdk here is 29, so the
- * button carries its own: it swaps to a checkmark for [COPIED_FEEDBACK_MS]. That
- * is also the only feedback on 13+ that appears next to the thing you tapped.
- */
-@Composable
-private fun CouponCodeRow(code: String, testTag: String) {
-    val clipboard = LocalClipboardManager.current
-    var copied by remember { mutableStateOf(false) }
-
-    LaunchedEffect(copied) {
-        if (copied) {
-            delay(COPIED_FEEDBACK_MS)
-            copied = false
-        }
-    }
-
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = "Snapmaker coupon",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        TextButton(
-            onClick = {
-                clipboard.setText(AnnotatedString(code))
-                copied = true
-            },
-            modifier = Modifier.testTag(testTag),
-        ) {
-            Text(
-                text = if (copied) "Copied" else code,
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            Icon(
-                imageVector = if (copied) Icons.Filled.Check else Icons.Filled.ContentCopy,
-                contentDescription = if (copied) "Copied" else "Copy coupon code",
-                modifier = Modifier
-                    .padding(start = 6.dp)
-                    .height(16.dp),
-            )
         }
     }
 }

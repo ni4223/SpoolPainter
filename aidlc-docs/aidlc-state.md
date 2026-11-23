@@ -835,3 +835,10 @@ the gate.
 - **Not done**: release build / Play upload (needs its own OK); README still
   says 2.4.1 until 2.4.2 ships; U33 review reply is the maintainer's (Play
   Console); PR #14 waits for U30 and is rebased over U28.
+
+### 2026-11-22 — 2.4.2 release build
+
+`app-release.aab` and `app-release.apk` built: 117 / 2.4.2, signed with the
+upload key (cert SHA-256 `c7b4dbce…d44cce60`, matches Play's upload certificate
+and the 2.4.1 APK). Includes the coupon-code removal (committed and pushed
+afterwards, same tree as the build). No GitHub release (maintainer: not needed); not uploaded to Play.

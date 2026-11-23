@@ -3009,3 +3009,45 @@ Resume artefact lists: copy/paste-ready build commands, milestone-by-milestone t
 **Context**: Operations — release prep complete except the Play upload.
 
 ---
+## Construction — remove Snapmaker coupon code
+**Timestamp**: 2026-11-22T01:45:00Z
+**User Input**: "make one more small change remove ni42 from the snapmaker code, just remove te discount code"
+**AI Response**: Removed the Snapmaker coupon code `ni42` from Settings (the `ReferralTarget.code` field, the tap-to-copy CouponCodeRow and its imports) and from the README. Kept the shop links, including their `?ref=ni42` referral parameter (read "just the discount code" as the coupon only). Dropped the one test that pinned the code; 691 tests, 0 failures; matrix green. Not checked on device. Release notes draft updated. Not committed: asked for OK.
+**Context**: Construction — small change on v2 after 2.4.2 prep.
+
+---
+## Construction — referral links confirmed
+**Timestamp**: 2026-11-22T01:50:00Z
+**User Input**: "just keep the link to refer"
+**AI Response**: Confirmed: the shop links keep `?ref=ni42` (and Polymaker `/NI42`); only the coupon code was removed. No further code change. Commit/push still awaiting an explicit OK.
+**Context**: Construction — small change on v2.
+
+---
+## Operations — release build attempt (2.4.2)
+**Timestamp**: 2026-11-22T02:00:00Z
+**User Input**: "build it, no need to sebd it to gh release'"
+**AI Response**: No signed build possible on this Mac: ~/spoolpainter-release-key.jks and ~/spoolpainter-keystore.pwd are missing and KEYSTORE_PASSWORD is unset (find under ~ found only the debug keystore). Ran :app:minifyReleaseWithR8 (release compile + R8, no signing): green. No GitHub release, nothing committed or pushed.
+**Context**: Operations — 2.4.2 release build blocked on the upload key.
+
+---
+## Operations — 2.4.2 release build
+**Timestamp**: 2026-11-22T02:40:00Z (local 18:35)
+**User Input**: "password too there now" / "it should work both wee created on same day" / "i have added evrything i found on olc macc here nw"
+**AI Response**: The first key file found did not open with the password file (keytool and openssl both rejected it; no other passwords tried). The later-added spoolpainter-release-key.jks opens with it, and its certificate SHA-256 c7b4dbce…d44cce60 matches both Play's upload certificate and the v2.4.1 GitHub release APK. Built with KEYSTORE_FILE pointing at it (no files moved): app-release.aab (sha256 f0c9fc20…) and app-release.apk (sha256 ba63b075…), com.spoolpainter.app 117 / 2.4.2, both signed with c7b4dbce…. Built from the working tree, which includes the uncommitted coupon removal. No GitHub release, no Play upload.
+**Context**: Operations — 2.4.2 built, not uploaded.
+
+---
+## Operations — release key location
+**Timestamp**: 2026-11-22T02:50:00Z
+**User Input**: "coul you move good key an passowrd to right loaction"
+**AI Response**: Moved the verified upload key to ~/spoolpainter-release-key.jks (target was empty; mv -n). The password file was already at ~/spoolpainter-keystore.pwd. Set both to 600. signingReport for release now resolves the default path with cert SHA-256 c7b4dbce…d44cce60. The other key (~/spoolpainter-release-key-new.jks) left untouched.
+**Context**: Operations — signing setup on this Mac.
+
+---
+## Operations — commit coupon removal
+**Timestamp**: 2026-11-22T02:55:00Z
+**User Input**: "yeah commit and push it"
+**AI Response**: Committed the coupon-code removal (app, test, README) plus docs, and pushed v2. This matches the signed 2.4.2 build.
+**Context**: Operations — 2.4.2 source in git.
+
+---

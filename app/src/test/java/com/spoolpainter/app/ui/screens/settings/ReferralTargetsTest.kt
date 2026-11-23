@@ -35,12 +35,6 @@ class ReferralTargetsTest {
     }
 
     @Test
-    fun `polymaker is a link only and every snapmaker region carries the code`() {
-        assertEquals(null, POLYMAKER_TARGET.code)
-        SNAPMAKER_TARGETS.forEach { assertEquals("ni42", it.code) }
-    }
-
-    @Test
     fun `all three snapmaker regions are present and point at distinct stores`() {
         assertEquals(listOf("US", "EU", "Global"), SNAPMAKER_TARGETS.map { it.label })
         assertEquals(3, SNAPMAKER_TARGETS.map { it.url }.distinct().size)
