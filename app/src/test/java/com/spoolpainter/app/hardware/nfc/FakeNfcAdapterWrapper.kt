@@ -26,6 +26,9 @@ internal class FakeNfcAdapterWrapper : NfcAdapterWrapper(adapter = null, dispatc
 
     override fun isAvailable(): Boolean = available
 
+    var hardware: Boolean = true
+    override fun hasHardware(): Boolean = hardware
+
     override fun enableForegroundDispatch(activity: ComponentActivity) {
         attachedActivity = activity
         attachCount++

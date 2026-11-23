@@ -842,3 +842,12 @@ the gate.
 upload key (cert SHA-256 `c7b4dbce…d44cce60`, matches Play's upload certificate
 and the 2.4.1 APK). Includes the coupon-code removal (committed and pushed
 afterwards, same tree as the build). No GitHub release (maintainer: not needed); not uploaded to Play.
+
+### 2026-11-22 — Play blocked 117 at review; 118 built
+
+Play's availability check refused review over required `android.hardware.nfc` and
+`android.hardware.screen.portrait` (manifest unchanged since 2.4.1). Fixed per the
+maintainer: both optional, plus a clear no-NFC message on Read/Write. 694 tests;
+the 3 new ones fail when the fix is reverted. versionCode **118** (117 consumed).
+Signed AAB/APK rebuilt with `c7b4dbce…`. Committed and pushed. Not uploaded yet.
+Open: `android.hardware.camera` is still implied-required (see `v2.4.2-release-notes.md`).

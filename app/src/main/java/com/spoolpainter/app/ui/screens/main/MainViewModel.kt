@@ -520,6 +520,10 @@ class MainViewModel @Inject constructor(
             return
         }
         if (current != ActiveFlow.Idle) return
+        if (!nfc.hasNfcHardware()) {
+            _effects.trySend(UiEffect.ShowSnackbar(NfcRepository.NO_NFC_HARDWARE_MESSAGE))
+            return
+        }
         readJob?.let { job ->
             if (job.isActive) {
                 job.cancel()
@@ -645,6 +649,11 @@ class MainViewModel @Inject constructor(
             return
         }
         if (!canWrite.value) return
+        // Before any Spoolman write: without NFC the tag step can't happen.
+        if (!nfc.hasNfcHardware()) {
+            _effects.trySend(UiEffect.ShowSnackbar(NfcRepository.NO_NFC_HARDWARE_MESSAGE))
+            return
+        }
         val form = state.form
         val mode = state.writeMode
         // 2026-06-06 reframe: vendor tags can't be NDEF-written, but the

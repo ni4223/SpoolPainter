@@ -77,11 +77,15 @@ open class NfcRepository internal constructor(
         // user-driven pause.
     }
 
+    open fun hasNfcHardware(): Boolean = wrapper.hasHardware()
+
     open suspend fun arm(intent: NfcIntent) {
         if (!wrapper.isAvailable()) {
             mutex.withLock {
                 armedIntent = null
-                _state.value = NfcResult.Error("NFC not available")
+                _state.value = NfcResult.Error(
+                    if (wrapper.hasHardware()) "NFC not available" else NO_NFC_HARDWARE_MESSAGE,
+                )
             }
             return
         }
@@ -457,6 +461,7 @@ open class NfcRepository internal constructor(
 
     companion object {
         const val TTL_MS_DEFAULT: Long = 5_000L
+        const val NO_NFC_HARDWARE_MESSAGE = "This device has no NFC. You can still edit spools in Spoolman."
         internal const val MIME_OPENSPOOL = "application/vnd.openspool+json"
         internal const val MIME_JSON = "application/json"
         private const val TAG = "NfcRepository"

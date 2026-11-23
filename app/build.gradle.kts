@@ -26,7 +26,7 @@ android {
         // GitHub-released, so it is treated as consumed regardless of whether it
         // reached Play. Confirm in Play Console before upload; skipping a code is
         // always safe, reusing one is not.
-        versionCode = 117
+        versionCode = 118
         versionName = "2.4.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

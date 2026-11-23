@@ -6,9 +6,15 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- U17: camera color sampler is an optional convenience; NFC is the core. -->
     <uses-permission android:name="android.permission.CAMERA" />
+    <!-- Optional so Play doesn't block installs on devices without NFC or
+         without portrait (2.4.2 review check). Without NFC, Read/Write say so
+         and Spoolman editing still works. -->
     <uses-feature
         android:name="android.hardware.nfc"
-        android:required="true" />
+        android:required="false" />
+    <uses-feature
+        android:name="android.hardware.screen.portrait"
+        android:required="false" />
     <uses-feature
         android:name="android.hardware.camera.any"
         android:required="false" />

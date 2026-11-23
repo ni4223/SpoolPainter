@@ -58,6 +58,9 @@ class FakeNfcRepository : NfcRepository(
         nextConsumeLastSeen = result
     }
 
+    var hasHardware: Boolean = true
+    override fun hasNfcHardware(): Boolean = hasHardware
+
     override suspend fun arm(intent: NfcIntent) {
         armCalls++
         lastArmedIntent = intent

@@ -21,6 +21,7 @@ import com.spoolpainter.app.hardware.nfc.TagBuffer
 import com.spoolpainter.app.support.FakeCreateAndPairUseCase
 import com.spoolpainter.app.support.FakeMoveOnBindConfirmer
 import com.spoolpainter.app.support.FakeMoveOnBindUseCase
+import com.spoolpainter.app.hardware.nfc.NfcRepository
 import com.spoolpainter.app.support.FakeNfcRepository
 import com.spoolpainter.app.support.FakeRawWriteUseCase
 import com.spoolpainter.app.support.FakeSaveToSpoolmanUseCase
@@ -423,6 +424,38 @@ class MainViewModelTest {
             assertEquals("settings", (effect as UiEffect.Navigate).destination)
             cancelAndIgnoreRemainingEvents()
         }
+    }
+
+    // ---- No NFC hardware (NFC optional in the manifest) ----
+
+    @Test
+    fun `onReadTapped without NFC hardware says so and does not arm`() = runTest {
+        val vm = newVm()
+        nfc.hasHardware = false
+        vm.effects.test {
+            vm.onReadTapped()
+            val emission = awaitItem() as UiEffect.ShowSnackbar
+            assertEquals(NfcRepository.NO_NFC_HARDWARE_MESSAGE, emission.message)
+            cancelAndIgnoreRemainingEvents()
+        }
+        assertEquals(0, nfc.armCalls)
+        assertEquals(ActiveFlow.Idle, vm.state.value.activeFlow)
+    }
+
+    @Test
+    fun `onWriteTapped without NFC hardware says so before any Spoolman write`() = runTest {
+        val vm = newVm()
+        primeFormForWrite(vm)
+        vm.onSpoolSelected(sampleSpool)
+        nfc.hasHardware = false
+        vm.effects.test {
+            vm.onWriteTapped()
+            // Skip the "Blank tag detected" effect from priming the form.
+            while ((awaitItem() as? UiEffect.ShowSnackbar)?.message != NfcRepository.NO_NFC_HARDWARE_MESSAGE) Unit
+            cancelAndIgnoreRemainingEvents()
+        }
+        assertEquals(0, createAndPair.invokeCalls)
+        assertEquals(0, nfc.armCalls)
     }
 
     // ---- U6a: onWriteTapped ----

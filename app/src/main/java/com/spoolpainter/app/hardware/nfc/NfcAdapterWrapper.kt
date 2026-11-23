@@ -23,6 +23,9 @@ open class NfcAdapterWrapper @Inject constructor(
 
     open fun isAvailable(): Boolean = adapter?.isEnabled == true
 
+    /** False on a device with no NFC chip (NFC is optional in the manifest). */
+    open fun hasHardware(): Boolean = adapter != null
+
     open fun enableForegroundDispatch(activity: ComponentActivity) {
         val nfc = adapter ?: return
         if (!nfc.isEnabled) return

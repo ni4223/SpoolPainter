@@ -88,7 +88,7 @@ class NfcRepositoryLifecycleTest {
     }
 
     @Test
-    fun `arm on no-adapter device emits NFC not available error`() = runTest {
+    fun `arm with NFC off emits NFC not available error`() = runTest {
         val wrapper = FakeNfcAdapterWrapper()
         wrapper.available = false
         val repo = newRepository(wrapper = wrapper)
@@ -98,6 +98,19 @@ class NfcRepositoryLifecycleTest {
         val state = repo.state.value as NfcResult.Error
         assertEquals("NFC not available", state.reason)
         assertTrue(state.cause == null)
+    }
+
+    @Test
+    fun `arm on a device with no NFC says so`() = runTest {
+        val wrapper = FakeNfcAdapterWrapper()
+        wrapper.available = false
+        wrapper.hardware = false
+        val repo = newRepository(wrapper = wrapper)
+
+        repo.arm(NfcIntent.Read)
+
+        val state = repo.state.value as NfcResult.Error
+        assertEquals(NfcRepository.NO_NFC_HARDWARE_MESSAGE, state.reason)
     }
 
     @Test

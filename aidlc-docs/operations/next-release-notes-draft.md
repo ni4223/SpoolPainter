@@ -1,7 +1,7 @@
-# Next release — draft notes: 2.4.2 (versionCode 117)
+# Next release — draft notes: 2.4.2 (versionCode 118)
 
 **Status**: draft. Version decided 2026-11-22 by the maintainer ("just next
-version"): **2.4.2 / versionCode 117**, set in `app/build.gradle.kts`. 116 /
+version"): **2.4.2 / versionCode 118** (117 was uploaded, then blocked at review), set in `app/build.gradle.kts`. 116 /
 2.4.1 is on Open testing; Production is on 2.3.1. Final Play text, character
 counts and track split are written at upload time, following
 `v2.4.1-release-notes.md`. Not built for release or uploaded.
@@ -36,3 +36,5 @@ counts and track split are written at upload time, following
 - **Settings → Support the project**: the Snapmaker coupon code is removed
   (maintainer, 2026-11-22). The Polymaker and Snapmaker shop links stay. Also
   removed from the README.
+- **Manifest**: NFC and portrait are optional (Play availability check). On a
+  device with no NFC, Read and Write say so; Spoolman editing still works.

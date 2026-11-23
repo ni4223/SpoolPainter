@@ -3051,3 +3051,17 @@ Resume artefact lists: copy/paste-ready build commands, milestone-by-milestone t
 **Context**: Operations — 2.4.2 source in git.
 
 ---
+## Operations — Play release note
+**Timestamp**: 2026-11-22T03:05:00Z
+**User Input**: "give release not for pl;aystoe"
+**AI Response**: Wrote aidlc-docs/operations/v2.4.2-release-notes.md with an Open-testing Play note (testers on 2.4.1). Under the 500-character cap. Production (2.3.1) would need a separate note; not written. Not committed.
+**Context**: Operations — 2.4.2 release text.
+
+---
+## Operations — Play availability block on 117
+**Timestamp**: 2026-11-22T03:30:00Z
+**User Input**: (pasted Play Console message) "We found some common issues that are preventing your app from being sent for review. You must address these issues before you can send your changes for review. Required hardware feature declarations are restricting your app's availability. Your app declares a requirement for hardware features that are unsupported by some devices. Users on these devices can't install your app because of the following unsupported hardware features: android.hardware.nfc affects Phone, Tablet, Desktop and Android XR users; android.hardware.screen.portrait affects Phone, Tablet, Desktop and Android XR users. To expand your app's availability, mark non-essential hardware features as optional in your app's manifest." / Decisions: NFC "Optional + clear message (Recommended)"; Version "Bump to 118 (Recommended)"; Plan "Approve".
+**AI Response**: Manifest: nfc and screen.portrait required=false. NfcAdapterWrapper.hasHardware(); NfcRepository.hasNfcHardware() and NO_NFC_HARDWARE_MESSAGE in arm(); MainViewModel guards Read and Write (before any Spoolman write). +3 tests (non-vacuity 3/3), 694 green. versionCode 118. Signed release rebuilt (c7b4dbce…); aapt2 confirms the features are not required. Camera left implied-required (sampler would throw without a back camera). Committed and pushed.
+**Context**: Operations — 2.4.2 (118) ready to upload.
+
+---
