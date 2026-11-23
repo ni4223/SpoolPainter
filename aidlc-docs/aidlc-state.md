@@ -732,7 +732,7 @@ findings from the PR #15 review are captured in UI-73.
 - Posted: PR #15 fix request only (comment 7085706466, 2026-11-22).
 - Drafted, not posted: the review reply in U33 §4 (the maintainer posts it from
   Play Console).
-- Owed, not drafted: #12 (workaround in U32 S11), #10, #11, #19, PR #13, PR #20.
+- Owed, not drafted: #11, #19, PR #20. (#12, #10 replied and PR #13 merged 2026-11-22.)
 - **On hold until the maintainer says otherwise**: the note to paxx12 on firmware
   #805.
 
@@ -824,3 +824,14 @@ no temp" (now `00FF0080`, temps 190/40) and spool #137 (1050 g, empty 200, tag
 Observed, not the app: spool #135 consumption reported by another client during
 the gate.
 
+
+### 2026-11-22 — Committed, pushed, PR #13 merged, replies posted
+
+- PR #13 retargeted main → `v2` and merged (`f7233ca`, keeps studiofuga's `e8725fa`).
+- Commits on `v2`: `4681104` (U33 + U32 incl. addendum + U28, code and docs),
+  `f92e069` (version **2.4.2 / versionCode 117**). Pushed.
+- Replied on #12 and #10 (short versions, approved). Both left open until the
+  reporters confirm on 2.4.2.
+- **Not done**: release build / Play upload (needs its own OK); README still
+  says 2.4.1 until 2.4.2 ships; U33 review reply is the maintainer's (Play
+  Console); PR #14 waits for U30 and is rebased over U28.

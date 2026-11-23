@@ -123,7 +123,7 @@ Code location: `app/src/main/java/com/spoolpainter/app/hardware/nfc/SnapmakerFor
   maintainer has no PETG Translucent spool, so ask the #10 reporter to confirm on
   the next test build.
 - [x] **S11** — Docs: release notes, UI-70 state, `aidlc-state.md`.
-- [ ] **S12** — GitHub (approval needed): reply on #10, and PR #13 per D3.
+- [x] **S12** — GitHub, 2026-11-22: PR #13 retargeted to `v2` and merged (merge commit `f7233ca`, studiofuga's `e8725fa` kept); replied on #10 (short version, approved; issue left open until the reporter confirms on 2.4.2).
 
 ## §4a Implementation record (2026-11-22)
 

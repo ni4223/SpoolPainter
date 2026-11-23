@@ -134,7 +134,7 @@ the weight doesn't change).
   exactly (for example 1,050 g), the spool's initial weight is raised, and the
   filament's weight is unchanged.
 - [x] **S10** — Docs: release notes, UI-74 state, `aidlc-state.md`.
-- [ ] **S11** — GitHub (approval needed): reply on #12. Until the fix ships, the
+- [x] **S11** — GitHub: replied on #12 2026-11-22 (short version, approved; issue left open until the reporter confirms on 2.4.2). Original plan: reply on #12. Until the fix ships, the
   workaround is to set Extruder Temp on the filament in Spoolman, or fill the
   nozzle temps in More details, so Save becomes "Update".
 

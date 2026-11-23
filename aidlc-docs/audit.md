@@ -3002,3 +3002,10 @@ Resume artefact lists: copy/paste-ready build commands, milestone-by-milestone t
 **Context**: Operations — release prep. Reply texts shown to the maintainer before posting.
 
 ---
+## Operations — GitHub replies
+**Timestamp**: 2026-11-22T01:35:00Z
+**User Input**: "simpler replies" / Replies "Post both"
+**AI Response**: Posted the short replies on #12 (issuecomment-7089057399) and #10 (issuecomment-7089057641). Both issues left open. Ticked U32 S11 and U28 S12; updated aidlc-state.md. Committed these docs and pushed.
+**Context**: Operations — release prep complete except the Play upload.
+
+---
