@@ -215,6 +215,7 @@ class FakeSpoolmanApi : SpoolmanApi {
         val current = filamentList[idx]
         val updated = current.copy(
             name = body.name ?: current.name,
+            color_hex = body.color_hex ?: current.color_hex,
             settings_extruder_temp = body.settings_extruder_temp ?: current.settings_extruder_temp,
             settings_bed_temp = body.settings_bed_temp ?: current.settings_bed_temp,
             density = body.density ?: current.density,

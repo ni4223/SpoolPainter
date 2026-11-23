@@ -96,6 +96,7 @@ fun MainScreen(
     val customBrand by viewModel.customBrand.collectAsStateWithLifecycle()
     val canSave by viewModel.canSave.collectAsStateWithLifecycle()
     val canWrite by viewModel.canWrite.collectAsStateWithLifecycle()
+    val saveDisabledReason by viewModel.saveDisabledReason.collectAsStateWithLifecycle()
     val isReadInFlight by viewModel.isReadInFlight.collectAsStateWithLifecycle()
     val isWriteCancellable by viewModel.isWriteCancellable.collectAsStateWithLifecycle()
     val canClear by viewModel.canClear.collectAsStateWithLifecycle()
@@ -343,6 +344,19 @@ fun MainScreen(
                                 "Save to Spoolman"
                             },
                         )
+                        // U32 B1: say why Save is disabled instead of greying it silently.
+                        if (!canSave && state.activeFlow == ActiveFlow.Idle) {
+                            saveDisabledReason?.let { reason ->
+                                Text(
+                                    text = reason,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .testTag("main-save-disabled-reason"),
+                                )
+                            }
+                        }
                     }
                     // Read/Write demoted to inline text buttons under Save.
                     // Save is the primary commit; tag I/O is a secondary

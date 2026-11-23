@@ -14,4 +14,9 @@ data class OpenSpoolPayload(
     val spoolId: String? = null,
     // Read-side only — codec never emits this field on encode (FR-14.1).
     val lotNr: String? = null,
+    // U28: read-side only, never encoded. Parser notes for "Share last NFC
+    // scan" (e.g. an unknown vendor type code), and one user-facing line to
+    // show after the read.
+    val decodeNotes: List<String> = emptyList(),
+    val readNotice: String? = null,
 )

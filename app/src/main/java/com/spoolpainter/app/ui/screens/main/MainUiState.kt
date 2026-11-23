@@ -101,6 +101,16 @@ data class FormState(
     // and filament records, so the prefill snapshot tracks the spool side.
     val remainingWeightG: Float? = null,
     val prefilledRemainingWeightG: Float? = null,
+    // U32 B3: the spool's Spoolman initial_weight (net). Spoolman caps
+    // remaining at it, so Save raises it when remaining goes above.
+    val initialWeightG: Float? = null,
+    // U32 FN2: the spool's used_weight, the basis for initial_weight when
+    // both the spool's initial weight and the filament weight are unknown.
+    val usedWeightG: Float? = null,
+    // U32 FN3: temps as loaded from the spool. Save sends a temp to the
+    // filament only when the form's min differs, so an in-range filament
+    // temp isn't rewritten with the preset min.
+    val prefilledTempRanges: TempRanges? = null,
     val prefilledPriceMajor: Float? = null,
     val prefilledEmptySpoolWeightG: Float? = null,
 
@@ -154,8 +164,8 @@ fun FormState.toExpanderOverrides(): ExpanderOverrides {
             diameter = null,
             weight = fullSpoolWeightG,
             colorHex = colorHex?.takeIf { it.matches(HEX6_REGEX) }?.uppercase(),
-            extruderTemp = tempRanges.extruderMin,
-            bedTemp = tempRanges.bedMin,
+            extruderTemp = tempRanges.extruderMin.takeIf { it != prefilledTempRanges?.extruderMin },
+            bedTemp = tempRanges.bedMin.takeIf { it != prefilledTempRanges?.bedMin },
             variant = variant?.takeIf { it.isNotBlank() },
         )
     }
@@ -205,6 +215,58 @@ val FormState.canSubmit: Boolean
         if (ranges.extruderMin > ranges.extruderMax) return false
         if (ranges.bedMin != null && ranges.bedMax != null && ranges.bedMin > ranges.bedMax) return false
         return true
+    }
+
+/**
+ * U32 B1: why Save is disabled, as a short user-facing line, or null when the
+ * form can be saved. Same rules as [canSubmit], except that an existing spool
+ * may have no color (D1b: Spoolman filaments can lack `color_hex`, and nothing
+ * is sent when it's empty). Write keeps [canSubmit], which always needs one.
+ */
+/**
+ * The spool `initial_weight` to send with a remaining edit, or null.
+ * Spoolman stores remaining as `used = initial_weight - remaining`, so it caps
+ * remaining at initial (U32 B3) and rejects the edit with 400 when initial is
+ * null (U32 FN2, `database/spool.py` update()). Basis when null: the filament
+ * weight, else used + remaining (keeps the used history).
+ */
+fun FormState.initialWeightToSend(): Float? {
+    val rem = remainingWeightG ?: return null
+    if (rem == prefilledRemainingWeightG) return null
+    val initial = initialWeightG
+    return when {
+        initial == null -> maxOf(fullSpoolWeightG?.takeIf { it > 0f } ?: ((usedWeightG ?: 0f) + rem), rem)
+        rem > initial -> rem
+        else -> null
+    }
+}
+
+val FormState.saveBlocker: String?
+    get() {
+        val color = colorHex
+        val ranges = tempRanges
+        if (material == null) return "Pick a material."
+        if (brand == null) return "Pick a brand."
+        if (color.isNullOrBlank()) {
+            if (selectedSpoolId == null) return "Pick a color."
+        } else if (!color.matches(HEX6_REGEX)) {
+            return "Color must be 6 hex digits."
+        }
+        if (ranges.extruderMin == null || ranges.extruderMax == null) {
+            return "Set the Nozzle temperature in More details."
+        }
+        if (ranges.extruderMin > ranges.extruderMax) return "Nozzle min is above max in More details."
+        if (ranges.bedMin != null && ranges.bedMax != null && ranges.bedMin > ranges.bedMax) {
+            return "Bed min is above max in More details."
+        }
+        // U32 B2 (D2): a measured weight can't become "remaining" without the
+        // empty spool's weight, so Save would silently drop it.
+        if (selectedSpoolId != null && weightMethod == WeightMethod.Measured &&
+            measuredEntry != null && emptySpoolWeightG == null
+        ) {
+            return "Enter the empty spool weight to use Measured."
+        }
+        return null
     }
 
 private val HEX6_REGEX = Regex("^[0-9A-Fa-f]{6}$")

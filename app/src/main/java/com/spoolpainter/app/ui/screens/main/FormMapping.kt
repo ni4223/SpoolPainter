@@ -42,7 +42,10 @@ internal object FormMapping {
         // it. A per-spool spool.spool_weight is used only when the filament has
         // no default, so spools whose filament defines an empty weight stay in
         // lockstep with what Spoolman displays.
+        // U32 B2 (D2): the vendor's empty-spool weight is the last fallback,
+        // so Measured works for spools whose filament and spool both lack one.
         val effectiveSpoolWeight = spool.filament.spool_weight ?: spool.spool_weight
+            ?: spool.filament.vendor?.empty_spool_weight
         return FormState(
             cardUid = resolvedUid,
             material = materialData,
@@ -76,6 +79,9 @@ internal object FormMapping {
             // shows on initial prefill so an untouched save is a no-op.
             remainingWeightG = spool.remaining_weight,
             prefilledRemainingWeightG = spool.remaining_weight,
+            initialWeightG = spool.initial_weight,
+            usedWeightG = spool.used_weight,
+            prefilledTempRanges = tempRanges,
             prefilledPriceMajor = effectivePrice,
             prefilledEmptySpoolWeightG = effectiveSpoolWeight,
         )
@@ -109,12 +115,15 @@ internal object FormMapping {
         payload: OpenSpoolPayload,
         rawWriteMode: Boolean,
     ): FormState {
+        // U28 D2: a blank type (unknown vendor material code) leaves Material
+        // empty for the user to pick; the tag's temps are still used.
+        val unknownMaterial = payload.type.isBlank()
         val baseMaterial = MaterialPresetSource.lookup(payload.type)
         val parsedExtruderMin = payload.minTemp.toIntOrNull()
         val parsedExtruderMax = payload.maxTemp.toIntOrNull()
         val parsedBedMin = payload.bedMinTemp?.toIntOrNull()
         val parsedBedMax = payload.bedMaxTemp?.toIntOrNull()
-        val resolvedMaterial = baseMaterial ?: synthesiseMaterial(
+        val resolvedMaterial = if (unknownMaterial) null else baseMaterial ?: synthesiseMaterial(
             name = payload.type,
             extMin = parsedExtruderMin,
             extMax = parsedExtruderMax,
@@ -158,16 +167,21 @@ internal object FormMapping {
                     density = filament.density,
                 )
             }
+        // U32 B1 (D1): min falls back to the preset too, not only max.
+        val extMin = filament.settings_extruder_temp ?: materialData?.defaultMinTemp
+        val bedMin = filament.settings_bed_temp ?: materialData?.defaultBedMinTemp
         return FormState(
             material = materialData,
             brand = Brand(filament.vendor?.name ?: "Unknown"),
             colorHex = canonicaliseColorHex(filament.color_hex),
             variant = decodeExtraVariant(filament.extra?.get("variant")),
+            // U32 FN1: a filament temp above the preset max would give
+            // min > max and block Save; use deriveSpoolmanTemps' +20/+10 rule.
             tempRanges = TempRanges(
-                extruderMin = filament.settings_extruder_temp,
-                extruderMax = materialData?.defaultMaxTemp,
-                bedMin = filament.settings_bed_temp,
-                bedMax = materialData?.defaultBedMaxTemp,
+                extruderMin = extMin,
+                extruderMax = materialData?.defaultMaxTemp?.let { if (extMin != null && extMin > it) extMin + 20 else it },
+                bedMin = bedMin,
+                bedMax = materialData?.defaultBedMaxTemp?.let { if (bedMin != null && bedMin > it) bedMin + 10 else it },
             ),
             selectedSpoolId = null,
             selectedFilamentId = filament.id,
@@ -200,6 +214,11 @@ internal object FormMapping {
             extruderTemp <= materialData.defaultMaxTemp
         ) {
             materialData.defaultMinTemp to materialData.defaultMaxTemp
+        } else if (extruderTemp == null && materialData != null) {
+            // U32 B1 (D1): filaments made in Spoolman's web UI often have no
+            // Extruder Temp; without a fallback Save stays disabled (#12).
+            // Accepted: Save then writes these preset temps into the filament.
+            materialData.defaultMinTemp to materialData.defaultMaxTemp
         } else {
             extruderTemp to extruderTemp?.plus(20)
         }
@@ -209,6 +228,8 @@ internal object FormMapping {
             bedTemp >= materialData.defaultBedMinTemp &&
             bedTemp <= materialData.defaultBedMaxTemp
         ) {
+            materialData.defaultBedMinTemp to materialData.defaultBedMaxTemp
+        } else if (bedTemp == null && materialData != null) {
             materialData.defaultBedMinTemp to materialData.defaultBedMaxTemp
         } else {
             bedTemp to bedTemp?.plus(10)

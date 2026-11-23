@@ -1,5 +1,7 @@
 package com.spoolpainter.app.data.remote.spoolman
 
+import com.spoolpainter.app.domain.models.SpoolmanFilament
+
 data class CreateVendorRequest(
     val name: String,
 )
@@ -20,6 +22,12 @@ data class CreateFilamentRequest(
     val spool_weight: Float? = null,
     val price: Float? = null,
     val extra: Map<String, String>? = null,
+)
+
+/** A filament after an override PATCH; [wrote] is false when nothing differed and no HTTP write was made. */
+data class FilamentPatchResult(
+    val filament: SpoolmanFilament,
+    val wrote: Boolean,
 )
 
 data class PatchFilamentBody(
@@ -76,6 +84,10 @@ data class CreateSpoolRequest(
 
 data class SpoolPatchBody(
     val extra: Map<String, String>? = null,
+    // U32 B3: Spoolman applies PATCH fields in its SpoolParameters order,
+    // initial_weight before remaining_weight, so one request can raise the
+    // cap and set a remaining above the old one.
+    val initial_weight: Float? = null,
     val remaining_weight: Float? = null,
     val price: Float? = null,
     val spool_weight: Float? = null,

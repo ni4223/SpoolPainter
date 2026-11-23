@@ -2,6 +2,7 @@ package com.spoolpainter.app.support
 
 import com.spoolpainter.app.data.remote.spoolman.ConnectivityState
 import com.spoolpainter.app.data.remote.spoolman.ExpanderOverrides
+import com.spoolpainter.app.data.remote.spoolman.FilamentPatchResult
 import com.spoolpainter.app.data.remote.spoolman.NewSpoolBundle
 import com.spoolpainter.app.data.remote.spoolman.PatchFilamentBody
 import com.spoolpainter.app.data.remote.spoolman.SpoolPatchBody
@@ -194,20 +195,23 @@ class FakeSpoolmanRepository(
         private set
     var lastApplyOverridesToFilamentOfSpool: Pair<Int, ExpanderOverrides>? = null
         private set
-    var nextApplyOverridesToFilamentOfSpoolResult: SpoolmanOutcome<SpoolmanFilament>? = null
+    var nextApplyOverridesToFilamentOfSpoolResult: SpoolmanOutcome<FilamentPatchResult>? = null
 
     override suspend fun applyOverridesToFilamentOfSpool(
         spoolId: Int,
         overrides: ExpanderOverrides,
-    ): SpoolmanOutcome<SpoolmanFilament> {
+    ): SpoolmanOutcome<FilamentPatchResult> {
         applyOverridesToFilamentOfSpoolCalls++
         lastApplyOverridesToFilamentOfSpool = spoolId to overrides
-        // Default: pretend the patch succeeded with a stub filament so the
-        // use case continues. Tests that need a specific result can set
-        // nextApplyOverridesToFilamentOfSpoolResult.
+        // Default: pretend the patch wrote something, with a stub filament,
+        // so the use case continues. Tests that need a specific result
+        // (e.g. wrote = false) can set nextApplyOverridesToFilamentOfSpoolResult.
         return nextApplyOverridesToFilamentOfSpoolResult
             ?: SpoolmanOutcome.Success(
-                SpoolmanFilament(id = 0, vendor = null, color_hex = "FFFFFF", material = null)
+                FilamentPatchResult(
+                    SpoolmanFilament(id = 0, vendor = null, color_hex = "FFFFFF", material = null),
+                    wrote = true,
+                ),
             )
     }
 

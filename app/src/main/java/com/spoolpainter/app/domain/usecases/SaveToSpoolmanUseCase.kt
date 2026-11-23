@@ -6,6 +6,7 @@ import com.spoolpainter.app.data.remote.spoolman.SpoolmanOutcome
 import com.spoolpainter.app.data.remote.spoolman.SpoolmanRepository
 import com.spoolpainter.app.data.remote.spoolman.UrlNotConfiguredException
 import com.spoolpainter.app.ui.screens.main.FormState
+import com.spoolpainter.app.ui.screens.main.initialWeightToSend
 import com.spoolpainter.app.ui.screens.main.toExpanderOverrides
 import javax.inject.Inject
 
@@ -31,7 +32,10 @@ data class SaveToSpoolmanInput(
  *   1b. Existing-spool spool-scope edits (remaining_weight + spool_weight)
  *       behind the stale-prefill guard.
  *
- * Failures from 1a / 1b are logged non-fatal — they don't roll the spool back.
+ * Failures from 1a / 1b don't roll the spool back, but they are reported:
+ * U32 B2 — the result is [SaveToSpoolmanResult.Failed] when a PATCH failed,
+ * [SaveToSpoolmanResult.Success.Saved] only when an HTTP write actually
+ * happened, and [SaveToSpoolmanResult.NoChanges] otherwise.
  *
  * `lastResolvedSpoolId` rides here so the caller can pin the dropdown selection
  * after a Save. Save creates spools; Write only maps a UID and never deletes
@@ -59,6 +63,7 @@ open class SaveToSpoolmanUseCase @Inject constructor(
         lastResolvedSpoolId = spoolId
 
         var dirty = isNewSpool
+        var failure: SpoolmanOutcome<*>? = null
 
         // 1a. Existing-spool filament-record edits (v2.1 — UI-13 followup).
         //     Color + Density + Diameter + Filament weight + Temps + Variant
@@ -70,11 +75,11 @@ open class SaveToSpoolmanUseCase @Inject constructor(
         val overrides = snapshot.form.toExpanderOverrides()
         if (!isNewSpool && overrides != ExpanderOverrides.EMPTY) {
             when (val patch = spoolman.applyOverridesToFilamentOfSpool(spoolId, overrides)) {
-                is SpoolmanOutcome.Success -> dirty = true
-                else -> android.util.Log.w(
-                    "SaveToSpoolman",
-                    "applyOverridesToFilamentOfSpool failed (non-fatal): $patch",
-                )
+                is SpoolmanOutcome.Success -> if (patch.data.wrote) dirty = true
+                else -> {
+                    android.util.Log.w("SaveToSpoolman", "applyOverridesToFilamentOfSpool failed: $patch")
+                    failure = patch
+                }
             }
         }
 
@@ -95,25 +100,29 @@ open class SaveToSpoolmanUseCase @Inject constructor(
             val emptyDirty = empty != null && empty != emptyPrefilled
             val priceDirty = price != pricePrefilled
             if (remDirty || emptyDirty || priceDirty) {
+                // U32 B3/FN2: set this spool's initial weight (never the
+                // filament's weight) in the same PATCH when Spoolman would
+                // cap or reject the remaining edit.
                 val body = SpoolPatchBody(
+                    initial_weight = snapshot.form.initialWeightToSend(),
                     remaining_weight = rem.takeIf { remDirty },
                     spool_weight = empty.takeIf { emptyDirty },
                     price = price.takeIf { priceDirty },
                 )
                 when (val patch = spoolman.patchSpoolFields(spoolId, body)) {
                     is SpoolmanOutcome.Success -> dirty = true
-                    else -> android.util.Log.w(
-                        "SaveToSpoolman",
-                        "patchSpoolFields failed (non-fatal): $patch",
-                    )
+                    else -> {
+                        android.util.Log.w("SaveToSpoolman", "patchSpoolFields failed: $patch")
+                        failure = patch
+                    }
                 }
             }
         }
 
-        return if (dirty) {
-            SaveToSpoolmanResult.Success.Saved(spoolId = spoolId, isNewSpool = isNewSpool)
-        } else {
-            SaveToSpoolmanResult.NoChanges(spoolId = spoolId)
+        return when {
+            failure != null -> SaveToSpoolmanResult.Failed(failure)
+            dirty -> SaveToSpoolmanResult.Success.Saved(spoolId = spoolId, isNewSpool = isNewSpool)
+            else -> SaveToSpoolmanResult.NoChanges(spoolId = spoolId)
         }
     }
 

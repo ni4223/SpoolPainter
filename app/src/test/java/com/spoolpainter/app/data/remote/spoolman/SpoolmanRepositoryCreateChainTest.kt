@@ -125,6 +125,22 @@ class SpoolmanRepositoryCreateChainTest {
         assertTrue(h.fakeApi.callLog.none { it.startsWith("createFilament") })
     }
 
+    // U33: Spoolman stores alpha at the end, so FF000080 is a red filament.
+    @Test
+    fun `filament lookup pairs a transparent red filament with a red request`() = runTest {
+        val h = SpoolmanRepositoryHarness(tempFolder)
+        preregisterExtras(h.fakeApi)
+        val vendor = SpoolmanVendor(id = 7, name = "Polymaker")
+        h.fakeApi.vendorList += vendor
+        h.fakeApi.filamentList += SpoolmanFilament(
+            id = 11, name = null, material = "PLA", vendor = vendor, color_hex = "FF000080",
+        )
+        val outcome = h.repository.createSpoolForNewFilament(req(color = "FF0000"))
+        assertTrue(outcome is SpoolmanOutcome.Success)
+        assertTrue(h.fakeApi.callLog.none { it.startsWith("createFilament") })
+        assertEquals(11, (outcome as SpoolmanOutcome.Success).data.filament.id)
+    }
+
     @Test
     fun `fail at vendor short-circuits chain`() = runTest {
         val h = SpoolmanRepositoryHarness(tempFolder)

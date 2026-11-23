@@ -126,7 +126,7 @@ class MainViewModel @Inject constructor(
      */
     val canSave: StateFlow<Boolean> = combine(
         _state.map {
-            it.form.canSubmit &&
+            it.form.saveBlocker == null &&
                 it.activeFlow == ActiveFlow.Idle &&
                 it.writeMode == WriteMode.Spoolman
         }.distinctUntilChanged(),
@@ -147,6 +147,22 @@ class MainViewModel @Inject constructor(
             (brand?.name != "Other" || customBr.isNotBlank())
         baseOk && customsOk && !saving
     }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    /**
+     * U32 B1 — the line shown under a disabled Save button, or null. Only form
+     * reasons the user can fix; busy / no-Spoolman states show nothing.
+     */
+    val saveDisabledReason: StateFlow<String?> = combine(
+        _state.map { it.form.saveBlocker }.distinctUntilChanged(),
+        _state.map { it.form.material }.distinctUntilChanged(),
+        _customMaterial,
+        _state.map { it.form.brand }.distinctUntilChanged(),
+        _customBrand,
+    ) { blocker, material, customMat, brand, customBr ->
+        blocker
+            ?: "Type the material name.".takeIf { material?.name == "Other" && customMat.isBlank() }
+            ?: "Type the brand name.".takeIf { brand?.name == "Other" && customBr.isBlank() }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     /**
      * U13 — true when Write is tappable.
@@ -1343,6 +1359,10 @@ class MainViewModel @Inject constructor(
                         _effects.trySend(
                             UiEffect.ShowSnackbar("Couldn't read the tag. Hold still and press Read again."),
                         )
+                    // U28 D2: the tag decoded but a field needs the user,
+                    // e.g. an unknown Snapmaker material code.
+                    parsedHint.readNotice != null ->
+                        _effects.trySend(UiEffect.ShowSnackbar(parsedHint.readNotice))
                 }
             }
             is ReadAndPairResult.Ambiguous -> {
@@ -1496,6 +1516,13 @@ class MainViewModel @Inject constructor(
                         // Refresh prefilled snapshots to current values so a
                         // follow-up Save with no further edits is a no-op.
                         prefilledRemainingWeightG = current.form.remainingWeightG,
+                        // U32 B3/FN2: mirror the initial weight Save just sent.
+                        initialWeightG = if (result.isNewSpool) {
+                            current.form.initialWeightG
+                        } else {
+                            current.form.initialWeightToSend() ?: current.form.initialWeightG
+                        },
+                        prefilledTempRanges = current.form.tempRanges,
                         prefilledPriceMajor = current.form.priceMajor,
                         prefilledEmptySpoolWeightG = current.form.emptySpoolWeightG,
                     )
@@ -1516,8 +1543,8 @@ class MainViewModel @Inject constructor(
                 _effects.trySend(UiEffect.ShowSnackbar(msg))
             }
             is SaveToSpoolmanResult.NoChanges -> {
-                // Save button should have been greyed; this only fires on a race.
-                android.util.Log.d("SpoolmanRepo", "Save no-op for spool #${result.spoolId}")
+                // U32 B2: never claim "Updated" when nothing was written.
+                _effects.trySend(UiEffect.ShowSnackbar("No changes to save for spool #${result.spoolId}."))
             }
             is SaveToSpoolmanResult.Failed -> {
                 _effects.trySend(UiEffect.ShowSnackbar(humanReadable(result.outcome)))

@@ -2757,3 +2757,248 @@ Resume artefact lists: copy/paste-ready build commands, milestone-by-milestone t
 **Context**: Operations — #8 closed. UI-64 remains the strongest next unit.
 
 ---
+## Session resume 2026-11-22 — workspace repair + GitHub backlog triage
+**Timestamp**: 2026-11-22T19:50:00Z
+**User Input**: "Look for app called spoolpainter and then AIDLC continue"
+**AI Response**: Found the project at ~/AndroidStudioProjects/SpoolPainter. Before resuming, found the local git repo corrupt (`fatal: bad object HEAD`): the working copy is a partial copy dated 2026-08-30 — loose objects for the last 5 commits (5a2f15b..032356b) and 10 tracked files (U25/U26/U27 plans, v2.4.1 release notes, requirements-questions-ui67-clear-all.md, requirements-questions-v2.5-features.md, MainViewModelClearAllTest.kt, MainScreenStatusLabelTest.kt, ic_snapmaker_wordmark.xml, drawable-nodpi/ic_polymaker_wordmark.png) were missing. Diffed a fresh clone of origin/v2 against the working tree: no other differences, so no unpushed local work existed. Also flagged a local credential-hygiene issue to the maintainer (details deliberately kept out of this public repo). The state file was closed 2026-08-28 with no open unit and is ~3 months stale: GitHub since then has 6 new issues (#10, #11, #12, #16, #18, #19), #9 closed, and 5 open external PRs (#13, #14, #15, #17, #20), four of which (#13, #15, #17, #20) are based on `main` at f197de3 — 19 commits behind v2 (missing 2.3.2-2.4.1). Asked two questions.
+**Context**: Session resume. Workspace repair precondition; next-unit selection.
+
+---
+## Session resume — maintainer answers
+**Timestamp**: 2026-11-22T19:55:00Z
+**User Input**: Git repair → "Repair it, keep backup (Recommended)"; Next unit → "Triage all open PRs/issues"
+**AI Response**: Repaired: moved the corrupt .git to `.git.broken-2026-11-22/` (kept, listed in .git/info/exclude), copied in the fresh clone's .git, restored the original .git/config (identity + remote), restored the 10 missing files from origin/v2, restored the exec bit on gradlew (lost in the copy). `git fsck` clean; `v2` in sync with `origin/v2` at 032356b; working tree clean apart from the untracked `.claude/`. Starting triage of all open GitHub PRs and issues into ui-followups.md, before any unit is picked.
+**Context**: Session resume → backlog triage (Inception — Requirements Analysis input). No unit open.
+
+---
+## Planning — UI-70 (Snapmaker unknown type codes) added to backlog
+**Timestamp**: 2026-11-22T21:10:00Z
+**User Input**: "So like i said add to doc we will merge subtype one, will do 17, 18 tag own our own and add those lessons fic in the doc too, this is ficking plan"
+**AI Response**: Planning only, no code. Earlier this turn the maintainer had said "Just the docs, dont make cahnges, we are just planning, let this one as it is", so my SnapmakerFormat.kt edit (PR #13 codes plus 17/18) was reverted with `git restore` and the working tree has no code changes. Added UI-70 to ui-followups.md: root cause (SnapmakerFormat.kt:250-254 returns null on an unknown main or sub type after the signature verifies), the firmware type tables read from Snapmaker/u1-klipper filament_protocol.py, and the plan: (1) merge PR #13 (sub types 9-16), (2) add 17 Starlight and 18 Aero ourselves, (3) lessons fix: fail soft on unknown codes, add the missing main types, fix the "Hold still" copy, add tests, add a comment pointing at the firmware source. GitHub actions (#10 reply, PR #13 retarget) not posted.
+**Context**: Backlog planning. No unit open, no code changed.
+
+---
+## Planning — UI-71 (Spoolman native tags) design decided
+**Timestamp**: 2026-11-22T21:45:00Z
+**User Input**: "regrading migration? lets do, if you add new tags, and your spoolman is new we add both. and update old tags, we update the native tags, and if user switches store to new one, then we check if spoolman is new, maybe do not even show option to switch store till spoolman is new, jsust show one store, if user decides to switches store then we migrate all with right message" / then "1, do 1. 2- keep it, 3 - do 2(maybe show which spools), 4-migrate. 5 - stop writing."
+**AI Response**: Before this the maintainer asked how native tags differ from card_uids, whether users must upgrade Spoolman (no: card_uids works on every version; firmware default stays card_uids; paxx12's plan only shows the setting, then makes native the default for new setups), and pointed out the app has no delete action, only move-on-bind (verified: removeCardUidFromSpool has one caller, MoveOnBindUseCaseImpl.kt:46). Raised five gaps; maintainer answered: (1) existing tags get a native tag only on re-pair/move, never on a plain Read; (2) keep card_uids after switching; (3) skip a UID found on several spools and list which spools; (4) migrate archived spools too; (5) stop writing card_uids after switching to native. Added UI-71 to ui-followups.md with the design, the move-on-bind extension, the PR #20 lessons (204 unlink, auto-migration, native-wins), two open questions (switching back; downgrade/unreachable fallback) and the outstanding GitHub replies (unposted).
+**Context**: Backlog planning. No unit open, no code changed.
+
+---
+## Construction — U28 + U29 Code Generation Part 1 plans (approval prompt)
+**Timestamp**: 2026-11-22T22:15:00Z
+**User Input**: "why jst audit.md why not proper tasks?" / then, to "What should I turn them into?": "AIDLC units + plans (Recommended)"
+**AI Response**: Answered that UI-70 and UI-71 were full backlog entries in ui-followups.md, not only audit.md, but had no unit numbers, no plan files and no aidlc-state.md update, because the maintainer had said planning only. Asked rather than assumed what "proper" meant. On the answer, wrote two Code Generation Part 1 plans, docs only: `construction/plans/u28-snapmaker-type-codes-code-generation-plan.md` (UI-70; S0-S12; decisions D1 unknown sub type, D2 unknown main type, D3 how PR #13 lands) and `construction/plans/u29-spoolman-native-tags-code-generation-plan.md` (UI-71; S0-S14; decisions D1 switching back, D2 downgrade/unreachable, D3 build on PR #20 vs fresh, D4 no card_uids-only option). Verified while planning: unknown material names already synthesise a material from the tag's temps (FormMapping.kt:111-122), so new Snapmaker main types need no mapping onto the preset list; the version probe already exists (SpoolmanApi.kt:18-19, testConnection at SpoolmanRepository.kt:86-91). Updated aidlc-state.md (Current Stage, U28/U29 in the Construction list, new "Session 2026-11-22" section) and linked both plans from UI-70/UI-71. Approval prompt: plans ready for review; Part 2 (code) will not start until the decisions are answered, the plans approved, and an Android SDK installed on this Mac.
+**Context**: Construction — U28 and U29 Code Generation Part 1. Awaiting decisions + approval. No code changed.
+
+---
+## Construction — U30 (PR #14, article_number) added to the plan
+**Timestamp**: 2026-11-22T22:30:00Z
+**User Input**: "14 add to plan"
+**AI Response**: Planning only. Read PR #14's description and diff stat: 31 files, +917/-59, based on the v2 tip, no Gradle build files changed, and it also edits SnapmakerFormat.kt (4 lines, SKU read), which U28 changes too. Wrote `construction/plans/u30-vendor-article-number-code-generation-plan.md` (S0-S7: SDK, re-check the reviewed head 774c18f, suite/lint/assemble on the PR branch, decisions, the PR's four on-phone checks, regression, merge on GitHub with approval, docs). Decisions: D1 keep Bambu/Snapmaker beyond #11's Anycubic ask (recommended) or gate them; D2 accept the minor review items (recommended) or ask for a follow-up; D3 merge order PR #13 → PR #14 → U28 code (recommended). Added UI-72 to ui-followups.md, U30 to aidlc-state.md (Construction list, session table, Current Stage), and a merge-order note to U28 S1.
+**Context**: Construction — U30 Code Generation Part 1. Awaiting decisions + approval. No code changed.
+
+---
+## Construction — U31 (PR #15, NFC flow hardening) added to the plan
+**Timestamp**: 2026-11-22T22:50:00Z
+**User Input**: "for 15 can we merge it or we will have to edit it?" / then "okay add that to plan, we asdk them to fix it"
+**AI Response**: Answered that PR #15 cannot merge as-is. Verified the PR body's offer ("Happy to split this into separate PRs per layer if you prefer"). Layer 1 (crash guard, confirm supersede, UI-56 buffer clear) keep, with one fix: the buffer is cleared before the Error transition and the use cases read the UID from it afterwards, so failed writes lose their UID (verified, CreateAndPairUseCase.kt:173-179). Layer 2 (split tap-wait / tag-I/O timeouts) keep as is. Layer 3 (TagIoWatchdog + dispatch re-arm) drop: withTimeoutOrNull waits for the runInterruptible block, so the force-close runs only after the hung call returns (verified); it misreports late successful writes; the re-arm is not UI-53's fix. Plus a rebase onto v2 (one mechanical conflict). On the decision to ask the contributor, wrote `construction/plans/u31-nfc-flow-hardening-pr15-code-generation-plan.md` (S0-S7, D1 = 3-week fallback to taking Layers 1-2 ourselves with co-author credit, §5 draft request NOT posted), added UI-73 to ui-followups.md, and U31 to aidlc-state.md. UI-53 and UI-56 entries left unedited.
+**Context**: Construction — U31 Code Generation Part 1. Posting the request needs approval. No code changed.
+
+---
+## Operations — PR #15 fix request posted
+**Timestamp**: 2026-11-22T23:00:00Z
+**User Input**: "tell em about the issues now"
+**AI Response**: Treated as explicit approval to post the U31 §5 request on PR #15. Before posting, re-verified the two claims not yet checked first-hand: TwoTagUseCase (:60, :66, :69) and RawWriteUseCase (:53) on v2 read the UID from `nfc.lastSeenTag` after an Error; PR #15's `reRegisterDispatch()` (NfcRepository.kt:174) runs only after `tapConsumedSignal` completes and the 30 s I/O grace expires, i.e. only after a consumed tap. Posted as ni4223: https://github.com/ni4223/SpoolPainter/pull/15#issuecomment-7085706466 (no @mentions). Updated U31 S1 [x], UI-73 and aidlc-state.md. D1 fallback window: 3 weeks, to about 2026-12-13. Nothing else posted; #17, #20 and the other PRs untouched.
+**Context**: Operations — GitHub outreach for U31.
+
+---
+## Construction — U32 (weight save) added to the plan
+**Timestamp**: 2026-11-22T23:30:00Z
+**User Input**: "i also saw weight bug on my own use,let say if i have spool saved, i go and update the measured tag so as the tooltal; weight is more than 1 kg, it says uodated, even spoolman shows omthing got updated but it dont" / "a, but will it uopdate the spool or filament?" / "yes"
+**AI Response**: Traced the maintainer's report to a third cause: the app sends remaining_weight = measured − empty, and Spoolman 0.27 stores it as used_weight = max(initial_weight − remaining, 0) (verified in Donkie/Spoolman v0.27.0 spoolman/database/spool.py update()), so anything above initial_weight is capped with a successful PATCH. Maintainer chose option A: raise the spool's initial_weight. Answered that initial_weight is a spool field ("net weight of the filament on the spool", api/v1/spool.py:111-115), so the filament's weight is untouched; SpoolParameters lists initial_weight before remaining_weight, so one PATCH should apply both in order (from source, to confirm on a real server). Also verified first-hand the false "Updated": patchFilament returns Success on an empty diff (SpoolmanRepository.kt:128-130) and SaveToSpoolmanUseCase sets dirty on it (:72). Wrote `construction/plans/u32-weight-save-code-generation-plan.md` (B1 Save gate on missing extruder temp/colour, B2 Measured with no empty-spool weight + false success, B3 over-initial cap; D1 and D2 open; S0-S11), added UI-74 to ui-followups.md, U32 to aidlc-state.md.
+**Context**: Construction — U32 Code Generation Part 1. Awaiting D1-D2 + approval. No code changed.
+
+---
+## Construction — U32 D1 decided (preset temps fallback)
+**Timestamp**: 2026-11-22T23:45:00Z
+**User Input**: "i dont get b1, hw is extruder temp not emptry we have it default to certain values" / then "a"
+**AI Response**: Checked every place the form gets temps: fresh form (PLA 190-220, MainUiState.kt:222), material pick (preset, MainViewModel.kt:1074-1084), tag read (tag else preset, FormMapping.kt:131) all have defaults; picking an existing spool (deriveSpoolmanTemps, FormMapping.kt:194-204) has no fallback, and picking a filament falls back for max only (FormMapping.kt:166-168). Filaments SpoolPainter creates always get an Extruder Temp, which is why the maintainer never hits B1. Offered A (fill preset defaults; consequence stated: Save then writes the guessed temps into the filament in Spoolman) vs B (don't require temps); recommended B. Maintainer chose A. Recorded D1 = A with the accepted consequence in the U32 plan, UI-74 and aidlc-state.md; added D1b (null colour, still open; recommended not requiring colour for an existing spool rather than writing FFFFFF).
+**Context**: Construction — U32 Code Generation Part 1. Awaiting D1b, D2 + approval. No code changed.
+
+---
+## Construction — U32 D2 decided
+**Timestamp**: 2026-11-22T23:55:00Z
+**User Input**: "what is other weight bug" / then "okat"
+**AI Response**: Explained B2 (Measured with no empty-spool weight: remaining not computed, MainViewModel.kt:1042; "Updated" shown because patchFilament returns Success on an empty diff, SpoolmanRepository.kt:128-130, and SaveToSpoolmanUseCase sets dirty, :72). Found while answering that the form already falls back filament spool_weight → spool spool_weight (FormMapping.kt:45), so B2 hits only when both are empty; corrected D2 in the U32 plan, which had claimed no fallback existed. Took "okat" as accepting the D2 recommendation: add the vendor's empty-spool weight as a last fallback, prompt when none, never report "Updated" when nothing was saved. Recorded in the plan, UI-74 and aidlc-state.md. D1b (null colour) still unanswered.
+**Context**: Construction — U32 Code Generation Part 1. Awaiting D1b + approval. No code changed.
+
+---
+## Construction — U33 (transparent colours) added to the plan
+**Timestamp**: 2026-11-23T00:15:00Z
+**User Input**: "one review i got A very well-made app that works perfectly. However, I’ve come across an issue: if you adjust the transparency of a color (to less than 100%) for your filaments in Spoolman, the SpoolPainter app no longer displays that color. Is this a bug, or am I doing something wrong?" / then "yes"
+**AI Response**: Confirmed a bug. Spoolman 0.27 color_hex "Supports alpha channel at the end" (filament.py:99-106); ColorHexCodec.canonicalise keeps the last 6 characters (ColorHexCodec.kt:4-8), assuming alpha-first, so FF000080 reads as 000080. Traced the overwrite: the form sends its colour on every existing-spool Save (MainUiState.kt:156 → SpoolmanRepository.kt:279) and sparseDiff sees it differ (:298), so the wrong colour is written back and the alpha lost. All tag parsers emit 6-hex RGB, so no actual alpha-first source exists; ColorHexCodecTest.kt:17/:41 pin the wrong rule. On "yes", wrote `construction/plans/u33-transparent-color-code-generation-plan.md` (D1 read-and-keep alpha, D2 keep alpha on colour change, D3 tags unchanged; S0-S8; §4 draft reply to the review, 316 characters, not posted), added UI-75 to ui-followups.md and U33 to aidlc-state.md.
+**Context**: Construction — U33 Code Generation Part 1. Awaiting D1-D3 + approval. No code changed.
+
+---
+## Correction — U33 audit entry
+**Timestamp**: 2026-11-23T00:16:00Z
+**User Input**: (none; self-correction)
+**AI Response**: The U33 entry above says the draft review reply is 316 characters. Measured: 323 characters (still under Play's 350-character reply limit).
+**Context**: Audit accuracy.
+
+---
+## Instruction — hold the paxx12 #805 note
+**Timestamp**: 2026-11-23T00:25:00Z
+**User Input**: "lets not post on paxx one yet, what is transprency reply?"
+**AI Response**: Holding the note to paxx12 on firmware #805 until the maintainer says otherwise (U29 S14 was already approval-gated). Showed the U33 §4 draft review reply (323 characters); Play review replies are posted by the maintainer from Play Console.
+**Context**: Outreach. Nothing posted.
+
+---
+## Session handoff 2026-11-23
+**Timestamp**: 2026-11-23T00:40:00Z
+**User Input**: "get doc ready i plan to clear the session and start again, get my prompt ready for the next ageent ti 33, 32 and 28 next"
+**AI Response**: Added a "Handoff for the next session" subsection to aidlc-state.md (work order U33 → U32 → U28; per-unit decisions to ask; the U28/U30 merge-order change; prerequisites; uncommitted files; scratch paths), plus the PR #17 verdict and an outreach summary, and pointed Current Stage at it. Removed the credential detail from aidlc-state.md and from this log's first 2026-11-22 entry, because aidlc-docs is in a public repository; the detail stays with the maintainer. Wrote the next-session prompt for the maintainer. Nothing committed.
+**Context**: Session close-out (planning). No code changed.
+
+---
+## Session resumed — U33 D1-D3 and U32 D1b decided
+**Timestamp**: 2026-11-22T21:55:00Z (system clock; the 2026-11-23 stamps above were estimated)
+**User Input**: Resume prompt (work order U33 → U32 → U28; ask decisions, get plan approval, ask before installing an SDK) + "at the end of task we do install gate, where we test it all on device". Answers: U33 D1 "Read & keep", D2 "Keep old alpha", D3 "6-hex RGB only"; U32 D1b "color cant be empty, as default is white. is this only for spools that have no color saved? then do 1".
+**AI Response**: Re-verified the U33 root cause and save-overwrite path in code. New finding: picker rows pass raw color_hex to the swatch (MainScreen.kt:865, FilamentPicker.kt:72) and parseSwatchColor rejects non-6-character values (PickerRow.kt:84), so transparent filaments show grey; added to U33 S1. Answered D1b: yes, only existing spools whose filament has no color_hex; the FFFFFF default (MainUiState.kt:221) is for a new form only and is replaced on spool pick (FormMapping.kt:50). Recorded all four decisions in the U33/U32 plans. Install-gate steps (U33 S6, U32 S8-S9, U28 S10) moved to one combined on-device gate after U28.
+**Context**: Construction — U33/U32 Code Generation Part 1. Awaiting plan approval + SDK install approval. No code changed.
+
+---
+## Approvals — SDK install, U33 plan, install-gate timing
+**Timestamp**: 2026-11-22T21:58:00Z
+**User Input**: SDK install "Yes, install all"; U33 plan "Approve"; install gate "One at the end".
+**AI Response**: Installed the Homebrew android-commandlinetools cask, accepted SDK licences, installed platform-tools, platforms;android-36, build-tools;35.0.0. Baseline testDebugUnitTest: 643 tests, 0 failures.
+**Context**: Construction — U33 Code Generation Part 2 started.
+
+---
+## Construction — U33 Code Generation Part 2 complete
+**Timestamp**: 2026-11-22T22:10:00Z
+**User Input**: (none; executing the approved plan)
+**AI Response**: S1 ColorHexCodec first-6 + alpha() + overrideFor(); picker swatches via toRgb. S2 no code needed (verified OpenSpool read and tag write paths). S3 applyOverridesIfNeeded uses overrideFor against the fresh filament. S4 tests (+14; FakeSpoolmanApi.patchFilament now applies color_hex); non-vacuity: S3 reverted → 4 of 5 repository tests fail. S5 compileDebugKotlin testDebugUnitTest assembleDebug green, 657 tests. S7 docs: next-release-notes-draft.md, UI-75 state, aidlc-state.md. S6 deferred to the combined install gate; S8 reply is the maintainer's.
+**Context**: Construction — U33 awaiting code review (Request Changes / Continue to U32).
+
+---
+## Construction — U33 approved, moving to U32
+**Timestamp**: 2026-11-22T22:15:00Z
+**User Input**: "ok go"
+**AI Response**: U33 code approved (Continue to Next Stage). Re-verifying the U32 plan against the code before asking for its approval.
+**Context**: Construction — U33 complete pending the combined install gate; U32 Part 1 approval next.
+
+---
+## Construction — U32 plan approved
+**Timestamp**: 2026-11-22T22:20:00Z
+**User Input**: "ok"
+**AI Response**: U32 plan approved, including the stated implementation choices (S1 "wrote" flag from the filament patch; S4 cap compared against spool initial_weight, else filament weight, to be verified in Spoolman 0.27 source; S3 vendor level only if Spoolman 0.27 vendors have empty_spool_weight). Starting Part 2. S0 baseline: 657 green after U33.
+**Context**: Construction — U32 Code Generation Part 2.
+
+---
+## Construction — U32 Code Generation Part 2 complete
+**Timestamp**: 2026-11-22T22:40:00Z
+**User Input**: (none; executing the approved plan)
+**AI Response**: Read Spoolman v0.27.0 source: vendor empty_spool_weight exists; remaining_weight PATCH capped against spool initial_weight only (400 when null; the filament-weight fallback assumption was wrong, corrected before coding); initial_weight applied before remaining_weight. S1 FilamentPatchResult(wrote) diffing against the fresh filament; dirty only on a real write; failed PATCH → Failed (stated to the maintainer before coding); NoChanges snackbar. S2 preset-temp fallback, FormState.saveBlocker (D1b), saveDisabledReason under Save. S3 vendor empty-spool fallback + Measured blocker/hint. S4 initial_weight raise. S5 +19 tests; two old tests that pinned B1/B2 replaced; non-vacuity S1 and S4 each fail when reverted. S6 UI-55 note corrected. S7 matrix green, 676 tests. Found, not fixed: fromFilament min>max when the filament temp exceeds the preset max; spools with null initial_weight reject remaining edits (now shown as an error).
+**Context**: Construction — U32 awaiting code review (Request Changes / Continue to U28).
+
+---
+## Construction — U32 approved, moving to U28
+**Timestamp**: 2026-11-22T22:45:00Z
+**User Input**: "continue"
+**AI Response**: U32 code approved (Continue to Next Stage). The two found-not-fixed items (fromFilament min>max; null initial_weight 400) were asked about but not answered; carried as open questions. Verifying U28 plan claims and PR #13/#14 before asking D1-D3 and the merge order.
+**Context**: Construction — U28 Part 1 decisions next.
+
+---
+## Construction — U28 decisions
+**Timestamp**: 2026-11-22T22:55:00Z
+**User Input**: D1 "Blank variant (Recommended)"; D2 "Empty + message (Recommended)"; D3 "Retarget + merge (Recommended)"; PR #14 order "U28 first (Recommended)".
+**AI Response**: Re-verified U28 claims in code and PR #13/#14 heads via gh (read-only). Recorded decisions and an implementation design (read-side decodeNotes/readNotice on OpenSpoolPayload; blank type → material null) in the U28 plan; S1 now applies PR #13 to the working tree uncommitted. Asking for plan approval.
+**Context**: Construction — U28 Code Generation Part 1 approval.
+
+---
+## Construction — U28 plan approved
+**Timestamp**: 2026-11-22T23:00:00Z
+**User Input**: "ok"
+**AI Response**: U28 plan approved. Starting Part 2. S0 baseline is 676 green (643 + U33 + U32).
+**Context**: Construction — U28 Code Generation Part 2.
+
+---
+## Construction — U28 Code Generation Part 2 complete
+**Timestamp**: 2026-11-22T23:20:00Z
+**User Input**: (none; executing the approved plan)
+**AI Response**: Re-read the firmware table at Snapmaker/u1-klipper main (7ac453b): matches; firmware rejects unknown codes, app now deliberately lenient. S1 PR #13 hunk applied uncommitted. S2/S3 tables (Reserved 0 excluded). S4/S5 decodeSnapmakerPayload split, fail-soft per D1/D2 with read-side decodeNotes/readNotice; blank type → material null. S6 confirmed no decode-only null path. S7 source comment. S8 SnapmakerTypeCodesTest (8) on a real dump with rewritten type bytes; non-vacuity: S5 reverted → 3 fail. S9 matrix green, 684. S11 docs. #10 reply drafted, not posted.
+**Context**: Construction — U28 awaiting code review (Request Changes / Continue to the combined install gate).
+
+---
+## Build and Test — combined install gate started
+**Timestamp**: 2026-11-22T23:25:00Z
+**User Input**: "connected"
+**AI Response**: Treated as proceeding past U28 code review to the combined install gate. Checking the device over adb before installing the debug build.
+**Context**: Construction — combined install gate (U33 S6, U32 S8-S9, U28 S10).
+
+---
+## Build and Test — install gate setup
+**Timestamp**: 2026-11-22T23:30:00Z
+**User Input**: "done, i dont have snapmaker spool with new tags, i have set my last filament to 50% transapency. last one create one for testing" / then: uninstall "Yes, uninstall debug"; Spoolman URL "192.168.1.188:7912"; no-temp test "You create it".
+**AI Response**: Device authorized (moto g stylus 2025, Android 16). installDebug failed INSTALL_FAILED_UPDATE_INCOMPATIBLE (new debug keystore on this Mac); uninstalling com.spoolpainter.app.debug with approval (Play app untouched). Will read Spoolman at 192.168.1.188:7912 with GETs and create one test filament + spool via the API as approved.
+**Context**: Construction — combined install gate.
+
+---
+## Build and Test — debug build installed, test data created
+**Timestamp**: 2026-11-22T23:35:00Z
+**User Input**: (approved above)
+**AI Response**: Spoolman at 192.168.1.188:7912 is v0.22.1, not 0.27; re-checked v0.22.1 source (database/spool.py:221-230, api/v1/spool.py:42/54, vendor empty_spool_weight): same behaviour U32 relies on. Uninstalled com.spoolpainter.app.debug, installed the new debug build (Play app untouched). Created test filament #115 "SpoolPainter test - no temp" (PLA, FF8800, no Extruder/Bed Temp, no spool_weight, no vendor) and spool #137 (initial 1000, remaining 800). Transparent filament for U33: #114 GEEETECH PETG Translucent, 0000ff80.
+**Context**: Construction — combined install gate.
+
+---
+## Build and Test — gate results A-F, remaining-test choices
+**Timestamp**: 2026-11-22T00:15:00Z (device clock 16:12 local)
+**User Input**: "do all test" / "ok" (stay-awake) / "ask again" / Test G "Allow your PATCH"; Tag write "Yes, have a tag"; Snapmaker "Yes, older one"; Cleanup "Keep for now".
+**AI Response**: Passed on device against Spoolman 0.22.1: A list swatch #135 blue; B form Blue + logo tint; C untouched Update → "No changes to save for spool #135.", only a GET, color_hex still 0000ff80; D #137 (no temps) loads preset 190-220/40-65, Update enabled; E Measured 1250 with no empty weight → inline prompt + Save blocked with reason; F empty 200 + Measured 1250 → "Updated spool #137.", remaining 1050 exact, initial 1000→1050, filament weight 1000 unchanged, temps 190/40 written (accepted D1). Noted: spool #135 consumption reported by another client during the gate (not the app). The first attempt to PATCH #115 color was blocked by the permission classifier; maintainer then approved it.
+**Context**: Construction — combined install gate, tests G (D2), tag write (D3), Snapmaker read (U28) next.
+
+---
+## Build and Test — combined install gate PASSED
+**Timestamp**: 2026-11-22T00:35:00Z (device clock 16:33 local)
+**User Input**: "we can remove tag from 44 to see decoder"
+**AI Response**: G: FF880080 + Green → 00FF0080. H: tag write on #137 succeeded; it moved tag 0447B693DA2A81 off the real spool #121 (move-on-bind) — reported to the maintainer. I: older Snapmaker tag read cleanly while linked to #44; then, as directed, removed CDAEC035 from #44 card_uids (kept BDAEC035), re-read: decoder filled PLA / SnapSpeed / F4C032 / Snapmaker; restored #44 card_uids to "BDAEC035,CDAEC035" (diff vs before: none). Ticked U33 S6, U32 S8-S9, U28 S10; recorded results in aidlc-state.md.
+**Context**: Construction — install gate complete. Open: restore tag to #121 (asked), revert stay_on_while_plugged_in to 0.
+
+---
+## Build and Test — wrap-up
+**Timestamp**: 2026-11-22T00:40:00Z
+**User Input**: "no need to do `, what is 4?"
+**AI Response**: Read as: no restore of tag 0447B693DA2A81 to spool #121 (it stays linked to test spool #137). Reverted stay_on_while_plugged_in to 0. Answered item 4 (the two U32 found-not-fixed items).
+**Context**: Construction — install gate complete.
+
+---
+## Construction — U32 addendum (FN1-FN3) plan
+**Timestamp**: 2026-11-22T00:50:00Z
+**User Input**: "fix those 2 too"
+**AI Response**: Wrote U32 plan §5 (FN1 filament-pick min > max; FN2 null initial_weight; FN3 newly found: in-range filament temp overwritten by the preset min on every existing-spool Save). All verified by code read; FN2 also in the Spoolman source. Asked the open decisions and for plan approval before any code.
+**Context**: Construction — U32 addendum, Code Generation Part 1.
+
+---
+## Construction — U32 addendum (FN1-FN3) done
+**Timestamp**: 2026-11-22T01:05:00Z (device clock 17:01 local)
+**User Input**: FN1 "max = min + 20 (Recommended)"; FN2 "Used + new remaining (Recommended)"; FN3 "Fix: send only edited temps (Recommended)"; Plan "Approve"; S17 "Yes, all of it".
+**AI Response**: Implemented S12-S14. +8 tests; non-vacuity FN1 1 / FN2 3 / FN3 1 fail when reverted; matrix green, 692 tests. Device: created filament #116 + spool #138 (initial null, used 300); Remaining 650 → initial 950 / used 300 / remaining 650, no filament PATCH, #116 temps unchanged 200/50; follow-up Update made no writes. #115 set to 230/70 for FN1: form 230-250 / 70-80, Create spool enabled (not tapped); restored to 190/40. stay_on_while_plugged_in back to 0. Docs: U32 plan §5/§5a, release notes, aidlc-state.md.
+**Context**: Construction — U32 addendum complete. Nothing committed.
+
+---
+## Construction — U32 addendum approved
+**Timestamp**: 2026-11-22T01:10:00Z
+**User Input**: "2"
+**AI Response**: Recorded approval of the U32 addendum (FN1-FN3). No commit, push or GitHub action taken; each still needs explicit OK.
+**Context**: Construction — U33, U32 (+ addendum), U28 code complete and gate-passed. Open: commit, PR #13 retarget + merge, #10/#12 replies, U33 review reply (maintainer), version.
+
+---
+## Construction — commit, PR #13, version
+**Timestamp**: 2026-11-22T01:25:00Z
+**User Input**: "go on all, just next version"
+**AI Response**: Read as OK for commit, push, PR #13 retarget + merge, #10 and #12 replies, and version = the next one (2.4.2 / versionCode 117). PR #13 retargeted main → v2 (1 commit, e8725fa, clean test merge) and merged with a merge commit (f7233ca), keeping studiofuga's authorship. Local v2 fast-forwarded to it with the uncommitted work restored byte-identical. Version set in app/build.gradle.kts. Matrix green, 692 tests. .claude/settings.local.json left out of the commit. README still says 2.4.1 (it tracks the shipped Play version).
+**Context**: Operations — release prep. Reply texts shown to the maintainer before posting.
+
+---

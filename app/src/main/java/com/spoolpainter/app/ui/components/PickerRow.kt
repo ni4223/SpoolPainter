@@ -19,6 +19,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.spoolpainter.app.domain.primitives.ColorHexCodec
 
 /**
  * Two-line dropdown row used by Spool + Filament pickers when the menu
@@ -80,14 +81,6 @@ private fun ColorSwatch(colorHex: String?) {
     )
 }
 
-private fun parseSwatchColor(hex: String?): Color? {
-    if (hex == null || hex.length != 6) return null
-    return try {
-        val r = hex.substring(0, 2).toInt(16)
-        val g = hex.substring(2, 4).toInt(16)
-        val b = hex.substring(4, 6).toInt(16)
-        Color(red = r, green = g, blue = b)
-    } catch (_: NumberFormatException) {
-        null
-    }
-}
+// Rows get Spoolman's raw color_hex, which can be RRGGBBAA (U33).
+private fun parseSwatchColor(hex: String?): Color? =
+    ColorHexCodec.toRgb(hex)?.let { (r, g, b) -> Color(red = r, green = g, blue = b) }

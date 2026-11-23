@@ -2240,8 +2240,12 @@ which then writes an inaccurate color to the Spoolman record.
 **Read**: the form models exactly one color (`FormState.colorHex`, defaults to
 `DEFAULT_COLOR_HEX`; the picker seeds `initialColor = colorHex ?: "FF0000"`), so
 there's (a) no first-class "no color / transparent" option and (b) no way to
-represent more than one hex. Color is NOT a hard save gate (`canSave` doesn't
-require it and `toExpanderOverrides` null-guards the hex), so it doesn't "break"
+represent more than one hex. ~~Color is NOT a hard save gate (`canSave` doesn't
+require it and `toExpanderOverrides` null-guards the hex)~~ **Corrected
+2026-11-22 (U32 S6):** that was wrong. `canSave` required `canSubmit`, which
+required a 6-hex colour, so a spool whose filament had no `color_hex` could not
+be saved at all. U32 (D1b) lets an **existing** spool save with no colour (none
+is sent); a new spool and Write still require one. It doesn't "break"
 in the crash sense — but the single-hex model can't represent these spools, so
 the user is nudged into an arbitrary/wrong color. Fold into the UI-50 multi-color
 hex work; add a distinct "no color" state alongside multi-hex.
@@ -3374,3 +3378,282 @@ open, so expect a duplicate rather than a comment on this one.
 
 [[UI-64]] was deliberately **not** mentioned — that is a different bug, and #9's
 reporter is the one waiting on it.
+
+---
+
+## UI-70 — Snapmaker tags with an unknown type code fail the whole read (BUG)
+
+**State**: **U28 code done 2026-11-22**, uncommitted on `v2` (PR #13's hunk
+applied, not yet merged on GitHub); build matrix green (684 tests). On-device
+check pending (combined install gate). Decided: D1 blank variant, D2 empty
+material + message, D3 retarget + merge PR #13 at commit time, U28 before PR #14.
+Plan: `construction/plans/u28-snapmaker-type-codes-code-generation-plan.md`.
+Maintainer: *"we will merge subtype one, will do 17, 18 on our own and add those
+lessons fix"*.
+**Found in**: GitHub #10. A new Snapmaker **PETG Translucent** RFID spool fails with
+*"Couldn't read the tag. Hold still and press Read again."* Older Snapmaker spools
+read fine. External PR #13 (studiofuga) is the proposed fix.
+**Severity**: medium. A genuine, signature-verified tag is thrown away, and the
+message blames the user's tap.
+
+### Root cause (verified by code read 2026-11-22)
+
+`parseSnapmakerTag` (`hardware/nfc/SnapmakerFormat.kt:250-254`) verifies the RSA
+signature first, then looks up the type codes:
+
+```
+val mainType = MAIN_TYPES[mainTypeCode] ?: return null
+val subType  = SUB_TYPES[subTypeCode]  ?: return null
+```
+
+v2 knows sub types 1-8 only, and Translucent is **12**, so the whole read returns
+null even though the tag was read and its signature checked out. v2 also knows only
+main types 1-5 (PLA, PETG, ABS, TPU, PVA), so Snapmaker ASA, PA-CF, PETG-CF and
+other spools very likely fail the same way today (inferred from the table, not
+seen in a field report).
+
+### Firmware source of truth
+
+Snapmaker/u1-klipper `klippy/extras/filament_protocol.py`, read 2026-11-22.
+
+| Sub type | Code | Sub type | Code |
+|---|---|---|---|
+| Basic | 1 | 85A | 10 |
+| Matte | 2 | Wood | 11 |
+| SnapSpeed | 3 | Translucent | 12 |
+| Silk | 4 | Full Spectrum | 13 |
+| Support | 5 | Glow | 14 |
+| HF | 6 | Rainbow | 15 |
+| 95A | 7 | Marble | 16 |
+| 95A HF | 8 | **Starlight** | **17** |
+| 90A | 9 | **Aero** | **18** |
+
+Main types: PLA 1, PETG 2, ABS 3, TPU 4, PVA 5, ASA 6, PA 9, PA-CF 10, PA-GF 11,
+PC 12, PETG-CF 17, PLA-CF 20, PEBA 22, TPE 23, PAHT-CF 24, PA6-CF 25, PA6-GF 26,
+ASA-CF 27.
+
+### Plan
+
+1. **Merge PR #13** (studiofuga): it adds sub types 9-16, which match the firmware
+   exactly. It is a 3-line change to the same table and merges cleanly into v2.
+   The PR targets `main`, so it needs retargeting to `v2` (or a cherry-pick that
+   keeps studiofuga as author).
+2. **Add 17 Starlight and 18 Aero ourselves.** Both are in the firmware but not in
+   the PR.
+3. **Lessons fix (what #10 taught us):**
+   - **a. Fail soft.** Once the signature verifies, an unknown main or sub type
+     must not fail the read. Show something like "Type N" (or an empty variant)
+     and keep the rest of the tag (colour, temps, weight, vendor).
+   - **b. Add the missing main types** from the firmware table above. Open
+     question: how each maps onto the app's material list (`MaterialDatabase`).
+   - **c. Fix the error copy.** A tag that was read but couldn't be decoded is
+     not a bad tap, so it should not say "Hold still".
+   - **d. Tests.** No test covers the type tables today. Add one pinned to the
+     firmware table. The unknown-code path also needs a test, but decoding
+     requires a validly signed tag and editing a fixture breaks the signature.
+     Open question: how to test past the RSA check.
+   - **e.** Add a comment on the tables pointing at the firmware file, so the
+     next edit is checked against the source.
+
+### Outstanding
+
+- The reply to #10 and the PR #13 retarget/merge are GitHub actions, **unposted
+  pending approval**.
+
+---
+
+## UI-71 — Spoolman 0.27 native tags, with a user-chosen migration (FEATURE)
+
+**State**: **planned 2026-11-22 as U29**, design decided by the maintainer, not
+started (planning only, no code yet). Plan:
+`construction/plans/u29-spoolman-native-tags-code-generation-plan.md`.
+**Found in**: GitHub #19 (sibaar), the firmware coordination request on
+paxx12-snapmaker-u1/SnapmakerU1-Extended-Firmware **#805** (paxx12 tagged
+SpoolPainter; the maintainer replied 2026-11-04 "I will try to switch over when i
+get some time"), and external SpoolPainter **PR #20**.
+**Why**: firmware #867 (merged 2026-11-04) lets the printer read **one store at a
+time**: `card_uids` (default) or Spoolman native tags. The setting is hidden until
+the apps support native tags. A printer on native tags cannot see links that
+SpoolPainter writes only to `card_uids`.
+
+### Background: what native tags are
+
+The same data as `card_uids` (the tag's hardware UID), stored in Spoolman's own
+tag list on the spool instead of a custom extra field.
+
+| | `card_uids` (today) | Native tags (Spoolman 0.27+) |
+|---|---|---|
+| Storage | Text in `extra.card_uids` (`ExtraCardUidsCodec`) | Spoolman's tag list (`spool.tags`) |
+| Change | PATCH the whole string | `POST /api/v1/spool/{id}/tag`, `DELETE /api/v1/spool/{id}/tag/{uid}` |
+| Lookup | Download all spools, scan on the phone (`SpoolmanRepository.kt:93`) | `GET /api/v1/spool?tag=<uid>` (server-side) |
+| Duplicates | Allowed | Refused: 409 with the holder's `spool_id` |
+| Version check | n/a | `GET /api/v1/info` returns `version` |
+
+Nobody is forced to upgrade Spoolman: `card_uids` works on every version, and the
+firmware default stays `card_uids`.
+
+### Design (decided 2026-11-22)
+
+1. **Spoolman older than 0.27**: no store option is shown. `card_uids` only,
+   exactly as today.
+2. **Spoolman 0.27+, default mode (Both)**:
+   - New pairs write **both** `card_uids` and a native tag.
+   - Existing tags get a native tag **only when the user re-pairs or moves
+     them**. A plain Read never writes to the server (same principle as
+     [[UI-63]]: reading must not change data).
+   - Lookup checks both stores; **a native tag wins**. A leftover `card_uids`
+     entry on another spool is treated as stale and must not cause the
+     "which spool?" picker (PR #20 gets this wrong: it returns both matches,
+     and `ReadAndPairUseCase.kt:81` turns two matches into `Ambiguous`).
+3. **Switch option**: shown only when the server is 0.27+. Switching to native
+   tags **migrates everything** behind a clear confirmation message:
+   - Copies every `card_uids` UID to a native tag, **including archived
+     spools**.
+   - **Keeps `card_uids` as it is** (never cleared).
+   - A UID found on more than one spool is **skipped, and the result lists which
+     spools** hold it, so the user can fix them.
+   - The message tells the user to switch the printer to native tags in
+     firmware-config too.
+4. **After switching (native only)**: the app **stops writing `card_uids`**. New
+   pairs and moves write native tags only, and lookup reads native tags only.
+   Consequence, accepted: `card_uids` becomes a frozen snapshot and goes stale
+   as tags move, so a printer still on `card_uids` would follow old links. The
+   switch message must say so.
+
+### Moving a tag (existing flow, extended)
+
+There is **no "remove tag" action** in the app. The only code that removes a UID
+is move-on-bind (`MoveOnBindUseCaseImpl.kt:46`, `removeCardUidFromSpool` at
+`SpoolmanRepository.kt:341`). Reusing a tag moves it: find the holders, confirm
+with the user, remove from the old spool, add to the new one. Native tags plug
+into the same flow:
+
+| Step | Today | With native tags |
+|---|---|---|
+| Find holders | `card_uids` | Both stores (native only after the switch) |
+| Confirm | Existing sheet | No change |
+| Remove from old | `removeCardUidFromSpool` | + `DELETE` the native tag |
+| Add to new | `appendCardUidToSpool` (`:315`) | + `POST` the native tag |
+
+Spoolman's 409 should then be rare: the holder has already been removed. Treat it
+as a safety net that re-enters the same confirm flow. Don't build a second move
+path that skips the confirmation (PR #20 does).
+
+### Lessons from PR #20 (must not repeat)
+
+- **204 on unlink.** Spoolman's `DELETE .../tag/{uid}` returns **204 with no
+  body**. Retrofit hands back a null body, and `performHttp` maps a null body to
+  `ParseError`. So every unlink and move is reported as failed. Test it with a
+  real 204, not a fake that returns a body.
+- **No automatic migration.** PR #20 copies `card_uids` to native tags on first
+  connect, without asking. Here migration happens only when the user switches.
+- **Native wins on read** (see design point 2).
+
+### Open questions
+
+- Switching back from native to Both: allowed? What happens to `card_uids` that
+  went stale while native was on?
+- Spoolman downgraded or unreachable after the switch: fall back to `card_uids`,
+  or show an error?
+
+### Outstanding
+
+- Response to PR #20 (contributor printing-enthusiast) and to #19 (sibaar), and
+  a note to paxx12 on #805 when this ships, so the firmware apps table and the
+  dates for showing the setting can be agreed. All **unposted pending approval**.
+
+---
+
+## UI-72 — Save vendor tag product codes as Spoolman `article_number` (FEATURE, external PR)
+
+**State**: **planned 2026-11-22 as U30**, not started (planning only, no code
+yet). Plan: `construction/plans/u30-vendor-article-number-code-generation-plan.md`.
+**Found in**: GitHub #11 ("Write the Anycubic tag's SKU into Spoolman's
+`article_number`"). Implemented by external **PR #14** (kpaaro), targeting `v2`.
+**Type**: feature contributed as a ready PR; the unit is verify, decide, merge.
+
+Reads the product code from Anycubic, Bambu and Snapmaker tags, shows it in the
+form, and stores it in the filament's `article_number` **only when that field is
+empty**. It never overwrites a value already in Spoolman. Static review
+2026-11-22: clean merge into `v2`, about 40 new tests, four on-phone checks still
+unticked. Decisions in the plan: scope beyond Anycubic (D1), minor review items
+(D2), and merge order with U28, since both edit `SnapmakerFormat.kt` (D3).
+
+---
+
+## UI-73 — NFC flows strand on a throw, and the timeout cuts off the write (BUG, external PR)
+
+**State**: **planned 2026-11-22 as U31**, not started (planning only, no code
+yet). Plan: `construction/plans/u31-nfc-flow-hardening-pr15-code-generation-plan.md`.
+**Found in**: GitHub #18 (printing-enthusiast), with external **PR #15** (same
+author). Maintainer decision 2026-11-22: ask the contributor to fix it.
+
+Two real bugs on `v2`, both fixed by PR #15's first two layers:
+- A use case that throws leaves the flow non-idle (Layer 1 adds a guard).
+- The outer 15 s timeout (`MainViewModel.kt:679`) covers the tap wait, the
+  confirm sheet and the Spoolman PATCH, while the physical write keeps running.
+  So the tag gets written, Spoolman is never patched, and the user sees "No tag
+  tapped" (Layer 2 splits the timeouts).
+
+Layer 1 also fixes [[UI-56]], but clears the tag buffer too early, so failed
+writes lose their UID. The request is to split per layer, rebase onto `v2`, fix
+that UID loss, and leave Layer 3 (watchdog + re-arm) out. Layer 3 doesn't abort a
+hung `connect()`, and its re-arm is not [[UI-53]]'s fix. **Request posted on PR
+#15 2026-11-22** (plan §5; comment 7085706466). Waiting on the contributor.
+
+---
+
+## UI-74 — Weight edits on an existing spool don't reach Spoolman (BUG)
+
+**State**: **U32 code done 2026-11-22**, uncommitted on `v2`; build matrix green
+(676 tests). On-device S8-S9 pending (combined install gate after U28). D1b
+decided: an existing spool can save with no colour.
+Plan: `construction/plans/u32-weight-save-code-generation-plan.md`.
+**Found in**: GitHub **#12** (daFreeMan, 2.4.1, Spoolman 0.27.0), and the
+maintainer's own use 2026-11-22: *"if i have spool saved, i go and update the
+measured … total weight is more than 1 kg, it says updated, even spoolman shows
+something got updated but it dont"*.
+**Severity**: high. Users hit it now, and the app reports success when the data
+is wrong or unchanged.
+
+Three causes, all verified by code read (details and line refs in the plan):
+- **B1**: Save is greyed out when the filament has no Extruder Temp (or no
+  colour), because `canSave` requires `canSubmit`. It hits filaments made in
+  Spoolman's web UI. **Decided 2026-11-22: fill the material preset's temps when
+  the filament has none** (accepted: Save then writes them into that filament).
+  Colour still open.
+- **B2**: In Measured mode with no empty-spool weight, the weight is never
+  computed, yet Save says "Updated", because an empty filament diff counts as a
+  successful write. **Decided 2026-11-22**: add the vendor's empty-spool weight as
+  a last fallback; if none, prompt for it; never say "Updated" when nothing saved.
+- **B3**: A remaining weight above the spool's `initial_weight` is silently
+  capped by Spoolman (`used_weight = max(initial − remaining, 0)`). **Decided
+  2026-11-22: raise that spool's `initial_weight` to match** (spool only, not the
+  filament).
+
+Workaround for #12 until it ships: set Extruder Temp on the filament in Spoolman,
+or fill the nozzle temps in More details.
+
+---
+
+## UI-75 — Transparent Spoolman colours are read as the wrong colour (BUG)
+
+**State**: **U33 code done 2026-11-22**, uncommitted on `v2`; build matrix green
+(657 tests). On-device check pending (combined install gate after U28). Decided:
+D1 read and keep alpha, D2 keep alpha on a colour change, D3 tags stay 6-hex.
+Plan: `construction/plans/u33-transparent-color-code-generation-plan.md`.
+**Found in**: a user review 2026-11-22 (transparency below 100% in Spoolman → the
+app "no longer displays that color").
+**Severity**: high. A wrong colour is shown, and saving the spool overwrites the
+user's Spoolman colour and drops the transparency.
+
+Spoolman stores alpha **at the end** (`RRGGBBAA`); `ColorHexCodec.canonicalise`
+keeps the **last** 6 characters, assuming alpha at the front. `FF000080` (red,
+50%) shows as `000080` (navy). Every Save of an existing spool sends the form's
+colour, and `sparseDiff` sees it differ from the stored value, so the wrong colour
+is written back. All tag parsers emit plain 6-hex RGB, so nothing the app reads is
+actually alpha-first. Related: [[UI-55]] (colorless / transparent), U32 D1b
+(saving without a colour).
+
+Workaround until it ships: set transparency back to 100% in Spoolman, and don't
+save that spool in SpoolPainter.

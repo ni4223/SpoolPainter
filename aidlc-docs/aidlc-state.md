@@ -3,7 +3,13 @@
 ## Project Information
 - **Project Type**: Brownfield
 - **Start Date**: 2026-05-23T00:00:00Z
-- **Current Stage**: **SESSION CLOSED 2026-08-28 — U27 / [[UI-67]] shipped into
+- **Current Stage**: **SESSION 2 2026-11-22 — U33 + U32 approved, U28 code done
+  (all uncommitted), U28 awaiting review; then the combined install gate; one combined install gate after U28.
+  Android SDK now installed.** Previous: **SESSION OPEN 2026-11-22 — PLANNING ONLY. U28 ([[UI-70]]),
+  U29 ([[UI-71]]), U30 ([[UI-72]], PR #14), U31 ([[UI-73]], PR #15), U32 ([[UI-74]], #12) and U33 ([[UI-75]], review) have Code Generation Part 1 plans written, awaiting the
+  maintainer's decisions and approval. No code changed. NEXT: U33 → U32 → U28.**
+  See the final section "Session 2026-11-22" and its "Handoff" subsection.
+  Prior: **SESSION CLOSED 2026-08-28 — U27 / [[UI-67]] shipped into
   116 / 2.4.1 (no new version code; 116 was never uploaded).** [[UI-66]] is parked
   with its six design answers pre-filled and resumes on request. See the final
   session section of this file for the live state; everything below in this bullet
@@ -85,6 +91,12 @@
 - [x] **U20 (Picker surfacing — scan-time reorder + filament→spools; UI-49 + UI-52)** — DONE 2026-07-27. Per-unit gate: FD / NFR-R / NFR-D / Infra-D **SKIP** (feature unit; design folded into Code Gen plan). **Type-to-search (UI-48) split to its own later unit** per user. Two **rendering-only** picker enhancements sharing one pure core; overriding invariant: floating happens only when the user OPENS a picker, nothing auto-selects, no read/prefill/pair/save/write behaviour changed. **F2 (UI-49)**: new pure `SpoolMatchScorer` (additive over material/brand/color — NO temps; score>0; cap 3) + `ColorHexCodec.toRgb`; on an unpaired read (vendor `parsedHint` or OpenSpool-no-match) `MainViewModel.computeScanSuggestions` records rank-ordered id lists; pickers float them at top under a thin divider (no label, Q-U20-1). **F3 (UI-52)**: selecting a filament floats that filament's unarchived spools; precedence F3>F2. Shared `PickerRanking` (`partition` + `partitionRanked`); `LazyDropdownMenu` gained opt-in `dividerBefore`. **On-device install gate PASSED** (moto g stylus 2025 / Android 16): F3 B1–B4 ✅; F2 rank order ✅ **after an ordering fix** — first on-device pass floated matches in the picker's default sort (user saw Bambu-white/Elegoo-black/Elegoo-red for a red-Elegoo tag); fixed by switching scan-suggested state from `Set` → ordered `List` (scorer rank) + new `partitionRanked`; regression test locks red→black→white. Spool-pick also floats the filament's siblings (spool sets `selectedFilamentId`) — **kept intentionally** (user "i actually like all siblings together"). **Tests 517 → 555 ✅** (Δ +38: PickerRanking 10, ColorHexCodec 8, SpoolMatchScorer 11, MainViewModelSuggestion 9 incl. rank regression). `compileDebugKotlin` ✅ / `testDebugUnitTest` ✅ 555/555. **Version HELD at versionCode 111 / 2.2.1** per user direction — no per-unit bump; version will be raised once for a batch of units at a joint release. Plan + summary: `aidlc-docs/construction/plans/u20-search-and-match-code-generation-plan.md` + `aidlc-docs/construction/u20-search-and-match/code/u20-summary.md`. Memories: [[reference_adb_path]], [[feedback_no_em_dash]]. **Close-out commit local on `v2`; version bump + full assemble/bundle + push/tag/release deferred to the batched release (with user).** **AMENDED 2026-07-27 during U21**: `SpoolMatchScorer` gained a **variant** signal (weight 1.0, below color 2.0; lenient case-insensitive substring either direction; query from vendor tag `subtype` dropping "Basic"/blank, candidate from `extra["variant"]` via `FormMapping.decodeExtraVariant` now `internal`). Variant is hand-typed free text in Spoolman so it only breaks ties, never overrides material/brand/color (locked with user after weighing color-graded-vs-variant-freetext reliability). +4 scorer tests. Commit re-hashed a81fa7d → 0ede6eb.
 - [x] **U21 (Type-to-search the pickers — UI-48)** — DONE 2026-07-27. Split OUT of U20 per user 2026-07-27; reuses U20's `PickerRanking` + `LazyDropdownMenu`. Per-unit gate: FD / NFR-R / NFR-D / Infra-D **SKIP** (rendering-only feature unit; design folded into Code Gen plan). Sticky search box in the **Spool** (`SpoolmanDropdown`) + **Filament** (`FilamentPicker`) picker popups; **Material/Brand/Color stay scroll-only** (short curated lists). **Locked Q&A (2026-07-27)**: Q-U21-1 = a non-blank query **drops the U20 float + divider** and shows a flat filtered list in normal sort (empty query = today's float path, byte-for-byte); Q-U21-2 = match precomputed `searchText` = `"$primary $secondary"` (folds in vendor/name/material/variant/#id), case-insensitive substring; Q-U21-3 = search field is a header **above** the LazyColumn rows (pinned; the experimental `stickyHeader` API did not resolve in this Compose version, so a `Column` wrapper is used — same visual result), anchor stays `readOnly`; Q-U21-4 = **no autofocus** (keyboard on tap only), Clear (X) provided; Q-U21-5 = **always show** the box (no row-count threshold). New pure `PickerRanking.filter(rows, query, textOf)` (blank query = identity → the §0 invariant); `LazyDropdownMenu` gained opt-in `header` slot + non-clickable "No matches" row when a header is present and the filtered list is empty; new shared `PickerSearchField.kt`; query resets on dismiss/select/clear. **INVARIANT held**: filtering/rendering only — no auto-select, no read/prefill/pair/save/write, no ViewModel flow change. **On-device install gate PASSED** (moto g stylus 2025 / Android 16): search filters both pickers, "No matches" guard, clear + reset-on-close, empty-query U20 float intact. **Mid-gate the U20 scorer gained a variant signal — see the U20 amend note above.** **Tests 555 → 565 ✅** (Δ +10: PickerRanking.filter 6, SpoolMatchScorer variant 4). `compileDebugKotlin` ✅ / `testDebugUnitTest` ✅ 565/565. **Version BUMPED 111 → 112 / 2.2.1 → 2.3.0** — the debug device still held 112 from the U20 session so 111 read as a downgrade; per user direction bumped rather than uninstalled (this is the same 112/2.3.0 U20 had staged before its revert, now carried by U21). Plan + summary: `aidlc-docs/construction/plans/u21-type-to-search-code-generation-plan.md` + `aidlc-docs/construction/u21-type-to-search/code/u21-summary.md`. Memories: [[reference_adb_path]], [[feedback_no_em_dash]]. **U20 amended + U21 close-out commit local on `v2`; full assemble/bundle + push/tag/release deferred to the batched release (with user).**
 - [x] **U22 (Multi-color hex + selected-spool refresh + variant `.`)** — **F1 ON HOLD; F2 + F3 DONE 2026-08-15; install gate PASSED both directions; ships as **v2.3.2 (versionCode 114)**.** Tests **579/579 ✅** (Δ +14 vs 565), `assembleDebug` ✅ 68.66 MB; `assembleRelease` ✅ **7.66 MB** R8 / `bundleRelease` ✅ **8.45 MB AAB** (114 / 2.3.2 verified via aapt2 badging). **Version history for this unit, and the lesson**: first attempt rode 113 / 2.3.1 on the reasoning that 2.3.1 was committed but never released (no git tag, no GitHub Release). **Play Console rejected it — "Version code 113 has already been used."** 113 had been uploaded to Play at some point without ever being tagged or GitHub-released, so the absence of a tag proved nothing. Bumped to **114 / 2.3.2** and rebuilt. **Rule going forward: check Play Console for the highest used versionCode before picking one; git tags are not a record of Play uploads.** U22's fixes still ship together with the CameraX 16 KB page-size work that 2.3.1 carried. Scope set by user 2026-08-15 ("multi color hex, that one bug where we were not refreshinhg when selected, add . on subtype"), then F1 pulled back the same session ("i dont think U1 can support it, lets put this on hold for now"). **F1 = multi-color hex (UI-50 Ask 1) — ON HOLD, not implemented; scoping below retained for whenever it resumes, but resolve the U1-support contradiction flagged in `ui-followups.md` UI-50 first**: Spoolman's native `multi_color_hexes` column (`String(128)`, comma-separated, includes the primary; NOT an extra field so no `ensureExtraFieldsRegistered` work); model as primary `colorHex` + new `FormState.extraColorHexes` capped at 5 total (U1 firmware pads to 5 `RGB_` slots); `ColorHexCodec` grows join/split (and must gain a **comma guard** — `canonicalise("C49449,786BB0")` today returns `"786BB0"`, silently dropping the primary); `sparseDiff` + `PatchFilamentBody.isEmpty()` + `resolveOrCreateFilament`'s (vendor, material, color, variant) identity tuple all need the new field or edits silently no-op / filaments collide; `ColorPicker` needs multi-slot entry + a split swatch at both swatch sites. **F2 = UI-54**: `onPullToRefresh` (`MainViewModel.kt:412-422`) refreshes the cache but never re-projects onto the selected form (a one-time `FormMapping.fromSpoolman` snapshot), compounded by the same-id early return at `MainViewModel.kt:690`; fix must respect the stale-prefill guard. **F3 = UI-50 Ask 2 extension**: one-line allowlist at `FilamentForm.kt:194`. Per-unit gate FD / NFR-R / NFR-D / Infra-D **SKIP**. Baseline **565 / 565 ✅**; test target ~590-600. 7 open questions Q-U22-1..7 (multi-color entry UX; tag `additional_color_hexes`; `multi_color_direction`; whether to fold in UI-55; F2 re-derive trigger; variant allowlist breadth; version). **No device connected — install gate S10 blocked on the phone.** Plan: `aidlc-docs/construction/plans/u22-multicolor-refresh-variant-code-generation-plan.md`.
+- [ ] **U28 (Snapmaker unknown type codes — UI-70)** — PLANNED 2026-11-22, Code Gen Part 1 plan written, awaiting decisions D1-D3 + approval. Per-unit gate FD / NFR-R / NFR-D / Infra-D **SKIP**. Plan: `aidlc-docs/construction/plans/u28-snapmaker-type-codes-code-generation-plan.md`.
+- [ ] **U29 (Spoolman 0.27 native tags + user-chosen migration — UI-71)** — PLANNED 2026-11-22, Code Gen Part 1 plan written, awaiting decisions D1-D4 + approval. Per-unit gate FD / NFR-R / NFR-D / Infra-D **SKIP** (design decided in UI-71). Plan: `aidlc-docs/construction/plans/u29-spoolman-native-tags-code-generation-plan.md`.
+- [ ] **U30 (Vendor tag product codes → Spoolman `article_number` — UI-72, external PR #14)** — PLANNED 2026-11-22, plan written, awaiting decisions D1-D3 + approval. Per-unit gate FD / NFR-R / NFR-D / Infra-D **SKIP** (verify + merge an external PR). Plan: `aidlc-docs/construction/plans/u30-vendor-article-number-code-generation-plan.md`.
+- [ ] **U31 (NFC flow hardening — UI-73, external PR #15 split + fixed)** — PLANNED 2026-11-22, plan written; first step is asking the contributor to split per layer, rebase onto `v2`, fix the UID loss, and drop Layer 3 (request POSTED 2026-11-22, comment 7085706466). Per-unit gate FD / NFR-R / NFR-D / Infra-D **SKIP**. Plan: `aidlc-docs/construction/plans/u31-nfc-flow-hardening-pr15-code-generation-plan.md`.
+- [ ] **U32 (Weight save — UI-74, GitHub #12 + maintainer report)** — PLANNED 2026-11-22, plan written; B3 decided (raise the spool's `initial_weight`), D1 decided (fill preset temps when the filament has none), D2 decided (vendor empty-spool fallback + prompt, no false "Updated"), awaiting D1b (colour) + approval. Per-unit gate FD / NFR-R / NFR-D / Infra-D **SKIP**. Plan: `aidlc-docs/construction/plans/u32-weight-save-code-generation-plan.md`.
+- [ ] **U33 (Transparent Spoolman colours read as the wrong colour — UI-75, user review)** — PLANNED 2026-11-22, plan written, awaiting D1-D3 + approval. Per-unit gate FD / NFR-R / NFR-D / Infra-D **SKIP**. Plan: `aidlc-docs/construction/plans/u33-transparent-color-code-generation-plan.md`.
 - [x] U14 (Vendor tag read — Bambu/Snapmaker) — DONE 2026-06-07. Per-unit gate: FD / NFR-R / NFR-D / Infra-D **SKIP** (PR #3 from @ProtoxiDe22 was the de facto FD; this session was Code Gen audit + refactor + tests + polish). External contribution starting point: PR #3 cherry-pick (838 LOC: BambuFormat / SnapmakerFormat / MifareClassicReader / TagFormatParser parsers + Settings field + NfcRepository handleTag wiring). Refactored to v2 conventions: (a) **gated vendor parse to explicit Read** via `state.value is NfcResult.Reading && classify(raw) is Vendor` — drops the per-tap perf cost on ambient/idle taps; (b) **dropped OpenSpool synthesis** in favour of `Vendor(reason, parsedHint: OpenSpoolPayload?)` so U13 Map-tag Write flow stays canonical (vendor chips can't accept NDEF writes); (c) form prefills from `parsedHint` in `MainViewModel.applyResult.BlankForm`; (d) **collapsed `TagFormatParser`** from 4 entry points (parseDefault / parseWithBambuKeys / parseWithSnapmakerKeys / parseWithBothKeys) to single `parseVendor(tag, bambuSaltHex, snapmakerSaltHex)`; dropped duplicated NDEF parse blocks; `MifareClassicReader` reduced to `tryReadRawCounted` only (dropped tryReadNdef / tryReadRaw / tagDescription). Tests **421 / 421 ✅** (Δ +18 vs U13's 403): BambuFormatTest (7) + SnapmakerFormatTest (5) + NfcRepositoryVendorParseTest (5) + 1 backfill helper. UI deltas during install-gate: (1) **VendorTagHint conditional copy** — when `parsedHint != null`, drop the "We can't read this tag's contents" body line (header alone is the info); (2) **Save snackbar split** — `Saved spool #N. Use Write to finish.` for non-vendor / `Saved spool #N. Finish with Map tag.` for vendor / `Updated spool #N.` for patches; (3) **Settings Advanced section** — collapsable (default collapsed); plain-language "Bambu Lab tag key" label per "HKDF salt is too difficult for normal user"; matches Currency section's OutlinedTextField styling (rounded 20dp + primary/outline border colors); compact right-aligned TextButton instead of full-width Button; (4) **Send feedback** — discreet centered TextButton at bottom of Settings opening Google Form `https://forms.gle/Yx94vLHCSaBWRL1m9`; **TODO(open-test-only)** marker in `SettingsScreen.kt` + UI-37 followup logged for removal before prod promotion. NOTICE + LICENSE: bundled Snapmaker keys (RSA-2048 PKCS#1 PEM + HKDF salt) inherited GPL-3.0 from `Snapmaker/u1-klipper`; added top-level `LICENSE` (full GPL-3.0 text) + `NOTICE` (third-party attribution). README rewritten as v2.1 release: new "What's new in v2.1" section (Save/Write split, vendor tag read, radio weight picker, edit-more on existing spools, 22-currency dropdown); NFC compatibility flipped from "vendor decoding planned" → "shipped"; "What's coming next" trimmed; 5 fresh screenshots replaced (`01-main`, `03-form-expanded`, `05-settings`, `07-vendor-chip`) + 2 new (`08-vendor-read` Snapmaker prefilled, `09-weight-radio` Remaining/Measured); README screenshot grid grew from 7 to 9 in 3×3 layout. Build matrix: `compileDebugKotlin` ✅ / `testDebugUnitTest` ✅ **421/421** / `assembleDebug` ✅ 65 MB / `assembleRelease` ✅ **7.0 MB R8** / `bundleRelease` ✅ 7.7 MB AAB. **Install gate PASSED** on moto g stylus 2025 / Android 16: Snapmaker tag prefill ✅, Bambu tag prefill with key ✅ (logcat trace verified end-to-end: `bambuDeriveKeys` → 16/16 sectors auth'd via bambu-A → `parseBambuTag dataSize=1024 filamentType='PLA'`), regression checks (OpenSpool tags / blank tags / non-MifareClassic vendor tags) all clean. versionCode 103→104, versionName 2.0.2→2.1.0. PR #3 from @ProtoxiDe22 closed via squash into U14 close-out commit with `Co-authored-by: Fabio De Simone <me@fabiodesim.one>` trailer. Artefacts: working branch `u14-vendor-read`. New followup: UI-37 (Send feedback row, must remove before prod). Memories saved: [[reference_adb_path]].
 - [x] U10 (Release polish + testing-track validation) — DONE 2026-05-31. Code Gen Part 1 + Part 2 EXECUTED 2026-05-30; install-gate Snapmaker U1 round-trip PASSED 2026-05-31. Per-unit gate: FD/NFR-R/NFR-D/Infra-D SKIP, Code Gen EXECUTE. **Tests 362/362 ✅** (Δ +0 — only assertion-string-compatible copy edits). Build matrix: `compileDebugKotlin` ✅ / `testDebugUnitTest` ✅ / `assembleDebug` ✅ 64 MB / `assembleRelease` ✅ **6.9 MB** (R8 first-try success, no keep-rule iteration) / `bundleRelease` ✅ 7.6 MB AAB. **R8 minify cuts release APK from 64 MB → 6.9 MB** (~90% reduction; well under the 35 MB target). Net delivery: (a) versionCode 8→100, versionName 1.7→2.0; (b) ProGuard rules for Compose/Hilt/Retrofit/Gson/kotlinx-serialization + `-assumenosideeffects android.util.Log` (NFR-5 strip); (c) UI-07 finalised — MoveOnBindPartial + TwoTagResult.Cancelled rewritten to friendly copy in `MainViewModel.kt`; UI-05 verified already-shipped (5 sites since U9b §7); both flipped to `fixed` in `ui-followups.md`; (d) doc-drift sync — `OpenSpoolPayloadParser → Codec`, MainViewModel constructor signature updated to actual injection, Spoolman flow types `Filament/Spool/Vendor → SpoolmanFilament/SpoolmanSpool/SpoolmanVendor`, SettingsRepository U9 setter split documented, SettingsViewModel onTestConnectionTapped → onSaveTapped, unit-of-work §3-U9 rewritten to match shipped shape; (e) full README rewrite (43→163 lines) — features/install/Play Store TBD-link/v2.1 roadmap/tech stack/architecture/license/acknowledgements; (f) 3 ops docs created — `aidlc-docs/operations/manual-nfc-checklist.md` (50+ scenarios across 10 sections + Snapmaker U1 round-trip + release smoke), `v2.0-tester-release-notes.md`, `testing-track-upload-checklist.md`. ~~U10-Δ-2 sortOrder JSON migration~~ DROPPED (no users on prior v2 build). **U10 install gate Snapmaker U1 round-trip — PASSED 2026-05-31** end-to-end on user's printer (full OpenSpool JSON written by SpoolPainter v2 → `openspool_tag_processor` parses on U1 → spoollink resolves UID via `extra.card_uids` → Fluidd shows full spool data). Two printer-side gotchas captured as **UI-33** in `ui-followups.md` (wiped-tag malformed NDEF; `Snapmaker Components > Spoolman Integration` toggle must be on); both confirmed as printer-environment, not SpoolPainter app bugs. UI-31 carry-over re-elicited and reclassified into UI-33. Remaining install-gate items deferred not-blocking (manual NFC checklist sweep covered organically across U6-U10; release-APK on-device smoke + NFR-5 logcat verification deferred to pre-testing-track-upload). Plan + summary at `aidlc-docs/construction/plans/u10-release-polish-code-generation-plan.md` + `aidlc-docs/construction/u10-release-polish/code/u10-summary.md`.
 - [x] Build and Test — DONE 2026-05-31 (doc-only stage; 5 instruction files at `aidlc-docs/construction/build-and-test/{build,unit-test,integration-test,performance-test}-instructions.md` + `build-and-test-summary.md`; awaiting stage-gate approval).
@@ -670,3 +682,145 @@ from the 2.3.1 baseline and is ready to use** whenever the beta looks clean.
 
 **Still outstanding**: the GitHub #8 reply, drafted and **unposted pending
 approval** per the standing instruction.
+
+## Session 2026-11-22 — OPEN — planning only
+
+**Workspace**: the local copy at `~/AndroidStudioProjects/SpoolPainter` was a
+partial copy (2026-08-30) with a corrupt `.git` (`fatal: bad object HEAD`) and 10
+tracked files missing. Repaired with the maintainer's approval: the corrupt `.git`
+is kept at `.git.broken-2026-11-22/` (excluded locally), a fresh clone's `.git`
+put in place with the original config, the 10 files restored from `origin/v2`,
+and the `gradlew` exec bit restored. `v2` matches `origin/v2` at `032356b`.
+
+**Blockers on this Mac**
+- **No Android SDK** (`local.properties` points at a missing
+  `/opt/homebrew/share/android-commandlinetools`; no `adb`, no Android Studio).
+  Nothing can be built or tested until one is installed.
+
+**GitHub since 2026-08-28** (read 2026-11-22): new issues #10, #11, #12, #16, #18,
+#19; #9 closed; five open external PRs: #13, #14, #15, #17, #20. #13, #15, #17 and
+#20 are based on `main` at `f197de3` (2.3.1), 19 commits behind `v2`; #15 ⊂ #17 ⊂
+#20 are stacked. #14 is based on the `v2` tip. Static reviews done; verdicts are
+in the unit plans (U28 #13, U29 #20, U30 #14, U31 #15) and, for #17, below.
+
+**Planned units**
+
+| Unit | Item | Plan | Waiting on |
+|---|---|---|---|
+| U28 | [[UI-70]] Snapmaker unknown type codes (+ PR #13, + sub types 17/18) | `construction/plans/u28-snapmaker-type-codes-code-generation-plan.md` | D1-D3, approval, SDK |
+| U29 | [[UI-71]] Spoolman 0.27 native tags, user-chosen migration | `construction/plans/u29-spoolman-native-tags-code-generation-plan.md` | D1-D4, approval, SDK |
+| U30 | [[UI-72]] Vendor product codes → `article_number` (external PR #14) | `construction/plans/u30-vendor-article-number-code-generation-plan.md` | D1-D3, approval, SDK, 4 phone checks |
+| U31 | [[UI-73]] NFC flow hardening (external PR #15, split + fixed) | `construction/plans/u31-nfc-flow-hardening-pr15-code-generation-plan.md` | Contributor's split PRs (request posted 2026-11-22; fallback ~2026-12-13), SDK |
+| U32 | [[UI-74]] Weight save: Save gate, false "Updated", over-1 kg cap (#12) | `construction/plans/u32-weight-save-code-generation-plan.md` | D1b, approval, SDK |
+| U33 | [[UI-75]] Transparent colours read wrong, and overwritten on Save (review) | `construction/plans/u33-transparent-color-code-generation-plan.md` | D1-D3, approval, SDK |
+
+**Release baseline**: next Play upload needs versionCode **117+**. Open testing
+2.4.1 (116), Production 2.3.1.
+
+**PR #17 verdict (no unit yet)**: SpoolmanDB picker (#16). API usage correct;
+needs a rebase onto `v2` (7 conflicts, mostly mechanical; keep U24's
+`suggestedFilamentIds`). It edits `aidlc-state.md` as a unit "U22" (taken) and the
+README as v2.4: both must be dropped or renumbered. A SpoolmanDB link survives
+later edits, so a filament whose colour is changed after picking is still stamped
+with that DB entry. Stacked on #15, so it waits for U31's split.
+
+**Backlog corrections not yet written into the entries themselves**: UI-55's
+"Color is NOT a hard save gate" is wrong (U32 S6 fixes the note); UI-53 and UI-56
+findings from the PR #15 review are captured in UI-73.
+
+**Outreach**
+- Posted: PR #15 fix request only (comment 7085706466, 2026-11-22).
+- Drafted, not posted: the review reply in U33 §4 (the maintainer posts it from
+  Play Console).
+- Owed, not drafted: #12 (workaround in U32 S11), #10, #11, #19, PR #13, PR #20.
+- **On hold until the maintainer says otherwise**: the note to paxx12 on firmware
+  #805.
+
+### Handoff for the next session (2026-11-23)
+
+**Work order (maintainer): U33 → U32 → U28**, one unit at a time, following each
+plan's steps and checkboxes. After those, candidates: UI-64 (blank NTAGs, proven,
+no unit yet), U30, UI-53, U29.
+
+**Ask before Part 2 of each unit**
+- **U33**: D1 (keep alpha, don't model it), D2 (keep alpha on colour change), D3
+  (tags stay 6-hex).
+- **U32**: D1b (existing spool can save with no colour). Decide together with
+  U33, since both are about colour. D1 = A, D2 and B3 are already decided.
+- **U28**: D1 (unknown sub type → blank variant), D2 (unknown main type → empty
+  material + message), D3 (how PR #13 lands). **Merge order changed by the work
+  order**: U28 now comes before U30, so either merge PR #14 first or rebase it
+  over U28 (both edit `SnapmakerFormat.kt`). U28 S1 still describes the old order.
+
+**Prerequisites**
+- Install an Android SDK (see Blockers); ask the maintainer before installing.
+- The install-gate phone in past units was a moto g stylus 2025 / Android 16;
+  `adb` path is in `.kiro/steering/tech.md`.
+
+**State of the tree**: all of this session's docs are **uncommitted** on `v2`:
+`aidlc-state.md`, `audit.md`, `ui-followups.md`, and the six new plans
+`construction/plans/u28-…` to `u33-…`. No app code changed.
+
+**Temporary**: `/tmp/sp-fresh/repo` (fresh clone with PR heads) and `/tmp/sp-post`
+were scratch. To look at PRs again, in a scratch clone run
+`git fetch origin 'refs/pull/*/head:refs/remotes/pr/*'`.
+
+## Session 2026-11-22 (2) — OPEN — U33 → U32 → U28
+
+**SDK installed** with the maintainer's OK: Homebrew `android-commandlinetools` at
+`/opt/homebrew/share/android-commandlinetools` (the path `local.properties` and
+`tech.md` already used), platform 36, build-tools 35.0.0, platform-tools (adb
+1.0.41). Java is the existing Corretto 21. Baseline suite **643** green.
+
+**Install gate**: maintainer decided **one combined on-device gate after U28**
+(U33 S6, U32 S8-S9, U28 S10 run together).
+
+**Decisions this session**: U33 D1 read and keep alpha, D2 keep alpha on a colour
+change, D3 tags stay 6-hex; U32 D1b don't require colour for an existing spool
+(Write still does).
+
+| Unit | State |
+|---|---|
+| U33 ([[UI-75]]) | Code done and approved. S6 at the gate; S8 reply is the maintainer's. |
+| U32 ([[UI-74]]) | Code done and approved. S8-S9 at the gate; S11 #12 reply needs approval. |
+| U28 ([[UI-70]]) | Code done, matrix green (684). Awaiting code review approval. S10 at the gate; S12 (#10 reply, PR #13 retarget + merge) needs approval. |
+
+Release notes accumulate in `operations/next-release-notes-draft.md`.
+Nothing committed, pushed or posted.
+
+**U32 addendum (§5, FN1-FN3)**: the maintainer asked to fix the two "found,
+not fixed" items too ("fix those 2 too"). FN3 was found while doing it: an
+in-range filament temp was rewritten to the preset min on every existing-spool
+Save. Decided and done: FN1 max = min + 20 / + 10; FN2 initial_weight = filament
+weight, else used + remaining; FN3 send only edited temps (changes D1's accepted
+consequence). 692 tests, 0 failures; device check passed (see the U32 plan
+§5a). Test data added: filament #116, spool #138.
+Addendum **approved** by the maintainer 2026-11-22.
+
+### 2026-11-22 — Combined install gate PASSED (U33 + U32 + U28)
+
+Device: moto g stylus 2025, Android 16, debug build (old debug app uninstalled
+first: signature mismatch from this Mac's new debug keystore; Play app untouched).
+Server: the maintainer's Spoolman at 192.168.1.188:7912, **v0.22.1** (not 0.27;
+the U32 logic was re-checked in v0.22.1 source: same behaviour).
+
+| # | Unit | Check | Result |
+|---|---|---|---|
+| A | U33 | Spool list swatch for #135 (`0000ff80`) | blue (was grey) |
+| B | U33 | Form colour + logo tint | Blue (old code read it as `00FF80`) |
+| C | U33/U32 | Untouched Update on #135 | "No changes to save for spool #135.", GET only, `color_hex` unchanged |
+| D | U32 B1 | #137 on a filament with no temps | preset 190-220 / 40-65, Update enabled (#12) |
+| E | U32 B2 | Measured 1250, no empty weight | inline prompt + Save blocked with the reason |
+| F | U32 B2/B3 | Empty 200 + Measured 1250 | remaining 1050 exact, initial 1000→1050, filament weight 1000 unchanged |
+| G | U33 D2 | `FF880080` → pick Green | stored `00FF0080` (body was colour only) |
+| H | U33 D3 | Tag write on #137 | written; tag colour from the 6-hex form value (code path) |
+| I | U28 | Older Snapmaker tag, unlinked from #44 for the test | decoder filled PLA / SnapSpeed / F4C032 / Snapmaker; no "Hold still" |
+
+Test data (kept at the maintainer's request): filament #115 "SpoolPainter test -
+no temp" (now `00FF0080`, temps 190/40) and spool #137 (1050 g, empty 200, tag
+`0447B693DA2A81`). Side effect: tag `0447B693DA2A81` was linked to the real spool
+#121 (Kingroon PETG); the write moved the link to #137 (move-on-bind). #44's
+`card_uids` was unlinked for test I and restored byte-identical.
+Observed, not the app: spool #135 consumption reported by another client during
+the gate.
+

@@ -35,12 +35,23 @@ private const val BED_TEMP_POS     = 2 * 64 + 1 * 16 + 10
 private const val MFG_DATE_POS     = 2 * 64 + 2 * 16 + 0;  private const val MFG_DATE_LEN     = 8
 private const val RSA_VER_POS      = 2 * 64 + 2 * 16 + 8
 
-private val MAIN_TYPES = mapOf(1 to "PLA", 2 to "PETG", 3 to "ABS", 4 to "TPU", 5 to "PVA")
-private val SUB_TYPES  = mapOf(
+// Source of truth: Snapmaker/u1-klipper `klippy/extras/filament_protocol.py`
+// (FILAMENT_PROTO_MAIN_TYPE_* / FILAMENT_PROTO_SUB_TYPE_*), read 2026-11-22 at
+// 7ac453b. Check every edit against that file; names are copied verbatim.
+// Main type 0 ("Reserved") is deliberately left out so it reads as unknown.
+// SnapmakerTypeTablesTest pins both tables to the firmware list.
+internal val MAIN_TYPES = mapOf(
+    1 to "PLA", 2 to "PETG", 3 to "ABS", 4 to "TPU", 5 to "PVA", 6 to "ASA",
+    9 to "PA", 10 to "PA-CF", 11 to "PA-GF", 12 to "PC", 17 to "PETG-CF",
+    20 to "PLA-CF", 22 to "PEBA", 23 to "TPE", 24 to "PAHT-CF", 25 to "PA6-CF",
+    26 to "PA6-GF", 27 to "ASA-CF",
+)
+internal val SUB_TYPES  = mapOf(
     1 to "Basic", 2 to "Matte", 3 to "SnapSpeed", 4 to "Silk",
     5 to "Support", 6 to "HF", 7 to "95A", 8 to "95A HF",
     9 to "90A", 10 to "85A", 11 to "Wood", 12 to "Translucent",
-    13 to "Full Spectrum", 14 to "Glow", 15 to "Rainbow", 16 to "Marble"
+    13 to "Full Spectrum", 14 to "Glow", 15 to "Rainbow", 16 to "Marble",
+    17 to "Starlight", 18 to "Aero",
 )
 
 // RSA-2048 public keys (PKCS#1 PEM), indexed by version byte on tag
@@ -249,11 +260,32 @@ fun parseSnapmakerTag(
 ): OpenSpoolPayload? {
     if (data.size != 1024) return null
     if (!verifySignature(data, keysA, keysB)) return null
+    return decodeSnapmakerPayload(data)
+}
 
+/**
+ * Decode a 1024-byte Snapmaker dump whose signature has already been verified.
+ * Split from [parseSnapmakerTag] (U28) so it can be tested without a signed tag.
+ *
+ * U28 / UI-70 (#10): a genuine tag is never thrown away over a type code the
+ * table doesn't know yet. Unknown sub type → "Basic", i.e. no variant (D1);
+ * unknown main type → blank type, so the user picks the material, with a
+ * [OpenSpoolPayload.readNotice] saying so (D2). Both raw codes go into
+ * [OpenSpoolPayload.decodeNotes] for "Share last NFC scan".
+ */
+internal fun decodeSnapmakerPayload(data: ByteArray): OpenSpoolPayload {
     val mainTypeCode = readU16LE(data, MAIN_TYPE_POS)
     val subTypeCode  = readU16LE(data, SUB_TYPE_POS)
-    val mainType = MAIN_TYPES[mainTypeCode] ?: return null
-    val subType  = SUB_TYPES[subTypeCode]  ?: return null
+    val notes = mutableListOf<String>()
+    val mainType = MAIN_TYPES[mainTypeCode]
+        ?: "".also { notes += "Snapmaker main type $mainTypeCode unknown" }
+    val subType  = SUB_TYPES[subTypeCode]
+        ?: "Basic".also { notes += "Snapmaker sub type $subTypeCode unknown" }
+    val readNotice = if (mainType.isEmpty()) {
+        "Unknown Snapmaker material (code $mainTypeCode). Pick the material."
+    } else {
+        null
+    }
 
     val alpha     = 0xFF - (data[ALPHA_POS].toInt() and 0xFF)
     val colorNums = (data[COLOR_NUMS_POS].toInt() and 0xFF).coerceIn(0, 5)
@@ -292,6 +324,8 @@ fun parseSnapmakerTag(
         bedMinTemp = bed.toString(),
         bedMaxTemp = bed.toString(),
         subtype = subType,
-        spoolId = null
+        spoolId = null,
+        decodeNotes = notes,
+        readNotice = readNotice,
     )
 }

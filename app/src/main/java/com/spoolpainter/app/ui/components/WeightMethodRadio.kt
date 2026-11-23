@@ -97,9 +97,13 @@ fun WeightMethodRadio(
             )
             WeightMethod.Measured -> Triple(
                 "Measured",
-                if (emptySpoolWeightG != null && activeValueG != null) {
-                    "Filament left: ${formatGrams(max(0f, activeValueG - emptySpoolWeightG))} g"
-                } else null,
+                when {
+                    activeValueG == null -> null
+                    emptySpoolWeightG != null ->
+                        "Filament left: ${formatGrams(max(0f, activeValueG - emptySpoolWeightG))} g"
+                    // U32 B2: without it the measured weight can't be saved.
+                    else -> "Enter the empty spool weight to use Measured."
+                },
                 "weight-method-measured-input",
             )
         }

@@ -4,6 +4,10 @@ data class SpoolmanSpool(
     val id: Int? = null,
     val filament: SpoolmanFilament,
     val remaining_weight: Float? = null,
+    // Net filament weight the spool started with. Spoolman 0.27 stores a
+    // remaining_weight PATCH as used = max(initial_weight - remaining, 0), so
+    // remaining can never exceed it (database/spool.py update()).
+    val initial_weight: Float? = null,
     val used_weight: Float = 0f,
     val price: Float? = null,
     // Spoolman supports spool_weight on both spool + filament records;
@@ -40,6 +44,9 @@ data class SpoolmanFilament(
 data class SpoolmanVendor(
     val id: Int? = null,
     val name: String,
+    // U32: the vendor's empty-spool (tare) weight, the last level Spoolman's
+    // own measure falls back to (Spoolman 0.27 database/spool.py measure).
+    val empty_spool_weight: Float? = null,
 )
 
 data class SpoolmanResponse<T>(

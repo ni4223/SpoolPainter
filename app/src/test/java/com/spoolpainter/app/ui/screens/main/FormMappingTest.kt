@@ -87,15 +87,150 @@ class FormMappingTest {
         assertEquals("AABBCC", FormMapping.fromSpoolman(spool, uid, rawWriteMode = false).colorHex)
     }
 
+    // U33 / UI-75: Spoolman stores alpha at the end; the form shows the RGB.
     @Test
-    fun `fromSpoolman with null temps yields null temps`() {
+    fun `fromSpoolman reads a transparent RRGGBBAA colour as its RGB`() {
         val spool = SpoolmanSpool(
             id = 1,
-            filament = SpoolmanFilament(id = 10, material = "PLA"),
+            filament = SpoolmanFilament(id = 10, material = "PLA", color_hex = "FF000080"),
+        )
+        assertEquals("FF0000", FormMapping.fromSpoolman(spool, uid, rawWriteMode = false).colorHex)
+    }
+
+    @Test
+    fun `fromFilament reads a transparent RRGGBBAA colour as its RGB`() {
+        val filament = SpoolmanFilament(id = 10, material = "PLA", color_hex = "FFFFFF80")
+        assertEquals("FFFFFF", FormMapping.fromFilament(filament, rawWriteMode = false).colorHex)
+    }
+
+    @Test
+    fun `fromOpenSpool reads an 8-character tag colour as its RGB`() {
+        val payload = OpenSpoolPayload(
+            type = "PLA",
+            colorHex = "ff000080",
+            brand = "Bambu",
+            minTemp = "200",
+            maxTemp = "215",
+        )
+        assertEquals("FF0000", FormMapping.fromOpenSpool(uid, payload, rawWriteMode = false).colorHex)
+    }
+
+    // U32 B1 (D1, #12): no Extruder/Bed Temp on the filament → preset temps,
+    // so the spool can be saved. PLA preset: nozzle 190-220, bed 40-65.
+    @Test
+    fun `fromSpoolman with null temps falls back to the material preset`() {
+        val spool = SpoolmanSpool(
+            id = 1,
+            filament = SpoolmanFilament(id = 10, material = "PLA", color_hex = "FF0000",
+                vendor = SpoolmanVendor(id = 1, name = "Polymaker")),
         )
         val form = FormMapping.fromSpoolman(spool, uid, rawWriteMode = false)
-        assertNull(form.tempRanges.extruderMin)
-        assertNull(form.tempRanges.bedMax)
+        assertEquals(190, form.tempRanges.extruderMin)
+        assertEquals(220, form.tempRanges.extruderMax)
+        assertEquals(40, form.tempRanges.bedMin)
+        assertEquals(65, form.tempRanges.bedMax)
+        assertNull(form.saveBlocker)
+    }
+
+    @Test
+    fun `fromFilament with null temps fills min and max from the preset`() {
+        val filament = SpoolmanFilament(id = 10, material = "PLA", color_hex = "FF0000")
+        val form = FormMapping.fromFilament(filament, rawWriteMode = false)
+        assertEquals(190, form.tempRanges.extruderMin)
+        assertEquals(220, form.tempRanges.extruderMax)
+        assertEquals(40, form.tempRanges.bedMin)
+        assertEquals(65, form.tempRanges.bedMax)
+    }
+
+    @Test
+    fun `fromFilament with an Extruder Temp keeps it as min`() {
+        val filament = SpoolmanFilament(id = 10, material = "PLA", settings_extruder_temp = 205, settings_bed_temp = 55)
+        val form = FormMapping.fromFilament(filament, rawWriteMode = false)
+        assertEquals(205, form.tempRanges.extruderMin)
+        assertEquals(220, form.tempRanges.extruderMax)
+        assertEquals(55, form.tempRanges.bedMin)
+    }
+
+    // U32 FN1: PLA preset max is 220/65; a hotter filament gave min > max and
+    // blocked Save. Max now follows the existing-spool rule (+20 / +10).
+    @Test
+    fun `fromFilament with a temp above the preset max keeps max above min`() {
+        val filament = SpoolmanFilament(
+            id = 10, material = "PLA", color_hex = "FF0000",
+            vendor = SpoolmanVendor(id = 1, name = "Polymaker"),
+            settings_extruder_temp = 230, settings_bed_temp = 70,
+        )
+        val form = FormMapping.fromFilament(filament, rawWriteMode = false)
+        assertEquals(230, form.tempRanges.extruderMin)
+        assertEquals(250, form.tempRanges.extruderMax)
+        assertEquals(70, form.tempRanges.bedMin)
+        assertEquals(80, form.tempRanges.bedMax)
+        assertNull(form.saveBlocker)
+    }
+
+    // U32 FN3: PLA at 200 shows the preset 190-220; an untouched Save must
+    // not rewrite the filament's 200 with 190.
+    @Test
+    fun `untouched in-range temps are not sent to the filament`() {
+        val spool = SpoolmanSpool(
+            id = 1,
+            filament = SpoolmanFilament(id = 10, material = "PLA", settings_extruder_temp = 200, settings_bed_temp = 50),
+        )
+        val form = FormMapping.fromSpoolman(spool, uid, rawWriteMode = false)
+        assertEquals(190, form.tempRanges.extruderMin)
+        val overrides = form.toExpanderOverrides()
+        assertNull(overrides.extruderTemp)
+        assertNull(overrides.bedTemp)
+    }
+
+    @Test
+    fun `edited temps are sent to the filament`() {
+        val spool = SpoolmanSpool(
+            id = 1,
+            filament = SpoolmanFilament(id = 10, material = "PLA", settings_extruder_temp = 200, settings_bed_temp = 50),
+        )
+        val form = FormMapping.fromSpoolman(spool, uid, rawWriteMode = false)
+        val edited = form.copy(tempRanges = form.tempRanges.copy(extruderMin = 205, bedMin = 60))
+        assertEquals(205, edited.toExpanderOverrides().extruderTemp)
+        assertEquals(60, edited.toExpanderOverrides().bedTemp)
+    }
+
+    @Test
+    fun `fromSpoolman carries used weight for the initial weight basis`() {
+        val spool = SpoolmanSpool(id = 1, filament = SpoolmanFilament(id = 10, material = "PLA"), used_weight = 300f)
+        assertEquals(300f, FormMapping.fromSpoolman(spool, uid, rawWriteMode = false).usedWeightG)
+    }
+
+    // U32 B2 (D2): empty-spool weight falls back filament → spool → vendor.
+    @Test
+    fun `fromSpoolman empty spool weight falls back to the vendor`() {
+        val vendor = SpoolmanVendor(id = 1, name = "Polymaker", empty_spool_weight = 180f)
+        val spool = SpoolmanSpool(id = 1, filament = SpoolmanFilament(id = 10, material = "PLA", vendor = vendor))
+        val form = FormMapping.fromSpoolman(spool, uid, rawWriteMode = false)
+        assertEquals(180f, form.emptySpoolWeightG)
+        assertEquals(180f, form.prefilledEmptySpoolWeightG)
+    }
+
+    @Test
+    fun `fromSpoolman empty spool weight prefers filament then spool over vendor`() {
+        val vendor = SpoolmanVendor(id = 1, name = "Polymaker", empty_spool_weight = 180f)
+        val f = SpoolmanFilament(id = 10, material = "PLA", vendor = vendor)
+        assertEquals(
+            150f,
+            FormMapping.fromSpoolman(SpoolmanSpool(id = 1, filament = f.copy(spool_weight = 150f), spool_weight = 160f), uid, false)
+                .emptySpoolWeightG,
+        )
+        assertEquals(
+            160f,
+            FormMapping.fromSpoolman(SpoolmanSpool(id = 1, filament = f, spool_weight = 160f), uid, false).emptySpoolWeightG,
+        )
+    }
+
+    // U32 B3: the spool's initial weight is carried so Save can raise it.
+    @Test
+    fun `fromSpoolman carries the spool initial weight`() {
+        val spool = SpoolmanSpool(id = 1, filament = SpoolmanFilament(id = 10, material = "PLA"), initial_weight = 1000f)
+        assertEquals(1000f, FormMapping.fromSpoolman(spool, uid, rawWriteMode = false).initialWeightG)
     }
 
     @Test

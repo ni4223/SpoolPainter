@@ -215,8 +215,13 @@ open class NfcRepository internal constructor(
             val outcome = when (val c = classification) {
                 is TagClassification.OpenSpool -> "OpenSpool prefill (type=${c.payload.type})"
                 is TagClassification.Vendor ->
-                    if (c.parsedHint != null) "Vendor with prefill (brand=${c.parsedHint.brand}, type=${c.parsedHint.type})"
-                    else "Vendor, no prefill (${c.reason})"
+                    if (c.parsedHint != null) {
+                        "Vendor with prefill (brand=${c.parsedHint.brand}, type=${c.parsedHint.type})" +
+                            // U28 D1/D2: carry unknown type codes into the report.
+                            c.parsedHint.decodeNotes.joinToString("") { "; $it" }
+                    } else {
+                        "Vendor, no prefill (${c.reason})"
+                    }
                 TagClassification.Blank -> "Blank"
             }
             log.record(

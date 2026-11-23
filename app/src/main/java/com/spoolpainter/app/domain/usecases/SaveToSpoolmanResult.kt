@@ -21,9 +21,8 @@ sealed interface SaveToSpoolmanResult {
         ) : Success
     }
 
-    /** Existing-spool path with no diff vs the prefill snapshots — Save was a
-     *  no-op. UI normally greys the button before tap, so this fires only on
-     *  a race where state changed between gating and the launched coroutine. */
+    /** Existing-spool path where nothing differed from Spoolman, so no HTTP
+     *  write was made (U32 B2). Shown to the user as "No changes to save". */
     data class NoChanges(val spoolId: Int) : SaveToSpoolmanResult
 
     data class Failed(

@@ -150,7 +150,8 @@ open class SpoolmanRepository @Inject constructor(
         val api = cachedApi ?: return urlNotConfigured()
         return performHttp("getFilament") { api.getFilament(filamentId) }
             .flatMap { filament -> applyOverridesIfNeeded(filament, expanderOverrides) }
-            .flatMap { filament ->
+            .flatMap { patched ->
+                val filament = patched.filament
                 createSpoolStep(
                     api,
                     filament,
@@ -210,14 +211,15 @@ open class SpoolmanRepository @Inject constructor(
     }
 
     /**
-     * Existing-filament-new-spool path: resolve the filament from the cache
-     * (or the network if not cached) and apply expander overrides before
-     * spool create. Still used by [createSpoolForExistingFilament].
+     * Existing-spool Save: resolve the spool's filament fresh from the server
+     * and PATCH only the overrides that differ from it.
+     * [FilamentPatchResult.wrote] is false when nothing differed and no HTTP
+     * write was made (U32 B2: the caller must not report that as "Updated").
      */
     open suspend fun applyOverridesToFilamentOfSpool(
         spoolId: Int,
         overrides: ExpanderOverrides,
-    ): SpoolmanOutcome<SpoolmanFilament> {
+    ): SpoolmanOutcome<FilamentPatchResult> {
         if (overrides == ExpanderOverrides.EMPTY) {
             // Nothing to do — caller can ignore the result.
             return SpoolmanOutcome.ParseError(IllegalStateException("no overrides"))
@@ -262,7 +264,7 @@ open class SpoolmanRepository @Inject constructor(
     private suspend fun applyOverridesIfNeeded(
         filament: SpoolmanFilament,
         overrides: ExpanderOverrides,
-    ): SpoolmanOutcome<SpoolmanFilament> {
+    ): SpoolmanOutcome<FilamentPatchResult> {
         // Variant is the only "extra"-bound override here. Merge it into the
         // existing extra map so we don't blow away other custom fields the
         // user (or another tool) put on the filament. Encoding uses the same
@@ -276,7 +278,9 @@ open class SpoolmanRepository @Inject constructor(
             current + ("variant" to GSON.toJson(variantNormalised))
         }
         val body = PatchFilamentBody(
-            color_hex = overrides.colorHex,
+            // U33: compare RGB to RGB and keep a stored RRGGBBAA alpha, so an
+            // untouched transparent colour is never rewritten.
+            color_hex = ColorHexCodec.overrideFor(overrides.colorHex, filament.color_hex),
             settings_extruder_temp = overrides.extruderTemp,
             settings_bed_temp = overrides.bedTemp,
             density = overrides.density,
@@ -286,8 +290,19 @@ open class SpoolmanRepository @Inject constructor(
             price = overrides.price,
             extra = mergedExtra,
         )
-        if (body.isEmpty()) return SpoolmanOutcome.Success(filament)
-        return patchFilament(filament.id, body)
+        // U32: diff against the fresh server copy, not the cache, so the
+        // caller learns whether anything was actually written.
+        val sparse = sparseDiff(filament, body)
+        if (sparse.isEmpty()) return SpoolmanOutcome.Success(FilamentPatchResult(filament, wrote = false))
+        val api = cachedApi ?: return urlNotConfigured()
+        return performHttp("patchFilament") { api.patchFilament(filament.id, sparse) }
+            .also { o ->
+                if (o is SpoolmanOutcome.Success) {
+                    replaceFilamentInCache(o.data)
+                    refreshAfterWrite()
+                }
+            }
+            .map { FilamentPatchResult(it, wrote = true) }
     }
 
     private fun sparseDiff(
