@@ -1,5 +1,7 @@
 package com.spoolpainter.app.domain.models
 
+import com.google.gson.annotations.SerializedName
+
 data class SpoolmanSpool(
     val id: Int? = null,
     val filament: SpoolmanFilament,
@@ -39,6 +41,9 @@ data class SpoolmanFilament(
     val weight: Float? = null,
     val spool_weight: Float? = null,
     val price: Float? = null,
+    // SpoolmanDB import (server ≥ 0.26.0): the external filament slug this
+    // record was created from. Used to de-duplicate repeated imports.
+    val external_id: String? = null,
 )
 
 data class SpoolmanVendor(
@@ -47,6 +52,9 @@ data class SpoolmanVendor(
     // U32: the vendor's empty-spool (tare) weight, the last level Spoolman's
     // own measure falls back to (Spoolman 0.27 database/spool.py measure).
     val empty_spool_weight: Float? = null,
+    // SpoolmanDB import: for DB-imported vendors this is the manufacturer
+    // name string from the external database.
+    val external_id: String? = null,
 )
 
 data class SpoolmanResponse<T>(
@@ -55,4 +63,46 @@ data class SpoolmanResponse<T>(
 
 data class SpoolmanInfo(
     val version: String? = null,
+    // Spoolman ≥ 0.26.0: display name of the configured external filament
+    // database (e.g. "SpoolmanDB"); null on older servers / when unset.
+    val external_db_name: String? = null,
+)
+
+/**
+ * One entry of Spoolman's external filament database ("SpoolmanDB"),
+ * `GET /api/v1/external/filament/search` (server ≥ 0.26.0). Every field
+ * except id/manufacturer/name/material may be null or absent (the server
+ * serialises with response_model_exclude_none). `color_hex` and
+ * `color_hexes` are mutually exclusive; hexes carry no '#' prefix.
+ *
+ * Wire format is snake_case; pinned contract names are camelCase, hence
+ * the explicit [SerializedName] mapping.
+ */
+data class ExternalFilament(
+    val id: String,
+    val manufacturer: String,
+    val name: String,
+    val material: String,
+    val density: Double? = null,
+    val weight: Double? = null,
+    @SerializedName("spool_weight") val spoolWeight: Double? = null,
+    @SerializedName("spool_type") val spoolType: String? = null,
+    val diameter: Double? = null,
+    @SerializedName("color_hex") val colorHex: String? = null,
+    @SerializedName("color_hexes") val colorHexes: List<String>? = null,
+    @SerializedName("extruder_temp") val extruderTemp: Int? = null,
+    @SerializedName("bed_temp") val bedTemp: Int? = null,
+    val finish: String? = null,
+    val pattern: String? = null,
+    val translucent: Boolean? = null,
+    val glow: Boolean? = null,
+    @SerializedName("multi_color_direction") val multiColorDirection: String? = null,
+)
+
+/** One page of [ExternalFilament] search results. [totalCount] is the total
+ *  match count from the `x-total-count` response header (falls back to the
+ *  page size when the header is absent). */
+data class ExternalFilamentPage(
+    val items: List<ExternalFilament>,
+    val totalCount: Int,
 )
