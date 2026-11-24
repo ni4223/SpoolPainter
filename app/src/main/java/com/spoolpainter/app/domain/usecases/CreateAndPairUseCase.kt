@@ -169,14 +169,17 @@ open class CreateAndPairUseCase @Inject constructor(
                 if (outcome.reason.contains("verify mismatch", ignoreCase = true) ||
                     outcome.reason.contains("verification failed", ignoreCase = true)
                 ) {
-                    // Verify failure carries the UID via the lastSeenTag buffer.
-                    val uid = nfc.lastSeenTag.value?.uid ?: CardUid("")
-                    WriteResult.Verify(uid, outcome.reason)
+                    // Verify failure carries its UID in the Error itself —
+                    // NfcRepository clears the lastSeenTag buffer on write-
+                    // path terminal transitions, so the buffer is no longer
+                    // a UID source after a terminal state (PR #15 fix).
+                    WriteResult.Verify(outcome.uid ?: CardUid(""), outcome.reason)
                 } else {
-                    // Tag may have been seen (UID captured in lastSeenTag)
-                    // even when the NDEF write threw — surface it so the
-                    // caller can still commit the spool↔UID link to Spoolman.
-                    val uid = nfc.lastSeenTag.value?.uid?.takeIf { it.hex.isNotEmpty() }
+                    // Tag may have been seen even when the NDEF write threw —
+                    // the Error carries its UID so the caller can still commit
+                    // the spool↔UID link to Spoolman even though the buffer
+                    // was cleared with the spent write tap.
+                    val uid = outcome.uid?.takeIf { it.hex.isNotEmpty() }
                     WriteResult.Failed(uid, outcome.reason)
                 }
             else -> WriteResult.Failed(null, "unexpected write state: $outcome")

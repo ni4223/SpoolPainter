@@ -22,17 +22,34 @@ class MoveOnBindConfirmerImpl @Inject constructor() : MoveOnBindConfirmer {
         targetSpoolId: Int,
         uid: CardUid,
     ): Boolean {
-        check(_pendingRequest.value == null && pendingResult == null) {
-            "MoveOnBindConfirmer: another request is already pending"
+        // Supersede a still-pending request instead of throwing. A check()
+        // here used to leak IllegalStateException into the calling NFC flow,
+        // killing its coroutine and stranding the viewmodel's activeFlow in
+        // flight (the "app wedged after one spool" bug). The stale awaiter
+        // completes with false and cleanly takes the Declined path.
+        val stale = pendingResult
+        if (stale != null || _pendingRequest.value != null) {
+            android.util.Log.w(
+                "MoveOnBindConfirmer",
+                "superseding a still-pending confirm request (uid=${uid.hex})",
+            )
+            stale?.complete(false)
+            pendingResult = null
+            _pendingRequest.value = null
         }
         val deferred = CompletableDeferred<Boolean>()
+        val request = RepairConfirmRequest(others, targetSpoolId, uid)
         pendingResult = deferred
-        _pendingRequest.value = RepairConfirmRequest(others, targetSpoolId, uid)
+        _pendingRequest.value = request
         return try {
             deferred.await()
         } finally {
-            pendingResult = null
-            _pendingRequest.value = null
+            // Identity-guarded teardown: a superseding confirm() may already
+            // have installed its own deferred/request, and its resumption
+            // (Unconfined dispatchers resume synchronously) must not clobber
+            // the newer pair.
+            if (pendingResult === deferred) pendingResult = null
+            if (_pendingRequest.value === request) _pendingRequest.value = null
         }
     }
 

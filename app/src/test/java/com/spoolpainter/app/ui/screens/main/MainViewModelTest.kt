@@ -714,11 +714,73 @@ class MainViewModelTest {
     }
 
     @Test
-    fun `isWriteCancellable is false during PairingVendorUidOnly`() = runTest {
-        // PairingVendorUidOnly is HTTP-only; Cancel does not surface there.
+    fun `isWriteCancellable is true during PairingVendorUidOnly`() = runTest {
+        // Vendor UID-only pair is HTTP-only and renders no sheet; without a
+        // Cancel surface it was a dead end for up to the 15s write timeout
+        // (or forever if its coroutine died). The Write toggle now doubles
+        // as the escape hatch.
         val vm = newVm()
         primeFormForWrite(vm)
-        // No stage needed — verify the flow itself.
-        assertEquals(false, vm.isWriteCancellable.value)
+        vm.onSpoolSelected(sampleSpool)
+        // Route onWriteTapped into the vendor branch: observedTagKind must
+        // be Vendor, which the nfc.state Success collector sets.
+        nfc.pushState(NfcResult.Success(sampleUid, TagClassification.Vendor("MifareClassic (vendor-encrypted)")))
+        vendorUidOnlyPair.nextResult = com.spoolpainter.app.domain.usecases.VendorUidOnlyPairResult.Cancelled("delay-stub")
+        vendorUidOnlyPair.nextDelayMs = 50L
+        vm.onWriteTapped()
+        assertEquals(ActiveFlow.PairingVendorUidOnly, vm.state.value.activeFlow)
+        assertTrue(vm.isWriteCancellable.value)
+
+        // Toggle cancels the job + disarms + returns to Idle.
+        vm.onWriteTapped()
+        assertEquals(ActiveFlow.Idle, vm.state.value.activeFlow)
+    }
+
+    // ---- Wedge regression (v2.3.2): a throwing use case must not strand
+    // activeFlow in flight. canRead/canWrite both gate on activeFlow == Idle,
+    // so a stranded in-flight state disabled BOTH buttons until restart. ----
+
+    @Test
+    fun `createAndPair throwing returns activeFlow to Idle and re-enables Write`() = runTest {
+        val vm = newVm()
+        primeFormForWrite(vm)
+        vm.onSpoolSelected(sampleSpool)
+        // The concrete thrower from the bug report: MoveOnBindConfirmerImpl's
+        // old check() leaked IllegalStateException("another request is
+        // already pending") through the use case into this coroutine.
+        createAndPair.nextThrowable = IllegalStateException("another request is already pending")
+
+        vm.effects.test {
+            vm.onWriteTapped()
+            val emission = awaitNonAmbientSnackbar()
+            assertEquals("Something went wrong. Please try again.", emission.message)
+            cancelAndIgnoreRemainingEvents()
+        }
+        // The app does NOT wedge: flow back to Idle, Write armed again, NFC
+        // disarmed so no stale Reading/Writing state lingers.
+        assertEquals(ActiveFlow.Idle, vm.state.value.activeFlow)
+        assertTrue("canWrite should re-enable after the catch", vm.canWrite.value)
+        assertTrue("NFC should be disarmed after the catch", nfc.disarmCalls > 0)
+    }
+
+    @Test
+    fun `vendorUidOnlyPair throwing returns activeFlow to Idle and re-enables Write`() = runTest {
+        val vm = newVm()
+        primeFormForWrite(vm)
+        vm.onSpoolSelected(sampleSpool)
+        nfc.pushState(NfcResult.Success(sampleUid, TagClassification.Vendor("MifareClassic (vendor-encrypted)")))
+        vendorUidOnlyPair.nextThrowable = IllegalStateException("another request is already pending")
+
+        vm.effects.test {
+            vm.onWriteTapped()
+            // The fake throws synchronously, so the guard has already run by
+            // the time onWriteTapped() returns — no mid-flight assertion here.
+            val emission = awaitNonAmbientSnackbar()
+            assertEquals("Something went wrong. Please try again.", emission.message)
+            cancelAndIgnoreRemainingEvents()
+        }
+        assertEquals(ActiveFlow.Idle, vm.state.value.activeFlow)
+        assertTrue("canWrite should re-enable after the catch", vm.canWrite.value)
+        assertTrue("NFC should be disarmed after the catch", nfc.disarmCalls > 0)
     }
 }

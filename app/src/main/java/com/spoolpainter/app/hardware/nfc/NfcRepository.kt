@@ -283,8 +283,11 @@ open class NfcRepository internal constructor(
         // Surface as the standard vendor-tag rejection so the dispatch
         // layer's vendor-tag snackbar fires.
         if (classification is TagClassification.Vendor) {
+            // Spent write tap — clear the buffer (mirrors the Read path at the
+            // Reading transition) so consumeLastSeen can't resurrect it.
+            _lastSeenTag.value = null
             transition {
-                NfcResult.Error("vendor-tag protected (FR-4.7): ${classification.reason}", null)
+                NfcResult.Error("vendor-tag protected (FR-4.7): ${classification.reason}", null, raw.uid)
             }
             return
         }
@@ -292,12 +295,19 @@ open class NfcRepository internal constructor(
         try {
             wrapper.writeRecords(tag, records)
         } catch (t: NonNdefTagException) {
+            // Spent write tap — see vendor pre-block above.
+            _lastSeenTag.value = null
             transition {
-                NfcResult.Error("vendor-tag protected (FR-4.7): non-NDEF tag", t)
+                NfcResult.Error("vendor-tag protected (FR-4.7): non-NDEF tag", t, raw.uid)
             }
             return
         } catch (t: Throwable) {
-            transition { NfcResult.Error("write failed: ${t.message ?: t::class.simpleName}", t) }
+            // Spent write tap — see vendor pre-block above. The Error carries
+            // the UID so the write-path use cases can still pair the tag with
+            // Spoolman even though the buffer is gone (maintainer fix on
+            // PR #15: UID travels in the result, not the buffer).
+            _lastSeenTag.value = null
+            transition { NfcResult.Error("write failed: ${t.message ?: t::class.simpleName}", t, raw.uid) }
             logCause("write failed", t)
             return
         }
@@ -320,6 +330,11 @@ open class NfcRepository internal constructor(
         // if (readback == null) {
         //     android.util.Log.w(TAG, "readback null after write — treating as success (tag promoted to NDEF, handle stale)")
         // }
+        // Spent write tap — clear the buffer (mirrors the Read path) so a
+        // Read pressed within the 5s TTL can't silently re-consume the tag we
+        // just wrote (ghost capture / wrong-spool pairing). The Read path in
+        // handleTag does the same at its terminal transition.
+        _lastSeenTag.value = null
         transition {
             NfcResult.Success(raw.uid, TagClassification.OpenSpool(intent.payload))
         }

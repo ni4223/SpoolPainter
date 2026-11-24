@@ -59,6 +59,47 @@ class NfcRepositoryConsumeLastSeenTest {
     }
 
     @Test
+    fun `consume Read after a successful write tap returns null (buffer cleared)`() = runTest {
+        // Wedge-adjacent regression (defect 5): the write path used to leave
+        // the spent tap buffered with state = Success, so a Read pressed
+        // within the 5s TTL silently re-consumed the just-written tag (ghost
+        // capture / wrong-spool pairing). The write terminal transitions now
+        // clear the buffer, mirroring the Read path.
+        val wrapper = FakeNfcAdapterWrapper()
+        val clock = MutableClock(1_000L)
+        wrapper.simulateRead(sampleUid(), null)
+        val repo = newRepository(wrapper = wrapper, clock = clock)
+
+        repo.arm(NfcIntent.Write(samplePayload()))
+        repo.handleTag(makeTag())
+        assertTrue(repo.state.value is NfcResult.Success)
+
+        // Well within TTL and a terminal state — the classic resurrection
+        // window — but the buffer must be gone.
+        clock.nowMs = 2_000L
+        assertNull(repo.consumeLastSeen(NfcIntent.Read))
+        assertNull(repo.lastSeenTag.value)
+    }
+
+    @Test
+    fun `consume Read after a failed write tap returns null (buffer cleared)`() = runTest {
+        // Same invariant on the write-failure Error transition.
+        val wrapper = FakeNfcAdapterWrapper()
+        val clock = MutableClock(1_000L)
+        wrapper.simulateRead(sampleUid(), null)
+        wrapper.simulateWriteFailure(java.io.IOException("tag lost"))
+        val repo = newRepository(wrapper = wrapper, clock = clock)
+
+        repo.arm(NfcIntent.Write(samplePayload()))
+        repo.handleTag(makeTag())
+        assertTrue(repo.state.value is NfcResult.Error)
+
+        clock.nowMs = 2_000L
+        assertNull(repo.consumeLastSeen(NfcIntent.Read))
+        assertNull(repo.lastSeenTag.value)
+    }
+
+    @Test
     fun `consume Read returns null when state is Reading (already armed)`() = runTest {
         val wrapper = FakeNfcAdapterWrapper()
         wrapper.simulateRead(sampleUid(), null)

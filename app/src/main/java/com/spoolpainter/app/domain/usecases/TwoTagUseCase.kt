@@ -56,17 +56,19 @@ open class TwoTagUseCase @Inject constructor(
                 }
             is NfcResult.Error -> {
                 val msg = outcome.reason
+                // UIDs ride in the Error itself: NfcRepository clears the
+                // lastSeenTag buffer on write-path terminal transitions (the
+                // ghost re-consume fix), so the buffer must not be read here
+                // (PR #15 fix — pairing on failed writes keeps working).
                 if (msg.contains("vendor-tag", ignoreCase = true)) {
-                    val uid = nfc.lastSeenTag.value?.uid
-                    return TwoTagResult.VendorTagRejected(uid ?: CardUid(""))
+                    return TwoTagResult.VendorTagRejected(outcome.uid ?: CardUid(""))
                 }
                 if (msg.contains("verify mismatch", ignoreCase = true) ||
                     msg.contains("verification failed", ignoreCase = true)
                 ) {
-                    val uid = nfc.lastSeenTag.value?.uid ?: CardUid("")
-                    return TwoTagResult.VerifyFailed(uid, msg)
+                    return TwoTagResult.VerifyFailed(outcome.uid ?: CardUid(""), msg)
                 }
-                return TwoTagResult.NfcFailed(nfc.lastSeenTag.value?.uid, msg)
+                return TwoTagResult.NfcFailed(outcome.uid, msg)
             }
             else -> return TwoTagResult.NfcFailed(null, "unexpected write state: $outcome")
         }
