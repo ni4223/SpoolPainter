@@ -2,6 +2,7 @@ package com.spoolpainter.app.ui.screens.main
 
 import com.spoolpainter.app.data.local.presets.MaterialPresetSource
 import com.spoolpainter.app.domain.models.Brand
+import com.spoolpainter.app.domain.models.ExternalFilament
 import com.spoolpainter.app.domain.models.Material
 import com.spoolpainter.app.domain.models.OpenSpoolPayload
 import com.spoolpainter.app.domain.models.SpoolmanFilament
@@ -9,7 +10,7 @@ import com.spoolpainter.app.domain.models.SpoolmanSpool
 import com.spoolpainter.app.domain.models.TempRanges
 import com.spoolpainter.app.domain.primitives.CardUid
 import com.spoolpainter.app.domain.primitives.ColorHexCodec
-import com.spoolpainter.app.domain.primitives.ExtraCardUidsCodec
+import com.spoolpainter.app.domain.primitives.PairedTagUids
 
 internal object FormMapping {
 
@@ -29,8 +30,11 @@ internal object FormMapping {
         val tempRanges = deriveSpoolmanTemps(materialData, spool)
         val resolvedUid = when (uidSource) {
             SpoolmanUidSource.PreserveCurrent -> currentUid
-            SpoolmanUidSource.FromCardUidsOrClear ->
-                ExtraCardUidsCodec.decode(spool.extra?.get("card_uids") ?: "").firstOrNull()
+            // Union of legacy extra.card_uids + native spool.tags (see
+            // PairedTagUids): legacy-first so the prefill is unchanged when
+            // both sources agree, and a tags-only spool (NATIVE_ONLY mode)
+            // still prefills its native UID instead of clearing the field.
+            SpoolmanUidSource.FromCardUidsOrClear -> PairedTagUids.of(spool).firstOrNull()
         }
         // Decision M: spool's own price preferred; filament price is
         // fallback for legacy data without per-spool prices, and matches
@@ -106,7 +110,8 @@ internal object FormMapping {
         /** Read flow + auto-pair after read: keep the UID we just tapped. */
         PreserveCurrent,
 
-        /** Manual dropdown selection: derive the UID from the spool's extra.card_uids (or null). */
+        /** Manual dropdown selection: derive the UID from the spool's paired
+         *  UIDs (legacy extra.card_uids first, then native spool.tags) or null. */
         FromCardUidsOrClear,
     }
 
@@ -195,6 +200,66 @@ internal object FormMapping {
 
     fun blankForm(uid: CardUid, rawWriteMode: Boolean): FormState =
         FormState(cardUid = uid, rawWriteMode = rawWriteMode)
+
+    /**
+     * SpoolmanDB prefill — seed the form from an external filament pick.
+     * Mirrors [fromFilament]: material via preset lookup (synthesised from
+     * the DB temps/density when unknown), temps min=max when the DB carries
+     * them (null keeps the material preset seeds), expander override fields
+     * from the DB values. Variant strips ONE case-insensitive
+     * word-boundary occurrence of the material from the DB name. Both
+     * selections clear — Save creates a new filament stamped with the
+     * external_id.
+     */
+    fun applyExternalFilament(form: FormState, external: ExternalFilament): FormState {
+        val materialName = external.material.trim().ifBlank { "Unknown" }
+        val materialData = MaterialPresetSource.lookup(materialName)
+            ?: external.extruderTemp?.let { extTemp ->
+                Material(
+                    name = materialName,
+                    defaultMinTemp = extTemp,
+                    defaultMaxTemp = extTemp + 20,
+                    defaultBedMinTemp = external.bedTemp ?: 0,
+                    defaultBedMaxTemp = (external.bedTemp ?: 0) + 10,
+                    density = external.density?.toFloat(),
+                )
+            }
+        return FormState(
+            cardUid = form.cardUid,
+            material = materialData,
+            brand = Brand(external.manufacturer.trim().ifBlank { "Unknown" }),
+            colorHex = canonicaliseColorHex(external.colorHex ?: external.colorHexes?.firstOrNull()),
+            variant = deriveExternalVariant(external.name, external.material),
+            tempRanges = TempRanges(
+                extruderMin = external.extruderTemp ?: materialData?.defaultMinTemp,
+                extruderMax = external.extruderTemp ?: materialData?.defaultMaxTemp,
+                bedMin = external.bedTemp ?: materialData?.defaultBedMinTemp,
+                bedMax = external.bedTemp ?: materialData?.defaultBedMaxTemp,
+            ),
+            selectedSpoolId = null,
+            selectedFilamentId = null,
+            rawWriteMode = form.rawWriteMode,
+            moreDetailsExpanded = form.moreDetailsExpanded,
+            densityGPerCm3 = external.density?.toFloat(),
+            fullSpoolWeightG = external.weight?.toFloat(),
+            emptySpoolWeightG = external.spoolWeight?.toFloat(),
+            externalFilamentId = external.id,
+            externalDiameterMm = external.diameter,
+        )
+    }
+
+    /** variant = DB name minus one material-word occurrence ("PolyLite
+     *  PLA"/PLA → "PolyLite", "PLA"/PLA → null), whitespace collapsed. */
+    internal fun deriveExternalVariant(name: String, material: String): String? {
+        val mat = material.trim()
+        val cleaned = if (mat.isNotEmpty()) {
+            Regex("\\b${Regex.escape(mat)}\\b", RegexOption.IGNORE_CASE)
+                .replaceFirst(name, "")
+        } else {
+            name
+        }
+        return cleaned.replace(Regex("\\s+"), " ").trim().ifEmpty { null }
+    }
 
     fun clearedFromDropdown(currentUid: CardUid?, rawWriteMode: Boolean): FormState =
         FormState(cardUid = currentUid, rawWriteMode = rawWriteMode)

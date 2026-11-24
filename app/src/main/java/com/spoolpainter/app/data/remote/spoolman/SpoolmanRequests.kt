@@ -4,6 +4,9 @@ import com.spoolpainter.app.domain.models.SpoolmanFilament
 
 data class CreateVendorRequest(
     val name: String,
+    // SpoolmanDB import: the manufacturer name string when the vendor is
+    // created from an external-DB filament pick; null omits the field.
+    val external_id: String? = null,
 )
 
 data class CreateFilamentRequest(
@@ -22,6 +25,8 @@ data class CreateFilamentRequest(
     val spool_weight: Float? = null,
     val price: Float? = null,
     val extra: Map<String, String>? = null,
+    // SpoolmanDB import (server ≥ 0.26.0): external filament slug.
+    val external_id: String? = null,
 )
 
 /** A filament after an override PATCH; [wrote] is false when nothing differed and no HTTP write was made. */
@@ -99,4 +104,12 @@ data class ExtraFieldDef(
     val field_type: String,
     val order: Int,
     val default_value: String,
+)
+
+/** Body of `POST /api/v1/spool/{id}/tag` (server ≥ 0.27.0). `uid` is
+ *  1-128 chars, server-normalized to uppercase hex without separators;
+ *  the app's CardUid.hex already matches that shape and is sent as-is. */
+data class TagLinkBody(
+    val uid: String,
+    val format: String? = null,
 )

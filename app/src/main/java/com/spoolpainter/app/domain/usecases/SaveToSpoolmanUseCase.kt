@@ -17,6 +17,12 @@ data class SaveToSpoolmanInput(
     val newFilamentVendor: String,
     /** Material name with "Other → custom" already resolved (else falls back to form.material?.name). */
     val resolvedMaterialName: String? = null,
+    /** SpoolmanDB import — set when the form was seeded from an external
+     *  filament pick; rides [NewFilamentRequest.externalFilamentId]. */
+    val externalFilamentId: String? = null,
+    /** Explicit diameter (mm) from the external filament; null keeps the
+     *  1.75mm default. */
+    val diameterMm: Double? = null,
 )
 
 /**
@@ -176,6 +182,8 @@ open class SaveToSpoolmanUseCase @Inject constructor(
             form = snapshot.form,
             name = snapshot.newFilamentName,
             vendorName = snapshot.newFilamentVendor,
+            externalFilamentId = snapshot.externalFilamentId,
+            diameterMm = snapshot.diameterMm,
         )
         val req = if (snapshot.resolvedMaterialName?.isNotBlank() == true) {
             baseReq.copy(materialName = snapshot.resolvedMaterialName)

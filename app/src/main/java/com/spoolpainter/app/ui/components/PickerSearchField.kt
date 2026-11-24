@@ -15,6 +15,8 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
@@ -23,9 +25,15 @@ import androidx.compose.ui.unit.dp
  * Type-to-search box (U21 / UI-48) mounted as the sticky header of a
  * [LazyDropdownMenu]. The query lives in the caller; this is presentation only.
  *
- * Not autofocused (Q-U21-4): the soft keyboard only appears on tap so the full
- * list stays visible until the user chooses to search. A Clear (X) resets the
- * query when non-blank.
+ * Not autofocused by itself (Q-U21-4): the soft keyboard only appears on tap so
+ * the full list stays visible until the user chooses to search. A Clear (X)
+ * resets the query when non-blank. A caller that wants immediate input (e.g.
+ * the filament dropdown, whose whole point is searching) passes a
+ * [focusRequester] it owns and drives it from its open/close state — this
+ * composable only attaches it, never requests focus itself.
+ *
+ * @param focusRequester Optional externally-owned requester attached to the
+ * field so the caller can focus it when its dropdown opens.
  */
 @Composable
 fun PickerSearchField(
@@ -34,6 +42,7 @@ fun PickerSearchField(
     placeholder: String,
     modifier: Modifier = Modifier,
     testTag: String = "picker-search-field",
+    focusRequester: FocusRequester? = null,
 ) {
     OutlinedTextField(
         value = query,
@@ -71,7 +80,14 @@ fun PickerSearchField(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 8.dp)
-            .testTag(testTag),
+            .testTag(testTag)
+            .then(
+                if (focusRequester != null) {
+                    Modifier.focusRequester(focusRequester)
+                } else {
+                    Modifier
+                },
+            ),
         textStyle = MaterialTheme.typography.bodyLarge,
         colors = OutlinedTextFieldDefaults.colors(
             focusedBorderColor = MaterialTheme.colorScheme.primary,

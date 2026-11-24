@@ -33,6 +33,7 @@ interface SettingsRepository {
     suspend fun setCrealitySalt(salt: String)
     suspend fun setCrealityEncKey(key: String)
     suspend fun setLastSeenWhatsNewVersion(version: Int)
+    suspend fun setTagStorageMode(mode: TagStorageMode)
 }
 
 @Singleton
@@ -93,5 +94,9 @@ class SettingsRepositoryImpl @Inject constructor(
 
     override suspend fun setLastSeenWhatsNewVersion(version: Int) {
         store.updateData { it.copy(lastSeenWhatsNewVersion = version) }
+    }
+
+    override suspend fun setTagStorageMode(mode: TagStorageMode) {
+        store.updateData { it.copy(tagStorageMode = mode) }
     }
 }

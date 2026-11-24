@@ -18,6 +18,11 @@ data class Settings(
     // 0 = never recorded; drives the one-time showcase trigger in
     // WhatsNewController. Unknown to pre-U15 payloads, read back as 0.
     val lastSeenWhatsNewVersion: Int = 0,
+    // Where NFC tag UIDs are persisted: BOTH writes the legacy card_uids
+    // extra field AND the native tag API (server ≥ 0.27.0); NATIVE_ONLY /
+    // LEGACY_ONLY restrict to one. Unknown to pre-<this-release> payloads,
+    // read back as BOTH.
+    val tagStorageMode: TagStorageMode = TagStorageMode.BOTH,
 )
 
 @Serializable
@@ -28,6 +33,9 @@ enum class FilamentSortKey { Material, Brand, Id }
 
 @Serializable
 enum class SortDirection { Asc, Desc }
+
+@Serializable
+enum class TagStorageMode { BOTH, NATIVE_ONLY, LEGACY_ONLY }
 
 @Serializable
 enum class ThemeOverride { Light, Dark }
