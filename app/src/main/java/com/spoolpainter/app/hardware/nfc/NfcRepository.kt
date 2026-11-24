@@ -13,15 +13,18 @@ import com.spoolpainter.app.domain.primitives.NfcResult
 import com.spoolpainter.app.domain.primitives.OpenSpoolDecodeResult
 import com.spoolpainter.app.domain.primitives.OpenSpoolPayloadCodec
 import com.spoolpainter.app.domain.primitives.TagClassification
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.datetime.Clock
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -56,6 +59,13 @@ open class NfcRepository internal constructor(
 
     private val mutex = Mutex()
     private var armedIntent: NfcIntent? = null
+    // Completed under the mutex at the exact point where handleTag's snapshot
+    // CONSUMES armedIntent — i.e. "a physical tap was spent on the current
+    // arm". One deferred per arm: arm() installs a fresh one, disarm() drops
+    // it. A deferred is completed at most once (CompletableDeferred.complete
+    // is idempotent) and only for its own arm's consume, so a stale deferred
+    // from a previous arm can never be completed by a later tap.
+    private var tapConsumedSignal: CompletableDeferred<Unit>? = null
     private var attached: ComponentActivity? = null
 
     fun attach(activity: ComponentActivity) {
@@ -83,6 +93,7 @@ open class NfcRepository internal constructor(
         if (!wrapper.isAvailable()) {
             mutex.withLock {
                 armedIntent = null
+                tapConsumedSignal = null
                 _state.value = NfcResult.Error(
                     if (wrapper.hasHardware()) "NFC not available" else NO_NFC_HARDWARE_MESSAGE,
                 )
@@ -91,6 +102,7 @@ open class NfcRepository internal constructor(
         }
         mutex.withLock {
             armedIntent = intent
+            tapConsumedSignal = CompletableDeferred()
             _state.value = when (intent) {
                 is NfcIntent.Read -> NfcResult.Reading
                 is NfcIntent.Write -> NfcResult.Writing
@@ -123,8 +135,40 @@ open class NfcRepository internal constructor(
     open suspend fun disarm() {
         mutex.withLock {
             armedIntent = null
+            tapConsumedSignal = null
             _state.value = NfcResult.Idle
         }
+    }
+
+    /**
+     * Phase-aware wait for the current arm's terminal NFC state.
+     *
+     * Phase 1 — tap wait: suspends until [tapWaitMs] for a physical tap to be
+     * CONSUMED by the armed intent (the [tapConsumedSignal] completed under
+     * the mutex in [handleTag]). Null result = nobody tapped; the caller maps
+     * that to its timeout/Cancelled outcome and disarms.
+     *
+     * Phase 2 — I/O grace: once a tap was consumed, the blocking tag I/O
+     * (NDEF write etc.) runs out-of-band in this repository's own scope and
+     * is NOT cancellable by the caller. Instead of racing it with a short
+     * outer timeout (the old MainViewModel withTimeoutOrNull(write) pattern,
+     * which cancelled the use case mid-write while the physical write kept
+     * going — tag written but Spoolman never patched), we wait up to
+     * [ioGraceMs] for the terminal Success/Error state. Null here means
+     * pathologically stuck I/O; the caller treats it like a timeout.
+     *
+     * A state that is already terminal when called (e.g. arm() rejected
+     * because NFC is unavailable) is returned immediately.
+     */
+    open suspend fun awaitTerminal(tapWaitMs: Long, ioGraceMs: Long = IO_GRACE_MS_DEFAULT): NfcResult? {
+        val current = state.value
+        if (current is NfcResult.Success || current is NfcResult.Error) return current
+        val signal = mutex.withLock { tapConsumedSignal } ?: return null
+        if (withTimeoutOrNull(tapWaitMs) { signal.await() } == null) {
+            // Nobody tapped within the UX wait window.
+            return null
+        }
+        return withTimeoutOrNull(ioGraceMs) { state.first { it is NfcResult.Success || it is NfcResult.Error } }
     }
 
     fun onTagDiscovered(tag: Tag) {
@@ -242,7 +286,17 @@ open class NfcRepository internal constructor(
 
         val (intent, currentState) = mutex.withLock {
             val snapshot = armedIntent to _state.value
-            if (snapshot.first != null) armedIntent = null
+            if (snapshot.first != null) {
+                armedIntent = null
+                // A physical tap was spent on the current arm — signal any
+                // awaitTerminal waiter before the (possibly long) tag I/O
+                // starts, so it switches from tap-wait to I/O-grace. The
+                // deferred stays completed in place (not nulled): an
+                // awaitTerminal that snapshots it a beat later must still see
+                // "tap consumed" rather than mistaking the race for a
+                // no-tap timeout while the write is already running.
+                tapConsumedSignal?.complete(Unit)
+            }
             snapshot
         }
         when (currentState) {
@@ -462,6 +516,11 @@ open class NfcRepository internal constructor(
     companion object {
         const val TTL_MS_DEFAULT: Long = 5_000L
         const val NO_NFC_HARDWARE_MESSAGE = "This device has no NFC. You can still edit spools in Spoolman."
+
+        /** Default phase-2 budget of [awaitTerminal]: generous cap on tag
+         *  I/O after a tap was consumed (blocking NDEF writes normally take
+         *  well under a second; 30s only catches pathological hangs). */
+        const val IO_GRACE_MS_DEFAULT: Long = 30_000L
         internal const val MIME_OPENSPOOL = "application/vnd.openspool+json"
         internal const val MIME_JSON = "application/json"
         private const val TAG = "NfcRepository"

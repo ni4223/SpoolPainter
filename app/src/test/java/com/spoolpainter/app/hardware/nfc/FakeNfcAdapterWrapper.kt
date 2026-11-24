@@ -5,7 +5,7 @@ import androidx.activity.ComponentActivity
 import com.spoolpainter.app.domain.primitives.CardUid
 import kotlinx.coroutines.Dispatchers
 
-internal class FakeNfcAdapterWrapper : NfcAdapterWrapper(adapter = null, dispatcher = Dispatchers.Unconfined) {
+internal open class FakeNfcAdapterWrapper : NfcAdapterWrapper(adapter = null, dispatcher = Dispatchers.Unconfined) {
 
     var available: Boolean = true
     var attachedActivity: ComponentActivity? = null
