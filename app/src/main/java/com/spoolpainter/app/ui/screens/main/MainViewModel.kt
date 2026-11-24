@@ -115,6 +115,10 @@ class MainViewModel @Inject constructor(
     // tap also gets help. Stored as the wall-clock instant of the last hint.
     private var lastAmbientHintEpochMs: Long = 0L
 
+    // Retained (internal API) even though the NFC flows no longer use them:
+    // the tap-wait UX budgets moved into the use cases (see
+    // NfcRepository.awaitTerminal and the use-case *_TAP_WAIT_MS constants).
+    // writeTimeoutMs still caps the HTTP-only Save / vendor-UID pair flows.
     internal val readTimeoutMs: Long = READ_TIMEOUT_MS_DEFAULT
     internal val writeTimeoutMs: Long = WRITE_TIMEOUT_MS_DEFAULT
 
@@ -550,7 +554,10 @@ class MainViewModel @Inject constructor(
             )
         }
         readJob = viewModelScope.launch {
-            val result = withTimeoutOrNull(readTimeoutMs) { readAndPair.invoke() }
+            // SAFETY_TIMEOUT_MS is a dead-man cap only — the 10s
+            // "waiting for a tap" UX budget is enforced inside
+            // ReadAndPairUseCase via NfcRepository.awaitTerminal.
+            val result = withTimeoutOrNull(SAFETY_TIMEOUT_MS) { readAndPair.invoke() }
             if (result == null) {
                 nfc.disarm()
                 _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
@@ -701,7 +708,10 @@ class MainViewModel @Inject constructor(
                 newFilamentVendor = brandName.ifBlank { "Generic" },
                 resolvedMaterialName = materialName.takeIf { it.isNotBlank() },
             )
-            val result = withTimeoutOrNull(writeTimeoutMs) {
+            // SAFETY_TIMEOUT_MS is a dead-man cap only — the 15s
+            // tap-wait UX budget is enforced inside
+            // CreateAndPairUseCase via NfcRepository.awaitTerminal.
+            val result = withTimeoutOrNull(SAFETY_TIMEOUT_MS) {
                 createAndPair.invoke(input)
             } ?: CreateAndPairResult.Cancelled(reason = "timeout", spoolId = spoolId)
             applyWriteResult(result)
@@ -718,7 +728,10 @@ class MainViewModel @Inject constructor(
                 resolvedMaterialName = materialName.takeIf { it.isNotBlank() },
                 newFilamentVendor = brandName.ifBlank { "Unknown" },
             )
-            val result = withTimeoutOrNull(writeTimeoutMs) {
+            // SAFETY_TIMEOUT_MS is a dead-man cap only — the 15s
+            // tap-wait UX budget is enforced inside RawWriteUseCase via
+            // NfcRepository.awaitTerminal.
+            val result = withTimeoutOrNull(SAFETY_TIMEOUT_MS) {
                 rawWrite.invoke(input)
             } ?: RawWriteResult.Cancelled("timeout")
             applyRawWriteResult(result)
@@ -1502,7 +1515,15 @@ class MainViewModel @Inject constructor(
                 // misleading. Only show the snackbar for the genuine timeout
                 // / no-tap path.
                 if (!result.reason.startsWith("repair declined", ignoreCase = true)) {
-                    _effects.trySend(UiEffect.ShowSnackbar("No tag tapped. Try again."))
+                    // Lift hint: Android never re-dispatches a tag that stays
+                    // in the RF field, so a user holding the phone on the
+                    // spool must physically break the field before a retry
+                    // tap can be delivered.
+                    _effects.trySend(
+                        UiEffect.ShowSnackbar(
+                            "No tag tapped. Try again. Lift the tag off the phone first, then tap it again.",
+                        ),
+                    )
                 }
             }
         }
@@ -1592,7 +1613,10 @@ class MainViewModel @Inject constructor(
         val spoolId = current.spoolId
         _state.update { it.copy(activeFlow = ActiveFlow.WritingSecondTag(spoolId)) }
         writeJob = viewModelScope.launch {
-            val result = withTimeoutOrNull(writeTimeoutMs) {
+            // SAFETY_TIMEOUT_MS is a dead-man cap only — the 15s
+            // tap-wait UX budget is enforced inside TwoTagUseCase via
+            // NfcRepository.awaitTerminal.
+            val result = withTimeoutOrNull(SAFETY_TIMEOUT_MS) {
                 twoTag.invoke(TwoTagInput(spoolId))
             } ?: TwoTagResult.Cancelled("timeout")
             applyTwoTagResult(result)
@@ -1704,8 +1728,13 @@ class MainViewModel @Inject constructor(
                 // Suppress on explicit user decline (RepairConfirmSheet
                 // Cancel). Emit only for genuine timeouts / unknown reasons.
                 if (!result.reason.startsWith("repair declined", ignoreCase = true)) {
+                    // Lift hint: Android never re-dispatches a tag that stays
+                    // in the RF field — the user must physically break the
+                    // field before a retry tap can be delivered.
                     _effects.trySend(
-                        UiEffect.ShowSnackbar("No second tag tapped. Tap Write to retry."),
+                        UiEffect.ShowSnackbar(
+                            "No second tag tapped. Tap Write to retry. Lift the tag off the phone first, then tap it again.",
+                        ),
                     )
                 }
             }
@@ -1738,7 +1767,13 @@ class MainViewModel @Inject constructor(
             is RawWriteResult.Cancelled -> {
                 _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
                 viewModelScope.launch { nfc.disarm() }
-                _effects.trySend(UiEffect.ShowSnackbar("No tag tapped. Try again."))
+                // Lift hint: Android never re-dispatches a tag that stays in
+                // the RF field (see applyTwoTagResult.Cancelled).
+                _effects.trySend(
+                    UiEffect.ShowSnackbar(
+                        "No tag tapped. Try again. Lift the tag off the phone first, then tap it again.",
+                    ),
+                )
             }
         }
     }
@@ -1866,6 +1901,20 @@ class MainViewModel @Inject constructor(
         const val READ_TIMEOUT_MS_DEFAULT: Long = 10_000L
         const val WRITE_TIMEOUT_MS_DEFAULT: Long = 15_000L
         const val AMBIENT_HINT_COOLDOWN_MS: Long = 15_000L
+
+        /**
+         * Dead-man cap for the NFC flows. The real "how long do we wait for
+         * a tap" UX budget now lives INSIDE the use cases via
+         * NfcRepository.awaitTerminal (phase-aware: short tap wait, then a
+         * generous I/O grace so a mid-write timeout can never cancel the
+         * use case while the physical NDEF write is still in flight — the
+         * old 10s/15s outer timeouts did exactly that and manufactured
+         * "tag written but Spoolman never patched" + spurious "No tag
+         * tapped" dead zones). This 60s wrapper only catches pathological
+         * hangs (e.g. a wedged HTTP call inside a use case); it must never
+         * fire in normal operation.
+         */
+        const val SAFETY_TIMEOUT_MS: Long = 60_000L
 
         // UI-54 — its own logcat tag so the refresh re-derive decision can be
         // watched in isolation during install-gate testing. Stripped from
