@@ -50,7 +50,10 @@ open class RawWriteUseCase @Inject constructor(
                 }
             is NfcResult.Error -> {
                 val reason = outcome.reason
-                val lastUid = nfc.lastSeenTag.value?.uid
+                // UID rides in the Error itself (PR #15 fix): the repository
+                // clears the lastSeenTag buffer on write-path terminal
+                // transitions, so reading the buffer here would lose the UID.
+                val lastUid = outcome.uid
                 when {
                     reason.contains("vendor-tag", ignoreCase = true) ->
                         RawWriteResult.VendorTagRejected(lastUid ?: CardUid(""))

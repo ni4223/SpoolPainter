@@ -7,7 +7,6 @@ import com.spoolpainter.app.domain.primitives.CardUid
 import com.spoolpainter.app.domain.primitives.NfcIntent
 import com.spoolpainter.app.domain.primitives.NfcResult
 import com.spoolpainter.app.domain.primitives.TagClassification
-import com.spoolpainter.app.hardware.nfc.TagBuffer
 import com.spoolpainter.app.support.FakeNfcRepository
 import com.spoolpainter.app.ui.screens.main.FormState
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -60,10 +59,10 @@ class RawWriteUseCaseTest {
 
     @Test
     fun `vendor tag protected returns VendorTagRejected`() = runTest {
-        nfc.pushLastSeenTag(
-            TagBuffer(sampleUid, TagClassification.Vendor("non-NDEF tag"), capturedAtEpochMs = 0L),
-        )
-        nfc.queueArmResults(NfcResult.Error("vendor-tag protected (FR-4.7)"))
+        // PR #15 contract: the UID rides in the NfcResult.Error itself — the
+        // repository clears the lastSeenTag buffer on write-path terminal
+        // transitions, so the use case must not depend on the buffer.
+        nfc.queueArmResults(NfcResult.Error("vendor-tag protected (FR-4.7)", null, sampleUid))
 
         val result = useCase.invoke(input())
 
@@ -73,10 +72,7 @@ class RawWriteUseCaseTest {
 
     @Test
     fun `verify mismatch returns VerifyFailed`() = runTest {
-        nfc.pushLastSeenTag(
-            TagBuffer(sampleUid, TagClassification.Blank, capturedAtEpochMs = 0L),
-        )
-        nfc.queueArmResults(NfcResult.Error("verify mismatch: bytes differ"))
+        nfc.queueArmResults(NfcResult.Error("verify mismatch: bytes differ", null, sampleUid))
 
         val result = useCase.invoke(input())
 
