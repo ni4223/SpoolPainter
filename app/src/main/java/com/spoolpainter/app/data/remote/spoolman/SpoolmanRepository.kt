@@ -208,13 +208,33 @@ open class SpoolmanRepository @Inject constructor(
      * rather than from the cache, and PATCHes without [patchFilament]'s
      * cache diff: that diff could match a stale cached code and skip a write
      * the fresh read just showed is needed.
+     *
+     * GET and PATCH run under a per-filament lock, so two fills from this app
+     * (Save's background fill and a Map tag on a sibling spool, say) can't both
+     * read "empty": the second re-reads after the first wrote and keeps it.
+     * Known limit: another client writing between our GET and PATCH is still
+     * overwritten. Spoolman's PATCH has no version or If-Match check, and its
+     * response echoes our value, so that case can't be detected from here.
      */
     open suspend fun fillArticleNumberIfEmpty(
         filamentId: Int,
         articleNumber: String,
     ): SpoolmanOutcome<SpoolmanFilament> {
         val api = cachedApi ?: return urlNotConfigured()
-        return performHttp("getFilament") { api.getFilament(filamentId) }.flatMap { filament ->
+        return articleNumberFillLocks.computeIfAbsent(filamentId) { Mutex() }.withLock {
+            fillArticleNumberLocked(api, filamentId, articleNumber)
+        }
+    }
+
+    // One lock per filament id; ids are few, so entries are never dropped.
+    private val articleNumberFillLocks = java.util.concurrent.ConcurrentHashMap<Int, Mutex>()
+
+    private suspend fun fillArticleNumberLocked(
+        api: SpoolmanApi,
+        filamentId: Int,
+        articleNumber: String,
+    ): SpoolmanOutcome<SpoolmanFilament> =
+        performHttp("getFilament") { api.getFilament(filamentId) }.flatMap { filament ->
             if (!filament.article_number.isNullOrBlank()) {
                 SpoolmanOutcome.Success(filament)
             } else {
@@ -228,7 +248,6 @@ open class SpoolmanRepository @Inject constructor(
                 }
             }
         }
-    }
 
     /**
      * [fillArticleNumberIfEmpty] on the app scope, for callers that have
