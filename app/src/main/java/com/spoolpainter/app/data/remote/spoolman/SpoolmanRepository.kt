@@ -10,6 +10,7 @@ import com.spoolpainter.app.di.IoDispatcher
 import com.spoolpainter.app.domain.models.SpoolmanFilament
 import com.spoolpainter.app.domain.models.SpoolmanSpool
 import com.spoolpainter.app.domain.models.SpoolmanVendor
+import com.spoolpainter.app.domain.models.isMaterialInColour
 import com.spoolpainter.app.domain.primitives.CardUid
 import com.spoolpainter.app.domain.primitives.ColorHexCodec
 import com.spoolpainter.app.domain.primitives.ExtraCardUidsCodec
@@ -700,8 +701,7 @@ open class SpoolmanRepository @Inject constructor(
         return performHttp("listFilaments") { api.listFilaments() }.flatMap { list ->
             val match = list.firstOrNull { f ->
                 if (f.vendor?.id != vendorId) return@firstOrNull false
-                if (!(f.material ?: "").equals(materialName, ignoreCase = true)) return@firstOrNull false
-                if (ColorHexCodec.canonicalise(f.color_hex) != targetHex) return@firstOrNull false
+                if (!f.isMaterialInColour(materialName, req.colorHex)) return@firstOrNull false
                 // Match variant from extra.variant only. filament.name is the
                 // full display name ("Polymaker PLA Matte"), not the variant.
                 // Variant comparison treats null/blank as equivalent and is

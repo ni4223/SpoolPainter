@@ -15,6 +15,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
@@ -39,6 +40,8 @@ class VendorUidOnlyPairUseCaseTest {
     private fun formInput(
         selectedSpoolId: Int? = null,
         articleNumber: String? = null,
+        tagMaterial: String? = "PLA",
+        tagColorHex: String? = "FF0000",
     ): VendorUidOnlyPairInput =
         VendorUidOnlyPairInput(
             form = FormState(
@@ -56,6 +59,8 @@ class VendorUidOnlyPairUseCaseTest {
             resolvedMaterialName = "PLA",
             observedUid = sampleUid,
             articleNumber = articleNumber,
+            tagMaterial = tagMaterial,
+            tagColorHex = tagColorHex,
         )
 
     @Test
@@ -208,6 +213,77 @@ class VendorUidOnlyPairUseCaseTest {
         assertNull(spoolman.lastCreateRequest?.expanderOverrides?.articleNumber)
         assertEquals(listOf(sampleFilament.id to "HPL18-106"), spoolman.fillArticleNumberCalls)
         assertNotNull((result as VendorUidOnlyPairResult.Success.UidPaired).articleNumberFill)
+    }
+
+    /** Map tag onto spool 42 whose filament is [filament], with a code on the tag. */
+    private suspend fun mapOnto(
+        filament: SpoolmanFilament,
+        tagMaterial: String? = "PLA",
+        tagColorHex: String? = "FF0000",
+    ): VendorUidOnlyPairResult.Success.UidPaired {
+        moveOnBind.nextOutcome = MoveOnBindUseCase.Outcome.Proceed
+        spoolman.nextAppendCardUidResult = SpoolmanOutcome.Success(targetSpool.copy(filament = filament))
+        val result = useCase.invoke(
+            formInput(selectedSpoolId = 42, articleNumber = "G00-R0", tagMaterial = tagMaterial, tagColorHex = tagColorHex),
+        )
+        return result as VendorUidOnlyPairResult.Success.UidPaired
+    }
+
+    @Test
+    fun `existing spool of another colour is paired but not filled`() = runTest {
+        val paired = mapOnto(sampleFilament.copy(color_hex = "00FF00"))
+
+        assertTrue(spoolman.fillArticleNumberCalls.isEmpty())
+        assertNull(paired.articleNumberFill)
+        assertTrue(paired.articleNumberSkipped)
+    }
+
+    @Test
+    fun `existing spool of another material is paired but not filled`() = runTest {
+        val paired = mapOnto(sampleFilament.copy(material = "PETG"))
+
+        assertTrue(spoolman.fillArticleNumberCalls.isEmpty())
+        assertTrue(paired.articleNumberSkipped)
+    }
+
+    @Test
+    fun `existing spool with a colourless filament is not filled`() = runTest {
+        val paired = mapOnto(sampleFilament.copy(color_hex = null))
+
+        assertTrue(spoolman.fillArticleNumberCalls.isEmpty())
+        assertTrue(paired.articleNumberSkipped)
+    }
+
+    @Test
+    fun `tag without a colour fills nothing, even on a colourless filament`() = runTest {
+        val paired = mapOnto(sampleFilament.copy(color_hex = null), tagColorHex = null)
+
+        assertTrue(spoolman.fillArticleNumberCalls.isEmpty())
+        assertTrue(paired.articleNumberSkipped)
+    }
+
+    @Test
+    fun `existing spool of the tag's product is filled, case and hex format aside`() = runTest {
+        val paired = mapOnto(sampleFilament, tagMaterial = "pla", tagColorHex = "#ff0000ff")
+
+        assertEquals(listOf(sampleFilament.id to "G00-R0"), spoolman.fillArticleNumberCalls)
+        assertNotNull(paired.articleNumberFill)
+        assertFalse(paired.articleNumberSkipped)
+    }
+
+    @Test
+    fun `new spool on a picked filament of another colour is paired but not filled`() = runTest {
+        moveOnBind.nextOutcome = MoveOnBindUseCase.Outcome.Proceed
+        val green = targetSpool.copy(filament = sampleFilament.copy(color_hex = "00FF00"))
+        spoolman.nextCreateSpoolResult = SpoolmanOutcome.Success(green)
+        spoolman.nextAppendCardUidResult = SpoolmanOutcome.Success(green)
+        val base = formInput(selectedSpoolId = null, articleNumber = "HPL18-106")
+        val input = base.copy(form = base.form.copy(selectedFilamentId = sampleFilament.id))
+
+        val result = useCase.invoke(input) as VendorUidOnlyPairResult.Success.UidPaired
+
+        assertTrue(spoolman.fillArticleNumberCalls.isEmpty())
+        assertTrue(result.articleNumberSkipped)
     }
 
     @Test

@@ -270,6 +270,31 @@ class MainViewModelTest {
         )
 
     @Test
+    fun `Map tag hands the tag's material and colour to the pair`() = runTest {
+        val vm = newVm()
+        readVendorTagAndPickSpool(vm)
+
+        vm.onWriteTapped()
+
+        assertEquals(openSpoolPayload.type, vendorUidOnlyPair.lastInput?.tagMaterial)
+        assertEquals(openSpoolPayload.colorHex, vendorUidOnlyPair.lastInput?.tagColorHex)
+    }
+
+    @Test
+    fun `Map tag onto a spool that isn't the tag's product says the code wasn't saved`() = runTest {
+        val vm = newVm()
+        readVendorTagAndPickSpool(vm)
+        vendorUidOnlyPair.nextResult = paired(null).copy(articleNumberSkipped = true)
+
+        vm.effects.test {
+            vm.onWriteTapped()
+            assertTrue(awaitNonAmbientSnackbar().message.contains("isn't the tag's"))
+            cancelAndIgnoreRemainingEvents()
+        }
+        assertNull(vm.state.value.form.articleNumber)
+    }
+
+    @Test
     fun `after Map tag the field shows the code Spoolman stored`() = runTest {
         val vm = newVm()
         readVendorTagAndPickSpool(vm)

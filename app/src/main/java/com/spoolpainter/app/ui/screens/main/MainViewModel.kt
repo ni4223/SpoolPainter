@@ -663,7 +663,7 @@ class MainViewModel @Inject constructor(
         // vendor + Spoolman + spool-selected to the HTTP-only pair use
         // case so Save stays a pure form-edit action.
         if (mode == WriteMode.Spoolman && state.observedTagKind is ObservedTagKind.Vendor) {
-            launchVendorUidOnlyPair(form, state.observedTagUid, state.pendingTagSku())
+            launchVendorUidOnlyPair(form, state.observedTagUid, state.pendingTagSku(), state.observedTagKind)
             return
         }
         when (mode) {
@@ -731,6 +731,7 @@ class MainViewModel @Inject constructor(
         form: FormState,
         observedUid: com.spoolpainter.app.domain.primitives.CardUid?,
         articleNumber: String?,
+        tag: ObservedTagKind.Vendor,
     ) {
         val observed = observedUid ?: form.cardUid
         if (observed == null) {
@@ -754,6 +755,8 @@ class MainViewModel @Inject constructor(
                 resolvedMaterialName = materialName.takeIf { it.isNotBlank() },
                 observedUid = observed,
                 articleNumber = articleNumber,
+                tagMaterial = tag.material,
+                tagColorHex = tag.colorHex,
             )
             val result = withTimeoutOrNull(writeTimeoutMs) {
                 vendorUidOnlyPair.invoke(input)
@@ -1164,7 +1167,11 @@ class MainViewModel @Inject constructor(
     private fun mapClassification(c: TagClassification?): ObservedTagKind? = when (c) {
         is TagClassification.Blank -> ObservedTagKind.Blank
         is TagClassification.OpenSpool -> ObservedTagKind.OpenSpool
-        is TagClassification.Vendor -> ObservedTagKind.Vendor(c.parsedHint?.productCode())
+        is TagClassification.Vendor -> ObservedTagKind.Vendor(
+            sku = c.parsedHint?.productCode(),
+            material = c.parsedHint?.type,
+            colorHex = c.parsedHint?.colorHex,
+        )
         else -> null
     }
 
@@ -1799,8 +1806,9 @@ class MainViewModel @Inject constructor(
                         .firstOrNull { it.id == result.spoolId }?.filament?.id
                     current.copy(
                         // effectiveForm: the tag's code stays in the field
-                        // once observedTagKind is cleared below.
-                        form = current.effectiveForm().copy(
+                        // once observedTagKind is cleared below — unless the
+                        // spool wasn't the tag's product and got no code.
+                        form = (if (result.articleNumberSkipped) current.form else current.effectiveForm()).copy(
                             cardUid = result.uid,
                             selectedSpoolId = result.spoolId,
                             selectedFilamentId = filamentId ?: current.form.selectedFilamentId,
@@ -1815,6 +1823,13 @@ class MainViewModel @Inject constructor(
                     )
                 }
                 result.articleNumberFill?.let { fill -> reportArticleNumberFill(result.spoolId, fill) }
+                if (result.articleNumberSkipped) {
+                    _effects.trySend(
+                        UiEffect.ShowSnackbar(
+                            "Tag mapped. Article number not saved: this spool isn't the tag's material and colour.",
+                        ),
+                    )
+                }
             }
             is VendorUidOnlyPairResult.SpoolmanFailed -> {
                 _state.update { it.copy(activeFlow = ActiveFlow.Idle) }
