@@ -1567,6 +1567,13 @@ class MainViewModel @Inject constructor(
                         "Updated spool #${result.spoolId}."
                 }
                 _effects.trySend(UiEffect.ShowSnackbar(msg))
+                result.articleNumberFill?.let { fill ->
+                    reportArticleNumberFill(
+                        result.spoolId,
+                        fill,
+                        failureMessage = "Saved, but its article number couldn't be saved to Spoolman.",
+                    )
+                }
             }
             is SaveToSpoolmanResult.NoChanges -> {
                 // U32 B2: never claim "Updated" when nothing was written.
@@ -1765,6 +1772,7 @@ class MainViewModel @Inject constructor(
     private fun reportArticleNumberFill(
         spoolId: Int,
         fill: Deferred<SpoolmanOutcome<SpoolmanFilament>>,
+        failureMessage: String = "Tag mapped, but its article number couldn't be saved to Spoolman.",
     ) {
         viewModelScope.launch {
             val outcome = fill.await()
@@ -1774,9 +1782,7 @@ class MainViewModel @Inject constructor(
                 else it.copy(form = it.form.copy(articleNumber = stored))
             }
             if (outcome !is SpoolmanOutcome.Success) {
-                _effects.trySend(
-                    UiEffect.ShowSnackbar("Tag mapped, but its article number couldn't be saved to Spoolman."),
-                )
+                _effects.trySend(UiEffect.ShowSnackbar(failureMessage))
             }
         }
     }

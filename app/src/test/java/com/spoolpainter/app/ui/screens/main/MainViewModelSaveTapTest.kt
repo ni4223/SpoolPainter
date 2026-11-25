@@ -27,6 +27,7 @@ import com.spoolpainter.app.support.FakeSpoolmanRepository
 import com.spoolpainter.app.support.FakeTwoTagUseCase
 import com.spoolpainter.app.support.FakeVendorUidOnlyPairUseCase
 import com.spoolpainter.app.ui.common.UiEffect
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -102,6 +103,41 @@ class MainViewModelSaveTapTest {
         }
         assertEquals(99, vm.state.value.spoolman.selectedSpoolId)
         assertEquals(99, vm.state.value.form.selectedSpoolId)
+    }
+
+    @Test fun `new-spool save - failed article number fill shows a snackbar`() = runTest {
+        val vm = newVm()
+        primeFormForSave(vm)
+        saveToSpoolman.nextResult = SaveToSpoolmanResult.Success.Saved(
+            spoolId = 99,
+            isNewSpool = true,
+            articleNumberFill = CompletableDeferred(SpoolmanOutcome.HttpError(500, "boom")),
+        )
+
+        vm.effects.test {
+            vm.onSaveTapped()
+            val saved = awaitNonAmbient(this)
+            assertTrue("got $saved", saved.message.contains("Saved spool #99"))
+            val fill = awaitNonAmbient(this)
+            assertTrue("got $fill", fill.message.contains("article number couldn't be saved"))
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test fun `new-spool save - stored article number shows in the form`() = runTest {
+        val vm = newVm()
+        primeFormForSave(vm)
+        saveToSpoolman.nextResult = SaveToSpoolmanResult.Success.Saved(
+            spoolId = 99,
+            isNewSpool = true,
+            articleNumberFill = CompletableDeferred(
+                SpoolmanOutcome.Success(SpoolmanFilament(id = 11, article_number = "HPL18-106")),
+            ),
+        )
+
+        vm.onSaveTapped()
+
+        assertEquals("HPL18-106", vm.state.value.form.articleNumber)
     }
 
     @Test fun `existing-spool patch - emits Updated snackbar`() = runTest {

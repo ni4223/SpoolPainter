@@ -552,12 +552,15 @@ open class SpoolmanRepository @Inject constructor(
                         ).map { spool ->
                             // A matched filament didn't get the create's
                             // article_number: fill it if it has none.
+                            // Handed back so the caller can report it.
                             val code = req.expanderOverrides.articleNumber
                             val matched = resolvedFilament.value
-                            if (!resolvedFilament.wasCreatedFresh &&
+                            val fill = if (!resolvedFilament.wasCreatedFresh &&
                                 !code.isNullOrBlank() && matched.article_number.isNullOrBlank()
                             ) {
                                 fillArticleNumberInBackground(matched.id, code)
+                            } else {
+                                null
                             }
                             NewSpoolBundle(
                                 spool = spool,
@@ -569,6 +572,7 @@ open class SpoolmanRepository @Inject constructor(
                                 vendorWasFresh = resolvedVendor.wasCreatedFresh && resolvedFilament.wasCreatedFresh,
                                 filamentId = resolvedFilament.value.id,
                                 vendorId = resolvedVendor.value.id,
+                                articleNumberFill = fill,
                             )
                         }
                     }

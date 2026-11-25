@@ -140,10 +140,12 @@ open class VendorUidOnlyPairUseCase @Inject constructor(
         )
 
         // The create already recorded a code it carried (new filament, or the
-        // matched one's empty field), so only fill when it carried none.
+        // matched one's empty field, whose fill it hands back), so only fill
+        // here when it carried none.
         return appendUid(
             input, newId, isNewSpool = true,
             fillArticleNumber = req.expanderOverrides.articleNumber.isNullOrBlank(),
+            createFill = bundle.articleNumberFill,
         )
     }
 
@@ -152,6 +154,7 @@ open class VendorUidOnlyPairUseCase @Inject constructor(
         spoolId: Int,
         isNewSpool: Boolean,
         fillArticleNumber: Boolean,
+        createFill: Deferred<SpoolmanOutcome<SpoolmanFilament>>? = null,
     ): VendorUidOnlyPairResult {
         val append = spoolman.appendCardUidToSpool(spoolId, input.observedUid)
         if (append !is SpoolmanOutcome.Success) {
@@ -163,7 +166,7 @@ open class VendorUidOnlyPairUseCase @Inject constructor(
         val fill = if (fillArticleNumber && filamentId != null && !input.articleNumber.isNullOrBlank()) {
             spoolman.fillArticleNumberInBackground(filamentId, input.articleNumber)
         } else {
-            null
+            createFill
         }
         return VendorUidOnlyPairResult.Success.UidPaired(
             spoolId = spoolId,

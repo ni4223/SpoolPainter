@@ -11,11 +11,13 @@ import com.spoolpainter.app.domain.primitives.CardUid
 import com.spoolpainter.app.support.FakeMoveOnBindUseCase
 import com.spoolpainter.app.support.FakeSpoolmanRepository
 import com.spoolpainter.app.ui.screens.main.FormState
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -169,6 +171,28 @@ class VendorUidOnlyPairUseCaseTest {
 
         assertTrue(spoolman.fillArticleNumberCalls.isEmpty())
         assertNull((result as VendorUidOnlyPairResult.Success.UidPaired).articleNumberFill)
+    }
+
+    @Test
+    fun `new spool on a matched filament reports the create's fill`() = runTest {
+        moveOnBind.nextOutcome = MoveOnBindUseCase.Outcome.Proceed
+        val fill = CompletableDeferred<SpoolmanOutcome<SpoolmanFilament>>()
+        spoolman.nextCreateSpoolBundleResult = SpoolmanOutcome.Success(
+            com.spoolpainter.app.data.remote.spoolman.NewSpoolBundle(
+                spool = targetSpool,
+                filamentWasFresh = false,
+                vendorWasFresh = false,
+                filamentId = sampleFilament.id,
+                vendorId = sampleVendor.id,
+                articleNumberFill = fill,
+            ),
+        )
+        spoolman.nextAppendCardUidResult = SpoolmanOutcome.Success(targetSpool)
+
+        val result = useCase.invoke(formInput(selectedSpoolId = null, articleNumber = "HPL18-106"))
+
+        assertTrue(spoolman.fillArticleNumberCalls.isEmpty())
+        assertSame(fill, (result as VendorUidOnlyPairResult.Success.UidPaired).articleNumberFill)
     }
 
     @Test

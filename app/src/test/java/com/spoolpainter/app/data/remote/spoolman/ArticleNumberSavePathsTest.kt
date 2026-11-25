@@ -8,6 +8,7 @@ import com.spoolpainter.app.domain.usecases.NewFilamentRequest
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -66,6 +67,32 @@ class ArticleNumberSavePathsTest {
 
         assertTrue(h.fakeApi.callLog.none { it.startsWith("createFilament") })
         assertEquals("HPL18-106", h.fakeApi.filamentList.single().article_number)
+    }
+
+    @Test
+    fun `matched filament's fill is returned on the bundle`() = runTest {
+        val h = harness(filament(articleNumber = null))
+
+        val bundle = (h.repository.createSpoolForNewFilamentBundle(req("HPL18-106")) as SpoolmanOutcome.Success).data
+
+        val fill = bundle.articleNumberFill
+        assertNotNull("matched filament's fill must be handed back", fill)
+        val stored = fill!!.await()
+        assertEquals("HPL18-106", (stored as SpoolmanOutcome.Success).data.article_number)
+    }
+
+    @Test
+    fun `fresh filament returns no fill`() = runTest {
+        val h = harness()
+        val bundle = (h.repository.createSpoolForNewFilamentBundle(req("HPL18-106")) as SpoolmanOutcome.Success).data
+        assertNull(bundle.articleNumberFill)
+    }
+
+    @Test
+    fun `already coded filament returns no fill`() = runTest {
+        val h = harness(filament(articleNumber = "AHPLRR-107"))
+        val bundle = (h.repository.createSpoolForNewFilamentBundle(req("HPL18-106")) as SpoolmanOutcome.Success).data
+        assertNull(bundle.articleNumberFill)
     }
 
     @Test
