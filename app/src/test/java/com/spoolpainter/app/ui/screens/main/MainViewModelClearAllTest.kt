@@ -98,7 +98,7 @@ class MainViewModelClearAllTest {
         val dirty = MainUiState(
             form = FormState(variant = "Matte", brand = Brand("Jayo")),
             ambiguity = null,
-            observedTagKind = ObservedTagKind.Vendor,
+            observedTagKind = ObservedTagKind.Vendor(),
             scanSuggestedSpoolIds = listOf(1, 2),
         )
         val once = dirty.cleared()
@@ -168,7 +168,7 @@ class MainViewModelClearAllTest {
         // dropdown reset, so Clear is the only way to drop them. If cleared()
         // ignored them the vendor chip would be unclearable.
         val state = MainUiState(
-            observedTagKind = ObservedTagKind.Vendor,
+            observedTagKind = ObservedTagKind.Vendor(),
             observedTagUid = CardUid("AABBCCDD"),
         )
         assertTrue("cleared() must change a state holding an observed tag", state.cleared() != state)

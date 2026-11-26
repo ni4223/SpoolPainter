@@ -4,6 +4,7 @@ import com.spoolpainter.app.domain.models.SpoolmanFilament
 import com.spoolpainter.app.domain.models.SpoolmanInfo
 import com.spoolpainter.app.domain.models.SpoolmanSpool
 import com.spoolpainter.app.domain.models.SpoolmanVendor
+import kotlinx.coroutines.CompletableDeferred
 import okhttp3.ResponseBody.Companion.toResponseBody
 import retrofit2.Response
 
@@ -41,6 +42,10 @@ class FakeSpoolmanApi : SpoolmanApi {
     var failPatchFilament: Failure? = null
 
     val callLog: MutableList<String> = mutableListOf()
+
+    /** When set, the next [getFilament] reads its filament, then waits on this
+     *  before answering. Cleared on use, so only one call is held. */
+    var getFilamentLatency: CompletableDeferred<Unit>? = null
 
     override suspend fun getInfo(): Response<SpoolmanInfo> {
         callLog += "getInfo"
@@ -82,6 +87,12 @@ class FakeSpoolmanApi : SpoolmanApi {
         failGetFilament?.let { return it.toResponse() }
         val filament = filamentList.firstOrNull { it.id == filamentId }
             ?: return Response.error(404, "not found".toResponseBody(null))
+        // Snapshot taken, response held back: models a slow GET whose body is
+        // already stale by the time the caller sees it. One-shot.
+        getFilamentLatency?.let { gate ->
+            getFilamentLatency = null
+            gate.await()
+        }
         return Response.success(filament)
     }
 
@@ -121,6 +132,7 @@ class FakeSpoolmanApi : SpoolmanApi {
             settings_extruder_temp = body.settings_extruder_temp,
             settings_bed_temp = body.settings_bed_temp,
             extra = body.extra,
+            article_number = body.article_number,
         )
         filamentList += filament
         return Response.success(filament)
@@ -224,6 +236,7 @@ class FakeSpoolmanApi : SpoolmanApi {
             spool_weight = body.spool_weight ?: current.spool_weight,
             price = body.price ?: current.price,
             extra = body.extra ?: current.extra,
+            article_number = body.article_number ?: current.article_number,
         )
         filamentList[idx] = updated
         return Response.success(updated)

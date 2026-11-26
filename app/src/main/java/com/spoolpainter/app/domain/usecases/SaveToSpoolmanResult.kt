@@ -1,6 +1,8 @@
 package com.spoolpainter.app.domain.usecases
 
 import com.spoolpainter.app.data.remote.spoolman.SpoolmanOutcome
+import com.spoolpainter.app.domain.models.SpoolmanFilament
+import kotlinx.coroutines.Deferred
 
 /**
  * U13 — outcome of [SaveToSpoolmanUseCase]. Save is the Spoolman-only half of
@@ -18,6 +20,9 @@ sealed interface SaveToSpoolmanResult {
         data class Saved(
             override val spoolId: Int,
             val isNewSpool: Boolean,
+            /** Background `article_number` fill of a matched filament, when
+             *  the create started one. Await only to report it. */
+            val articleNumberFill: Deferred<SpoolmanOutcome<SpoolmanFilament>>? = null,
         ) : Success
     }
 

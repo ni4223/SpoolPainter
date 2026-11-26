@@ -5,10 +5,12 @@ import com.spoolpainter.app.data.remote.spoolman.SpoolPatchBody
 import com.spoolpainter.app.data.remote.spoolman.SpoolmanOutcome
 import com.spoolpainter.app.data.remote.spoolman.SpoolmanRepository
 import com.spoolpainter.app.data.remote.spoolman.UrlNotConfiguredException
+import com.spoolpainter.app.domain.models.SpoolmanFilament
 import com.spoolpainter.app.ui.screens.main.FormState
 import com.spoolpainter.app.ui.screens.main.initialWeightToSend
 import com.spoolpainter.app.ui.screens.main.toExpanderOverrides
 import javax.inject.Inject
+import kotlinx.coroutines.Deferred
 
 
 data class SaveToSpoolmanInput(
@@ -55,11 +57,13 @@ open class SaveToSpoolmanUseCase @Inject constructor(
         lastResolvedSpoolId = null
 
         // 1. Resolve the spool: existing selection or fresh create.
-        val (spoolId, isNewSpool) = when (val resolved = resolveSpool(snapshot)) {
+        val resolved = resolveSpool(snapshot)
+        val (spoolId, isNewSpool) = when (resolved) {
             is ResolvedSpool.Existing -> resolved.id to false
             is ResolvedSpool.Created -> resolved.id to true
             is ResolvedSpool.Failed -> return resolved.result
         }
+        val articleNumberFill = (resolved as? ResolvedSpool.Created)?.articleNumberFill
         lastResolvedSpoolId = spoolId
 
         var dirty = isNewSpool
@@ -121,14 +125,21 @@ open class SaveToSpoolmanUseCase @Inject constructor(
 
         return when {
             failure != null -> SaveToSpoolmanResult.Failed(failure)
-            dirty -> SaveToSpoolmanResult.Success.Saved(spoolId = spoolId, isNewSpool = isNewSpool)
+            dirty -> SaveToSpoolmanResult.Success.Saved(
+                spoolId = spoolId,
+                isNewSpool = isNewSpool,
+                articleNumberFill = articleNumberFill,
+            )
             else -> SaveToSpoolmanResult.NoChanges(spoolId = spoolId)
         }
     }
 
     private sealed interface ResolvedSpool {
         data class Existing(val id: Int) : ResolvedSpool
-        data class Created(val id: Int) : ResolvedSpool
+        data class Created(
+            val id: Int,
+            val articleNumberFill: Deferred<SpoolmanOutcome<SpoolmanFilament>>? = null,
+        ) : ResolvedSpool
         data class Failed(val result: SaveToSpoolmanResult) : ResolvedSpool
     }
 
@@ -159,7 +170,7 @@ open class SaveToSpoolmanUseCase @Inject constructor(
                     SpoolmanOutcome.ParseError(IllegalStateException("no spool id from createSpool")),
                 ),
             )
-            ResolvedSpool.Created(newId)
+            ResolvedSpool.Created(newId, bundle.articleNumberFill)
         }
     }
 

@@ -2,9 +2,12 @@ package com.spoolpainter.app.domain.usecases
 
 import com.spoolpainter.app.data.remote.spoolman.SpoolmanOutcome
 import com.spoolpainter.app.data.remote.spoolman.SpoolmanRepository
+import com.spoolpainter.app.domain.models.SpoolmanFilament
+import com.spoolpainter.app.domain.models.isMaterialInColour
 import com.spoolpainter.app.domain.primitives.CardUid
 import com.spoolpainter.app.ui.screens.main.FormState
 import javax.inject.Inject
+import kotlinx.coroutines.Deferred
 
 data class VendorUidOnlyPairInput(
     val form: FormState,
@@ -14,6 +17,13 @@ data class VendorUidOnlyPairInput(
     /** UID captured at Read time. Decoupled from `form.cardUid` so the use-case
      *  acts on the UID it was handed at Save press, even if the form drifts. */
     val observedUid: CardUid,
+    /** Product code decoded from the vendor tag, if any. Written to the
+     *  paired spool's filament `article_number` when that field is empty. */
+    val articleNumber: String? = null,
+    /** The tag's own material and colour. A picked spool's filament gets
+     *  [articleNumber] only when it is this material in this colour. */
+    val tagMaterial: String? = null,
+    val tagColorHex: String? = null,
 )
 
 sealed interface VendorUidOnlyPairResult {
@@ -22,6 +32,12 @@ sealed interface VendorUidOnlyPairResult {
             val spoolId: Int,
             val uid: CardUid,
             val isNewSpool: Boolean,
+            /** The background article_number fill, when one was started. The
+             *  pair already succeeded; await this only to report the fill. */
+            val articleNumberFill: Deferred<SpoolmanOutcome<SpoolmanFilament>>? = null,
+            /** The tag had a code, but the picked spool's filament isn't the
+             *  tag's material and colour, so it was not filled. */
+            val articleNumberSkipped: Boolean = false,
         ) : Success
     }
     data class SpoolmanFailed(val uid: CardUid, val outcome: SpoolmanOutcome<*>) : VendorUidOnlyPairResult
@@ -82,14 +98,7 @@ open class VendorUidOnlyPairUseCase @Inject constructor(
                 }
             }
         }
-        return when (val append = spoolman.appendCardUidToSpool(selectedSpoolId, input.observedUid)) {
-            is SpoolmanOutcome.Success -> VendorUidOnlyPairResult.Success.UidPaired(
-                spoolId = selectedSpoolId,
-                uid = input.observedUid,
-                isNewSpool = false,
-            )
-            else -> VendorUidOnlyPairResult.SpoolmanFailed(input.observedUid, append)
-        }
+        return appendUid(input, selectedSpoolId, isNewSpool = false, fillArticleNumber = true)
     }
 
     private suspend fun newSpoolPath(
@@ -138,14 +147,57 @@ open class VendorUidOnlyPairUseCase @Inject constructor(
             SpoolmanOutcome.ParseError(IllegalStateException("no spool id from createSpool")),
         )
 
-        return when (val append = spoolman.appendCardUidToSpool(newId, input.observedUid)) {
-            is SpoolmanOutcome.Success -> VendorUidOnlyPairResult.Success.UidPaired(
-                spoolId = newId,
-                uid = input.observedUid,
-                isNewSpool = true,
-            )
-            else -> VendorUidOnlyPairResult.SpoolmanFailed(input.observedUid, append)
+        // The create already recorded a code it carried (new filament, or the
+        // matched one's empty field, whose fill it hands back), so only fill
+        // here when it carried none.
+        return appendUid(
+            input, newId, isNewSpool = true,
+            fillArticleNumber = req.expanderOverrides.articleNumber.isNullOrBlank(),
+            createFill = bundle.articleNumberFill,
+        )
+    }
+
+    /** The tag's material and colour must both be known and match. */
+    private fun isTagProduct(filament: SpoolmanFilament, input: VendorUidOnlyPairInput): Boolean {
+        val material = input.tagMaterial?.takeIf { it.isNotBlank() } ?: return false
+        val colour = input.tagColorHex?.takeIf { it.isNotBlank() } ?: return false
+        return filament.isMaterialInColour(material, colour)
+    }
+
+    private suspend fun appendUid(
+        input: VendorUidOnlyPairInput,
+        spoolId: Int,
+        isNewSpool: Boolean,
+        fillArticleNumber: Boolean,
+        createFill: Deferred<SpoolmanOutcome<SpoolmanFilament>>? = null,
+    ): VendorUidOnlyPairResult {
+        val append = spoolman.appendCardUidToSpool(spoolId, input.observedUid)
+        if (append !is SpoolmanOutcome.Success) {
+            return VendorUidOnlyPairResult.SpoolmanFailed(input.observedUid, append)
         }
+        // Best-effort and off the pair's critical path: the tag is already
+        // mapped, so a slow or failed fill must not turn this into a failure.
+        val filament = append.data.filament
+        val filamentId = filament?.id
+        val code = input.articleNumber?.takeIf { fillArticleNumber && it.isNotBlank() }
+        // This fill only runs for a filament the user picked (a spool, or a
+        // filament for a new spool); one Save matched carried the code in its
+        // create. A pick may be any filament, and vendor codes are colour-
+        // specific: only fill one that is the tag's material in the tag's
+        // colour, or the wrong code would stick for good (fill-if-empty).
+        val skipped = code != null && filament != null && !isTagProduct(filament, input)
+        val fill = if (code != null && filamentId != null && !skipped) {
+            spoolman.fillArticleNumberInBackground(filamentId, code)
+        } else {
+            createFill
+        }
+        return VendorUidOnlyPairResult.Success.UidPaired(
+            spoolId = spoolId,
+            uid = input.observedUid,
+            isNewSpool = isNewSpool,
+            articleNumberFill = fill,
+            articleNumberSkipped = skipped,
+        )
     }
 
     companion object {

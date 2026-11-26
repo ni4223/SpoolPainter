@@ -327,5 +327,7 @@ internal fun decodeSnapmakerPayload(data: ByteArray): OpenSpoolPayload {
         spoolId = null,
         decodeNotes = notes,
         readNotice = readNotice,
+        // 0 and 0xFFFFFFFF are unwritten / erased flash, not codes.
+        sku = sku.toUInt().takeIf { it != 0u && it != UInt.MAX_VALUE }?.toString(),
     )
 }

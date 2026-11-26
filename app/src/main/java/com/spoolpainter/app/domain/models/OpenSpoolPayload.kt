@@ -19,4 +19,17 @@ data class OpenSpoolPayload(
     // show after the read.
     val decodeNotes: List<String> = emptyList(),
     val readNotice: String? = null,
+    // Read-side only, like lotNr: the vendor's product code decoded from a
+    // vendor tag (Anycubic SKU, Bambu material variant ID, Snapmaker SKU).
+    // Saved to the Spoolman filament's article_number; never encoded.
+    val sku: String? = null,
 )
+
+/**
+ * [OpenSpoolPayload.sku] if it reads as a real product code. Erased or garbled
+ * tag bytes decode to U+FFFD or control characters (US_ASCII decoding), and
+ * those must never reach Spoolman: the fill only writes empty fields, so a
+ * junk code would block the right one forever.
+ */
+fun OpenSpoolPayload.productCode(): String? =
+    sku?.trim()?.takeIf { code -> code.isNotEmpty() && code.all { it in ' '..'~' } }

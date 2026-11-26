@@ -18,4 +18,10 @@ data class NewSpoolBundle(
     val vendorWasFresh: Boolean,
     val filamentId: Int?,
     val vendorId: Int?,
+    /** The background `article_number` fill started for a matched filament
+     *  that had none; null when no fill was needed. The spool is already
+     *  created: await this only to report the fill. */
+    val articleNumberFill: kotlinx.coroutines.Deferred<
+        SpoolmanOutcome<com.spoolpainter.app.domain.models.SpoolmanFilament>,
+    >? = null,
 )

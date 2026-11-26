@@ -1,5 +1,10 @@
 package com.spoolpainter.app.hardware.nfc
 
+import com.spoolpainter.app.domain.models.OpenSpoolPayload
+import com.spoolpainter.app.hardware.nfc.vendor.AnycubicProcessor
+import com.spoolpainter.app.hardware.nfc.vendor.ElegooProcessor
+import com.spoolpainter.app.hardware.nfc.vendor.QidiProcessor
+import com.spoolpainter.app.hardware.nfc.vendor.VendorSettings
 import java.io.File
 
 /**
@@ -55,6 +60,24 @@ object VendorFixtureSupport {
                     expected = parseExpected(yml.readText()),
                 )
             }
+    }
+
+    /**
+     * Runs the production parser for [fixture]'s vendor. The UID is irrelevant
+     * to every parser here, and Snapmaker dumps carry their real sector-key
+     * trailers, so `null` keys verify the RSA signature against the bytes as-is.
+     */
+    fun parse(fixture: Fixture): OpenSpoolPayload? {
+        val uid = byteArrayOf(0x01, 0x02, 0x03, 0x04)
+        val settings = VendorSettings()
+        return when (fixture.vendorDir) {
+            "Elegoo" -> ElegooProcessor.parse(uid, fixture.bin, auth = null, settings = settings)
+            "Anycubic" -> AnycubicProcessor.parse(uid, fixture.bin, auth = null, settings = settings)
+            "Qidi" -> QidiProcessor.parse(uid, fixture.bin, auth = null, settings = settings)
+            "Bambu" -> parseBambuTag(fixture.bin)
+            "Snapmaker" -> parseSnapmakerTag(fixture.bin, keysA = null, keysB = null)
+            else -> error("no parser wired for ${fixture.vendorDir}")
+        }
     }
 
     private fun parseExpected(yml: String): Expected {

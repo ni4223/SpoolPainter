@@ -22,6 +22,7 @@ data class CreateFilamentRequest(
     val spool_weight: Float? = null,
     val price: Float? = null,
     val extra: Map<String, String>? = null,
+    val article_number: String? = null,
 )
 
 /** A filament after an override PATCH; [wrote] is false when nothing differed and no HTTP write was made. */
@@ -41,6 +42,8 @@ data class PatchFilamentBody(
     val spool_weight: Float? = null,
     val price: Float? = null,
     val extra: Map<String, String>? = null,
+    /** Only ever set by [SpoolmanRepository.fillArticleNumberIfEmpty]. */
+    val article_number: String? = null,
 )
 
 /**
@@ -69,6 +72,9 @@ data class ExpanderOverrides(
     val colorHex: String? = null,
     val extruderTemp: Int? = null,
     val bedTemp: Int? = null,
+    /** Sent only when a new filament is created; an existing filament's empty
+     *  field is filled on Map tag instead (see VendorUidOnlyPairUseCase). */
+    val articleNumber: String? = null,
 ) {
     companion object {
         val EMPTY = ExpanderOverrides()

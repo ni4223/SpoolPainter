@@ -138,6 +138,14 @@ class OpenSpoolPayloadCodecTest {
     }
 
     @Test
+    fun `payload with non-null sku is encoded WITHOUT an sku field`() {
+        val payload = fullPayload.copy(sku = "HPL18-106")
+        val obj = JSONObject(OpenSpoolPayloadCodec.toJson(payload))
+        assertFalse("sku MUST NOT be emitted on encode", obj.has("sku"))
+        assertFalse("HPL18-106" in obj.toString())
+    }
+
+    @Test
     fun `encode-decode of payload with lotNr sanitises lotNr to null`() {
         val payload = fullPayload.copy(lotNr = "ABC123")
         val json = OpenSpoolPayloadCodec.toJson(payload)

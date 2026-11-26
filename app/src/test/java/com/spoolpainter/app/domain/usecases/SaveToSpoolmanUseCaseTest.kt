@@ -10,9 +10,11 @@ import com.spoolpainter.app.domain.models.SpoolmanSpool
 import com.spoolpainter.app.domain.models.TempRanges
 import com.spoolpainter.app.support.FakeSpoolmanRepository
 import com.spoolpainter.app.ui.screens.main.FormState
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -40,6 +42,25 @@ class SaveToSpoolmanUseCaseTest {
 
     private fun input(form: FormState = baseForm): SaveToSpoolmanInput =
         SaveToSpoolmanInput(form = form, newFilamentName = "Test", newFilamentVendor = "Test Vendor")
+
+    @Test
+    fun `new spool Saved carries the matched filament's article number fill`() = runTest {
+        val fill = CompletableDeferred<SpoolmanOutcome<SpoolmanFilament>>()
+        spoolman.nextCreateSpoolBundleResult = SpoolmanOutcome.Success(
+            com.spoolpainter.app.data.remote.spoolman.NewSpoolBundle(
+                spool = sampleSpool,
+                filamentWasFresh = false,
+                vendorWasFresh = false,
+                filamentId = 7,
+                vendorId = null,
+                articleNumberFill = fill,
+            ),
+        )
+
+        val result = useCase.invoke(input())
+
+        assertSame(fill, (result as SaveToSpoolmanResult.Success.Saved).articleNumberFill)
+    }
 
     // U32 B2: an unchanged Save made no HTTP write, so it must not say "Updated".
     @Test

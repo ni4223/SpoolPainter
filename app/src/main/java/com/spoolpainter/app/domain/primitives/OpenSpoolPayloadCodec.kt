@@ -60,7 +60,7 @@ object OpenSpoolPayloadCodec {
         payload.bedMinTemp?.let { obj.put("bed_min_temp", it) }
         payload.bedMaxTemp?.let { obj.put("bed_max_temp", it) }
         payload.spoolId?.let { obj.put("spool_id", it) }
-        // lot_nr is intentionally never emitted — see OpenSpoolPayload.lotNr KDoc.
+        // lot_nr and sku are intentionally never emitted — see OpenSpoolPayload.
         if (payload.subtype.isNotEmpty()) obj.put("subtype", payload.subtype)
         return obj.toString()
     }

@@ -78,6 +78,10 @@ data class FormState(
     val colorHex: String? = DEFAULT_COLOR_HEX,
     val variant: String? = null,
     val tempRanges: TempRanges = DEFAULT_TEMP_RANGES,
+    /** Spoolman's `article_number` for the selected filament. The observed
+     *  vendor tag's product code is layered on top by [effectiveForm], not
+     *  stored here, so rebuilding the form from Spoolman can't drop it. */
+    val articleNumber: String? = null,
     val selectedSpoolId: Int? = null,
     val rawWriteMode: Boolean = false,
 
@@ -140,6 +144,24 @@ data class FormState(
 enum class WeightMethod { Remaining, Measured }
 
 /**
+ * The form as displayed and saved. A Read vendor tag's product code
+ * (OpenSpoolPayload.sku) shows wherever Spoolman has no article number. Save
+ * writes it into the filament it creates (or the empty field of one it
+ * matches); Map tag writes it into the paired filament's empty field.
+ * Spoolman's own value always wins and is never changed.
+ */
+fun MainUiState.effectiveForm(): FormState =
+    pendingTagSku()?.let { form.copy(articleNumber = it) } ?: form
+
+/** The tag's code when it, not Spoolman, is what the form shows. */
+fun MainUiState.pendingTagSku(): String? =
+    (observedTagKind as? ObservedTagKind.Vendor)?.sku?.takeIf { form.articleNumber == null }
+
+/** The user changed what filament this is: the tag's code no longer describes it. */
+fun MainUiState.forgetTagSku(): MainUiState =
+    (observedTagKind as? ObservedTagKind.Vendor)?.let { copy(observedTagKind = it.copy(sku = null)) } ?: this
+
+/**
  * Decision I/J: when an existing spool OR existing filament is selected,
  * filament-scope spec fields lock — the override bag carries variant only,
  * which is the single legitimate filament-record edit on those paths
@@ -190,6 +212,7 @@ fun FormState.toExpanderOverrides(): ExpanderOverrides {
         price = priceMajor,
         spoolPrice = priceMajor,
         variant = variant?.takeIf { it.isNotBlank() },
+        articleNumber = articleNumber,
     )
 }
 
